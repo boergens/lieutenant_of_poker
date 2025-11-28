@@ -216,8 +216,8 @@ class GameStateExtractor:
             state.players[position] = player_state
 
         # Get hero chips from hero player state
-        if PlayerPosition.BOTTOM in state.players:
-            state.hero_chips = state.players[PlayerPosition.BOTTOM].chips
+        if PlayerPosition.HERO in state.players:
+            state.hero_chips = state.players[PlayerPosition.HERO].chips
 
         # Determine street
         state.street = state.determine_street()
@@ -251,7 +251,7 @@ class GameStateExtractor:
             pass
 
         # Extract cards (only for hero or during showdown)
-        if position == PlayerPosition.BOTTOM and player_regions.cards:
+        if position == PlayerPosition.HERO and player_regions.cards:
             try:
                 card_region = player_regions.cards.extract(frame)
                 player_state.cards = self.card_detector.detect_cards(card_region)

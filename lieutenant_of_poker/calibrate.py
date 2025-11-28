@@ -30,15 +30,11 @@ class RegionType(Enum):
     POT = "pot"
     COMMUNITY = "community"
     HERO = "hero"
-    PLAYER_1 = "player_1"  # TOP_LEFT
-    PLAYER_2 = "player_2"  # TOP
-    PLAYER_3 = "player_3"  # TOP_RIGHT
-    PLAYER_4 = "player_4"  # RIGHT
-    PLAYER_5 = "player_5"  # BOTTOM_RIGHT
-    PLAYER_6 = "player_6"  # BOTTOM (hero)
-    PLAYER_7 = "player_7"  # BOTTOM_LEFT
-    PLAYER_8 = "player_8"  # LEFT
-    PLAYER_9 = "player_9"  # CENTER
+    PLAYER_1 = "player_1"  # SEAT_1 - 1st opponent
+    PLAYER_2 = "player_2"  # SEAT_2 - 2nd opponent
+    PLAYER_3 = "player_3"  # SEAT_3 - 3rd opponent
+    PLAYER_4 = "player_4"  # SEAT_4 - 4th opponent
+    PLAYER_5 = "player_5"  # HERO
 
 
 @dataclass
@@ -60,27 +56,19 @@ class CalibrationTool:
         RegionType.POT: (0, 255, 0),         # Green
         RegionType.COMMUNITY: (255, 0, 0),    # Blue
         RegionType.HERO: (0, 255, 255),       # Yellow
-        RegionType.PLAYER_1: (255, 128, 0),   # Orange
-        RegionType.PLAYER_2: (255, 128, 0),
-        RegionType.PLAYER_3: (255, 128, 0),
-        RegionType.PLAYER_4: (255, 128, 0),
-        RegionType.PLAYER_5: (255, 128, 0),
-        RegionType.PLAYER_6: (255, 128, 0),
-        RegionType.PLAYER_7: (255, 128, 0),
-        RegionType.PLAYER_8: (255, 128, 0),
-        RegionType.PLAYER_9: (255, 128, 0),
+        RegionType.PLAYER_1: (255, 128, 0),   # Orange - Seat 1
+        RegionType.PLAYER_2: (255, 165, 0),   # Seat 2
+        RegionType.PLAYER_3: (255, 200, 0),   # Seat 3
+        RegionType.PLAYER_4: (255, 100, 50),  # Seat 4
+        RegionType.PLAYER_5: (0, 255, 255),   # Hero (yellow)
     }
 
     POSITION_NAMES = {
-        RegionType.PLAYER_1: "TOP_LEFT",
-        RegionType.PLAYER_2: "TOP",
-        RegionType.PLAYER_3: "TOP_RIGHT",
-        RegionType.PLAYER_4: "RIGHT",
-        RegionType.PLAYER_5: "BOTTOM_RIGHT",
-        RegionType.PLAYER_6: "BOTTOM (hero)",
-        RegionType.PLAYER_7: "BOTTOM_LEFT",
-        RegionType.PLAYER_8: "LEFT",
-        RegionType.PLAYER_9: "CENTER",
+        RegionType.PLAYER_1: "SEAT_1 (1st opponent)",
+        RegionType.PLAYER_2: "SEAT_2 (2nd opponent)",
+        RegionType.PLAYER_3: "SEAT_3 (3rd opponent)",
+        RegionType.PLAYER_4: "SEAT_4 (4th opponent)",
+        RegionType.PLAYER_5: "HERO",
     }
 
     def __init__(self, frame: np.ndarray, scale: float = 1.0):
@@ -199,8 +187,9 @@ class CalibrationTool:
         print("\nKeys:")
         print("  p - Select POT region")
         print("  c - Select COMMUNITY CARDS region")
-        print("  h - Select HERO CARDS region")
-        print("  1-9 - Select player position (1=TOP_LEFT, 2=TOP, ...)")
+        print("  o - Select HERO (hOle) cards region")
+        print("  1-4 - Select opponent seat (1=first, 2=second, ...)")
+        print("  5 - Select HERO position")
         print("  Arrow keys - Fine-tune selected region position")
         print("  +/- - Fine-tune region size")
         print("  r - Reset current region")
@@ -242,17 +231,13 @@ class CalibrationTool:
             print(f"\n# Hero cards region")
             print(f"self._hero_cards_region = self._scaled(Region(x={r.x}, y={r.y}, width={r.width}, height={r.height}))")
 
-        # Player regions
+        # Player regions (5-player game: 4 opponents + hero)
         position_mapping = {
-            RegionType.PLAYER_1: "PlayerPosition.TOP_LEFT",
-            RegionType.PLAYER_2: "PlayerPosition.TOP",
-            RegionType.PLAYER_3: "PlayerPosition.TOP_RIGHT",
-            RegionType.PLAYER_4: "PlayerPosition.RIGHT",
-            RegionType.PLAYER_5: "PlayerPosition.BOTTOM_RIGHT",
-            RegionType.PLAYER_6: "PlayerPosition.BOTTOM",
-            RegionType.PLAYER_7: "PlayerPosition.BOTTOM_LEFT",
-            RegionType.PLAYER_8: "PlayerPosition.LEFT",
-            RegionType.PLAYER_9: "PlayerPosition.CENTER",
+            RegionType.PLAYER_1: "PlayerPosition.SEAT_1",
+            RegionType.PLAYER_2: "PlayerPosition.SEAT_2",
+            RegionType.PLAYER_3: "PlayerPosition.SEAT_3",
+            RegionType.PLAYER_4: "PlayerPosition.SEAT_4",
+            RegionType.PLAYER_5: "PlayerPosition.HERO",
         }
 
         print("\n# Player regions")
@@ -291,12 +276,11 @@ class CalibrationTool:
                 self.current_type = RegionType.HERO
                 print(f"Selected: HERO CARDS")
                 self._redraw()
-            elif key in [ord('1'), ord('2'), ord('3'), ord('4'), ord('5'),
-                        ord('6'), ord('7'), ord('8'), ord('9')]:
+            elif key in [ord('1'), ord('2'), ord('3'), ord('4'), ord('5')]:
                 player_num = key - ord('0')
                 self.current_type = RegionType(f"player_{player_num}")
                 pos_name = self.POSITION_NAMES.get(self.current_type, "")
-                print(f"Selected: PLAYER {player_num} ({pos_name})")
+                print(f"Selected: {pos_name}")
                 self._redraw()
             elif key == ord('r'):
                 if self.current_type in self.regions:

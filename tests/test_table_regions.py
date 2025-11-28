@@ -100,7 +100,7 @@ class TestTableRegionDetector:
     def test_hero_has_cards(self):
         """Test that hero position has cards region."""
         detector = TableRegionDetector(1728, 1117)
-        hero = detector.get_player_region(PlayerPosition.BOTTOM)
+        hero = detector.get_player_region(PlayerPosition.HERO)
         assert hero.cards is not None
 
     def test_extract_methods(self):

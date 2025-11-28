@@ -33,8 +33,8 @@ class TestPlayerState:
 
     def test_default_values(self):
         """Test default values are set correctly."""
-        state = PlayerState(position=PlayerPosition.BOTTOM)
-        assert state.position == PlayerPosition.BOTTOM
+        state = PlayerState(position=PlayerPosition.HERO)
+        assert state.position == PlayerPosition.HERO
         assert state.name is None
         assert state.chips is None
         assert state.cards == []

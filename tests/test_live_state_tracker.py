@@ -24,36 +24,36 @@ class TestTrackedAction:
     def test_creation(self):
         """Test creating a tracked action."""
         action = TrackedAction(
-            position=PlayerPosition.BOTTOM,
+            position=PlayerPosition.HERO,
             action=PlayerAction.RAISE,
             amount=100,
             street=Street.PREFLOP,
             timestamp_ms=1000.0,
         )
-        assert action.position == PlayerPosition.BOTTOM
+        assert action.position == PlayerPosition.HERO
         assert action.action == PlayerAction.RAISE
         assert action.amount == 100
 
     def test_str_with_amount(self):
         """Test string representation with amount."""
         action = TrackedAction(
-            position=PlayerPosition.BOTTOM,
+            position=PlayerPosition.HERO,
             action=PlayerAction.RAISE,
             amount=100,
         )
         result = str(action)
-        assert "BOTTOM" in result
+        assert "HERO" in result
         assert "RAISE" in result
         assert "100" in result
 
     def test_str_without_amount(self):
         """Test string representation without amount."""
         action = TrackedAction(
-            position=PlayerPosition.TOP,
+            position=PlayerPosition.SEAT_2,
             action=PlayerAction.FOLD,
         )
         result = str(action)
-        assert "TOP" in result
+        assert "SEAT_2" in result
         assert "FOLD" in result
 
 
@@ -283,8 +283,8 @@ class TestLiveStateTracker:
         state1 = GameState(
             street=Street.PREFLOP,
             players={
-                PlayerPosition.TOP: PlayerState(
-                    position=PlayerPosition.TOP,
+                PlayerPosition.SEAT_2: PlayerState(
+                    position=PlayerPosition.SEAT_2,
                     last_action=None,
                 )
             },
@@ -293,8 +293,8 @@ class TestLiveStateTracker:
         state2 = GameState(
             street=Street.PREFLOP,
             players={
-                PlayerPosition.TOP: PlayerState(
-                    position=PlayerPosition.TOP,
+                PlayerPosition.SEAT_2: PlayerState(
+                    position=PlayerPosition.SEAT_2,
                     last_action=DetectedAction(
                         action=PlayerAction.RAISE,
                         amount=100,

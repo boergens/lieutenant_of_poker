@@ -239,7 +239,7 @@ class LiveStateTracker:
         or if hero's position shows as active.
         """
         # Check if hero has a pending action indicator
-        hero = state.players.get(PlayerPosition.BOTTOM)
+        hero = state.players.get(PlayerPosition.HERO)
         if hero and hero.last_action:
             # If hero's last action is recent and still shown, it might not be their turn
             pass
@@ -296,7 +296,7 @@ class LiveStateTracker:
     ) -> Optional[TrackedAction]:
         """Check if any of the new actions are from hero."""
         for action in new_actions:
-            if action.position == PlayerPosition.BOTTOM:
+            if action.position == PlayerPosition.HERO:
                 return action
         return None
 

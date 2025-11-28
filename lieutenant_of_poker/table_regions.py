@@ -14,13 +14,12 @@ import numpy as np
 
 
 class PlayerPosition(Enum):
-    """Player seat positions around the table."""
-    BOTTOM = auto()      # Main player (hero)
-    BOTTOM_LEFT = auto()
-    TOP_LEFT = auto()
-    TOP = auto()
-    TOP_RIGHT = auto()
-    BOTTOM_RIGHT = auto()
+    """Player seat positions around the table (5 players, in playing order)."""
+    SEAT_1 = auto()  # First opponent (left side)
+    SEAT_2 = auto()  # Second opponent (top left)
+    SEAT_3 = auto()  # Third opponent (top right)
+    SEAT_4 = auto()  # Fourth opponent (right side)
+    HERO = auto()    # Main player (bottom)
 
 
 @dataclass
@@ -148,43 +147,37 @@ class TableRegionDetector:
         # Action buttons region (CHECK/FOLD, CALL ANY, etc. at bottom)
         self._action_buttons_region = self._scaled(Region(x=380, y=780, width=550, height=50))
 
-        # Player regions by position
+        # Player regions by position (coordinates from calibration at 3456x2234, converted to base 1360x768)
         self._player_regions = {
-            PlayerPosition.BOTTOM: PlayerRegions(
-                position=PlayerPosition.BOTTOM,
-                name_chip_box=self._scaled(Region(x=735, y=640, width=175, height=55)),
+            PlayerPosition.SEAT_1: PlayerRegions(
+                position=PlayerPosition.SEAT_1,
+                name_chip_box=self._scaled(Region(x=175, y=444, width=189, height=47)),
+                cards=None,
+                action_label=self._scaled(Region(x=175, y=491, width=100, height=30)),
+            ),
+            PlayerPosition.SEAT_2: PlayerRegions(
+                position=PlayerPosition.SEAT_2,
+                name_chip_box=self._scaled(Region(x=296, y=168, width=182, height=50)),
+                cards=None,
+                action_label=self._scaled(Region(x=296, y=218, width=100, height=30)),
+            ),
+            PlayerPosition.SEAT_3: PlayerRegions(
+                position=PlayerPosition.SEAT_3,
+                name_chip_box=self._scaled(Region(x=878, y=172, width=185, height=44)),
+                cards=None,
+                action_label=self._scaled(Region(x=878, y=216, width=100, height=30)),
+            ),
+            PlayerPosition.SEAT_4: PlayerRegions(
+                position=PlayerPosition.SEAT_4,
+                name_chip_box=self._scaled(Region(x=1007, y=443, width=181, height=42)),
+                cards=None,
+                action_label=self._scaled(Region(x=1007, y=485, width=100, height=30)),
+            ),
+            PlayerPosition.HERO: PlayerRegions(
+                position=PlayerPosition.HERO,
+                name_chip_box=self._scaled(Region(x=540, y=600, width=180, height=50)),
                 cards=self._hero_cards_region,
-                action_label=self._scaled(Region(x=780, y=700, width=100, height=30)),
-            ),
-            PlayerPosition.BOTTOM_LEFT: PlayerRegions(
-                position=PlayerPosition.BOTTOM_LEFT,
-                name_chip_box=self._scaled(Region(x=200, y=480, width=175, height=55)),
-                cards=None,
-                action_label=self._scaled(Region(x=195, y=535, width=100, height=30)),
-            ),
-            PlayerPosition.TOP_LEFT: PlayerRegions(
-                position=PlayerPosition.TOP_LEFT,
-                name_chip_box=self._scaled(Region(x=320, y=165, width=170, height=55)),
-                cards=None,
-                action_label=self._scaled(Region(x=300, y=220, width=100, height=30)),
-            ),
-            PlayerPosition.TOP: PlayerRegions(
-                position=PlayerPosition.TOP,
-                name_chip_box=self._scaled(Region(x=400, y=95, width=180, height=40)),
-                cards=None,
-                action_label=self._scaled(Region(x=450, y=135, width=100, height=30)),
-            ),
-            PlayerPosition.TOP_RIGHT: PlayerRegions(
-                position=PlayerPosition.TOP_RIGHT,
-                name_chip_box=self._scaled(Region(x=920, y=165, width=170, height=55)),
-                cards=None,
-                action_label=self._scaled(Region(x=890, y=220, width=100, height=30)),
-            ),
-            PlayerPosition.BOTTOM_RIGHT: PlayerRegions(
-                position=PlayerPosition.BOTTOM_RIGHT,
-                name_chip_box=self._scaled(Region(x=1030, y=480, width=185, height=55)),
-                cards=None,
-                action_label=self._scaled(Region(x=1015, y=535, width=100, height=30)),
+                action_label=self._scaled(Region(x=540, y=650, width=100, height=30)),
             ),
         }
 
