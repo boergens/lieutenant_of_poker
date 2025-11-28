@@ -109,6 +109,28 @@ def main():
     )
     info_parser.add_argument("video", help="Path to video file")
 
+    # diagnose command
+    diagnose_parser = subparsers.add_parser(
+        "diagnose", help="Generate detailed diagnostic report for a frame"
+    )
+    diagnose_parser.add_argument("video", help="Path to video file")
+    diagnose_parser.add_argument(
+        "--frame", "-f", type=int, default=None,
+        help="Frame number to analyze"
+    )
+    diagnose_parser.add_argument(
+        "--timestamp", "-t", type=float, default=None,
+        help="Timestamp in seconds to analyze"
+    )
+    diagnose_parser.add_argument(
+        "--output", "-o", default="diagnostic_report.html",
+        help="Output HTML file (default: diagnostic_report.html)"
+    )
+    diagnose_parser.add_argument(
+        "--open", action="store_true",
+        help="Open the report in browser after generation"
+    )
+
     # monitor command
     monitor_parser = subparsers.add_parser(
         "monitor", help="Live monitor the game with mistake detection"
@@ -167,6 +189,8 @@ def main():
             cmd_export(args)
         elif args.command == "info":
             cmd_info(args)
+        elif args.command == "diagnose":
+            cmd_diagnose(args)
         elif args.command == "monitor":
             cmd_monitor(args)
     except FileNotFoundError as e:
@@ -353,6 +377,57 @@ def cmd_info(args):
         print(f"  FPS: {video.fps:.2f}")
         print(f"  Duration: {video.duration_seconds:.1f}s ({video.duration_seconds/60:.1f} min)")
         print(f"  Total frames: {video.frame_count:,}")
+
+
+def cmd_diagnose(args):
+    """Generate detailed diagnostic report for a frame."""
+    import webbrowser
+    from lieutenant_of_poker.diagnostic import DiagnosticExtractor, generate_html_report
+
+    with VideoFrameExtractor(args.video) as video:
+        print(f"Video: {args.video}", file=sys.stderr)
+        print(f"  Resolution: {video.width}x{video.height}", file=sys.stderr)
+        print(f"  Duration: {video.duration_seconds:.1f}s", file=sys.stderr)
+
+        # Determine which frame to analyze
+        if args.frame is not None:
+            frame_info = video.get_frame_at(args.frame)
+            if frame_info is None:
+                raise ValueError(f"Could not read frame {args.frame}")
+        elif args.timestamp is not None:
+            frame_info = video.get_frame_at_timestamp(args.timestamp * 1000)
+            if frame_info is None:
+                raise ValueError(f"Could not read frame at timestamp {args.timestamp}s")
+        else:
+            # Default to first frame
+            frame_info = video.get_frame_at(0)
+            if frame_info is None:
+                raise ValueError("Could not read first frame")
+
+        print(f"\nAnalyzing frame {frame_info.frame_number} ({frame_info.timestamp_ms/1000:.2f}s)...", file=sys.stderr)
+
+        # Run diagnostic extraction
+        extractor = DiagnosticExtractor()
+        report = extractor.extract_with_diagnostics(
+            frame_info.image,
+            frame_number=frame_info.frame_number,
+            timestamp_ms=frame_info.timestamp_ms,
+        )
+
+        # Generate HTML report
+        output_path = Path(args.output)
+        html = generate_html_report(report, output_path)
+
+        print(f"\nReport generated: {output_path}", file=sys.stderr)
+
+        # Count successes/failures
+        successes = sum(1 for s in report.steps if s.success)
+        failures = sum(1 for s in report.steps if not s.success)
+        print(f"  Steps: {successes} succeeded, {failures} failed", file=sys.stderr)
+
+        # Open in browser if requested
+        if args.open:
+            webbrowser.open(f"file://{output_path.absolute()}")
 
 
 def cmd_monitor(args):

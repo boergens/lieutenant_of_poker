@@ -1,0 +1,638 @@
+"""
+Diagnostic report generator for frame analysis.
+
+Creates detailed HTML reports showing each step of the detection pipeline
+with images, intermediate results, and OCR outputs.
+"""
+
+import base64
+import io
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, List, Any
+
+import cv2
+import numpy as np
+from PIL import Image
+
+
+@dataclass
+class DiagnosticStep:
+    """A single step in the diagnostic process."""
+    name: str
+    description: str
+    images: List[tuple[str, np.ndarray]] = field(default_factory=list)  # (label, image)
+    ocr_result: Optional[str] = None
+    parsed_result: Optional[Any] = None
+    success: bool = True
+    error: Optional[str] = None
+    substeps: List["DiagnosticStep"] = field(default_factory=list)
+
+
+@dataclass
+class DiagnosticReport:
+    """Complete diagnostic report for a frame."""
+    timestamp: datetime = field(default_factory=datetime.now)
+    frame_number: Optional[int] = None
+    frame_timestamp_ms: Optional[float] = None
+    original_size: tuple[int, int] = (0, 0)
+    scaled_size: tuple[int, int] = (0, 0)
+    original_frame: Optional[np.ndarray] = None
+    scaled_frame: Optional[np.ndarray] = None
+    steps: List[DiagnosticStep] = field(default_factory=list)
+    final_state: Optional[dict] = None
+
+
+def _image_to_base64(image: np.ndarray, max_width: int = 400) -> str:
+    """Convert numpy image to base64 for HTML embedding."""
+    if image is None or image.size == 0:
+        return ""
+
+    # Scale down if too large
+    h, w = image.shape[:2]
+    if w > max_width:
+        scale = max_width / w
+        image = cv2.resize(image, (int(w * scale), int(h * scale)))
+
+    # Convert BGR to RGB if color
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    # Convert to PIL and then to base64
+    pil_image = Image.fromarray(image)
+    buffer = io.BytesIO()
+    pil_image.save(buffer, format='PNG')
+    return base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+
+class DiagnosticExtractor:
+    """
+    Game state extractor that captures diagnostic information.
+
+    Wraps the normal extraction process and records each step
+    for later report generation.
+    """
+
+    def __init__(self):
+        """Initialize the diagnostic extractor."""
+        from .table_regions import detect_table_regions, PlayerPosition
+        from .fast_ocr import get_fast_ocr
+
+        self._detect_regions = detect_table_regions
+        self._PlayerPosition = PlayerPosition
+        self._fast_ocr = get_fast_ocr()
+        self.report: Optional[DiagnosticReport] = None
+
+    def extract_with_diagnostics(
+        self,
+        frame: np.ndarray,
+        frame_number: Optional[int] = None,
+        timestamp_ms: Optional[float] = None,
+    ) -> DiagnosticReport:
+        """
+        Extract game state with full diagnostic capture.
+
+        Args:
+            frame: BGR image frame.
+            frame_number: Optional frame number.
+            timestamp_ms: Optional timestamp.
+
+        Returns:
+            DiagnosticReport with all steps documented.
+        """
+        self.report = DiagnosticReport(
+            frame_number=frame_number,
+            frame_timestamp_ms=timestamp_ms,
+            original_size=(frame.shape[1], frame.shape[0]),
+            original_frame=frame.copy(),
+        )
+
+        # Scale frame if needed
+        scaled_frame = self._scale_frame(frame)
+        self.report.scaled_size = (scaled_frame.shape[1], scaled_frame.shape[0])
+        self.report.scaled_frame = scaled_frame.copy()
+
+        # Create region detector
+        region_detector = self._detect_regions(scaled_frame)
+
+        # Extract each component with diagnostics
+        self._extract_pot(scaled_frame, region_detector)
+        self._extract_community_cards(scaled_frame, region_detector)
+        self._extract_hero_cards(scaled_frame, region_detector)
+        self._extract_players(scaled_frame, region_detector)
+
+        return self.report
+
+    def _scale_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Scale frame and record the step."""
+        h, w = frame.shape[:2]
+        target_w, target_h = 1920, 1080
+
+        step = DiagnosticStep(
+            name="Frame Scaling",
+            description=f"Original size: {w}x{h}",
+        )
+        step.images.append(("Original Frame", frame))
+
+        if w <= target_w and h <= target_h:
+            step.description += f" (no scaling needed)"
+            step.parsed_result = "No scaling"
+            self.report.steps.append(step)
+            return frame
+
+        scale = min(target_w / w, target_h / h)
+        new_w, new_h = int(w * scale), int(h * scale)
+        scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+        step.description += f" → Scaled to: {new_w}x{new_h} (scale={scale:.2f})"
+        step.images.append(("Scaled Frame", scaled))
+        step.parsed_result = f"{new_w}x{new_h}"
+        self.report.steps.append(step)
+
+        return scaled
+
+    def _extract_pot(self, frame: np.ndarray, region_detector) -> None:
+        """Extract pot with diagnostics."""
+        step = DiagnosticStep(
+            name="Pot Detection",
+            description="Extracting pot amount from center of table",
+        )
+
+        try:
+            # Get region
+            pot_region = region_detector.extract_pot(frame)
+            step.images.append(("Pot Region", pot_region))
+
+            # Preprocess
+            preprocessed = self._preprocess_for_ocr(pot_region, step, "pot")
+
+            # OCR
+            from .fast_ocr import ocr_digits
+            text = ocr_digits(preprocessed)
+            step.ocr_result = text if text else "(empty)"
+
+            # Parse
+            amount = self._parse_amount(text)
+            step.parsed_result = amount
+            step.success = amount is not None
+
+            if not step.success and text:
+                step.description += f" - OCR returned '{text}' but couldn't parse"
+
+                # Try inverted
+                substep = DiagnosticStep(
+                    name="Fallback: Inverted",
+                    description="Trying inverted colors",
+                )
+                inverted = cv2.bitwise_not(preprocessed)
+                substep.images.append(("Inverted", inverted))
+                text2 = ocr_digits(inverted)
+                substep.ocr_result = text2 if text2 else "(empty)"
+                amount2 = self._parse_amount(text2)
+                substep.parsed_result = amount2
+                substep.success = amount2 is not None
+                step.substeps.append(substep)
+
+                if amount2 is not None:
+                    step.parsed_result = amount2
+                    step.success = True
+
+        except Exception as e:
+            step.error = str(e)
+            step.success = False
+
+        self.report.steps.append(step)
+
+    def _extract_community_cards(self, frame: np.ndarray, region_detector) -> None:
+        """Extract community cards with diagnostics."""
+        step = DiagnosticStep(
+            name="Community Cards Detection",
+            description="Detecting cards on the board",
+        )
+
+        try:
+            comm_region = region_detector.extract_community_cards(frame)
+            step.images.append(("Community Cards Region", comm_region))
+
+            # Find card rectangles
+            cards = self._detect_cards_diagnostic(comm_region, step)
+            step.parsed_result = [str(c) for c in cards] if cards else []
+            step.success = len(cards) > 0
+
+        except Exception as e:
+            step.error = str(e)
+            step.success = False
+
+        self.report.steps.append(step)
+
+    def _extract_hero_cards(self, frame: np.ndarray, region_detector) -> None:
+        """Extract hero cards with diagnostics."""
+        step = DiagnosticStep(
+            name="Hero Cards Detection",
+            description="Detecting hero's hole cards",
+        )
+
+        try:
+            hero_region = region_detector.extract_hero_cards(frame)
+            step.images.append(("Hero Cards Region", hero_region))
+
+            cards = self._detect_cards_diagnostic(hero_region, step)
+            step.parsed_result = [str(c) for c in cards] if cards else []
+            step.success = len(cards) > 0
+
+        except Exception as e:
+            step.error = str(e)
+            step.success = False
+
+        self.report.steps.append(step)
+
+    def _extract_players(self, frame: np.ndarray, region_detector) -> None:
+        """Extract player info with diagnostics."""
+        for position in self._PlayerPosition:
+            step = DiagnosticStep(
+                name=f"Player: {position.name}",
+                description=f"Detecting player at {position.name} position",
+            )
+
+            try:
+                player_regions = region_detector.get_player_region(position)
+
+                # Chip detection
+                chip_substep = DiagnosticStep(
+                    name="Chip Count",
+                    description="Detecting chip count",
+                )
+                try:
+                    chip_region = player_regions.name_chip_box.extract(frame)
+                    chip_substep.images.append(("Chip Region", chip_region))
+
+                    preprocessed = self._preprocess_for_ocr(chip_region, chip_substep, "chips")
+
+                    from .fast_ocr import ocr_digits
+                    text = ocr_digits(preprocessed)
+                    chip_substep.ocr_result = text if text else "(empty)"
+
+                    amount = self._parse_amount(text)
+                    chip_substep.parsed_result = amount
+                    chip_substep.success = amount is not None
+                except Exception as e:
+                    chip_substep.error = str(e)
+                    chip_substep.success = False
+
+                step.substeps.append(chip_substep)
+
+                # Action detection
+                action_substep = DiagnosticStep(
+                    name="Last Action",
+                    description="Detecting last action",
+                )
+                try:
+                    action_region = player_regions.action_label.extract(frame)
+                    action_substep.images.append(("Action Region", action_region))
+
+                    # Preprocess
+                    scaled = cv2.resize(action_region, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+                    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+                    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    action_substep.images.append(("Threshold", thresh))
+
+                    from .fast_ocr import ocr_general
+                    text = ocr_general(thresh)
+                    action_substep.ocr_result = text if text else "(empty)"
+                    action_substep.parsed_result = self._parse_action(text)
+                    action_substep.success = action_substep.parsed_result is not None
+                except Exception as e:
+                    action_substep.error = str(e)
+                    action_substep.success = False
+
+                step.substeps.append(action_substep)
+
+                step.success = chip_substep.success or action_substep.success
+
+            except Exception as e:
+                step.error = str(e)
+                step.success = False
+
+            self.report.steps.append(step)
+
+    def _detect_cards_diagnostic(self, region: np.ndarray, parent_step: DiagnosticStep) -> list:
+        """Detect cards with diagnostic substeps."""
+        from .card_detector import CardDetector, Card
+
+        detector = CardDetector()
+        cards = []
+
+        # Find card rectangles
+        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+        parent_step.images.append(("Card Threshold", thresh))
+
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        h, w = region.shape[:2]
+        min_area = (h * w) * 0.01
+        min_height = h * 0.3
+
+        rects = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            x, y, cw, ch = cv2.boundingRect(contour)
+            if area > min_area and ch > min_height:
+                rects.append((x, y, cw, ch))
+        rects.sort(key=lambda r: r[0])
+
+        # Draw detected rectangles
+        debug_img = region.copy()
+        for i, (x, y, cw, ch) in enumerate(rects):
+            cv2.rectangle(debug_img, (x, y), (x+cw, y+ch), (0, 255, 0), 2)
+            cv2.putText(debug_img, str(i+1), (x+5, y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        parent_step.images.append((f"Detected {len(rects)} card regions", debug_img))
+
+        # Process each card
+        for i, (x, y, cw, ch) in enumerate(rects):
+            card_img = region[y:y+ch, x:x+cw]
+            substep = DiagnosticStep(
+                name=f"Card {i+1}",
+                description=f"Position ({x}, {y}), size {cw}x{ch}",
+            )
+            substep.images.append(("Card Image", card_img))
+
+            # Detect rank
+            card = detector.detect_card(card_img)
+            if card:
+                substep.parsed_result = str(card)
+                substep.success = True
+                cards.append(card)
+            else:
+                # Show what we tried
+                scaled = cv2.resize(card_img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+                gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+                _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+                substep.images.append(("Rank threshold", thresh))
+
+                from .fast_ocr import ocr_card_rank
+                text = ocr_card_rank(thresh)
+                substep.ocr_result = text if text else "(empty)"
+                substep.success = False
+
+            parent_step.substeps.append(substep)
+
+        return cards
+
+    def _preprocess_for_ocr(self, region: np.ndarray, step: DiagnosticStep, name: str) -> np.ndarray:
+        """Preprocess region for OCR and capture intermediate images."""
+        # Scale up
+        scaled = cv2.resize(region, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+        step.images.append((f"{name.title()} Scaled 4x", scaled))
+
+        # Grayscale
+        gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+
+        # Threshold
+        _, bright = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        step.images.append((f"{name.title()} Threshold", bright))
+
+        # Invert
+        inverted = cv2.bitwise_not(bright)
+        step.images.append((f"{name.title()} Inverted", inverted))
+
+        return inverted
+
+    def _parse_amount(self, text: str) -> Optional[int]:
+        """Parse numeric amount from OCR text."""
+        if not text:
+            return None
+
+        text = text.strip().upper()
+        text = text.replace('O', '0').replace('I', '1').replace('L', '1')
+        text = text.replace('S', '5').replace('B', '8').replace('Z', '2')
+        text = text.replace(',', '').replace(' ', '').replace('.', '')
+
+        digits = ''.join(c for c in text if c.isdigit())
+        if digits:
+            try:
+                return int(digits)
+            except ValueError:
+                pass
+        return None
+
+    def _parse_action(self, text: str) -> Optional[str]:
+        """Parse action from OCR text."""
+        if not text:
+            return None
+
+        text = text.upper()
+        actions = ['FOLD', 'CHECK', 'CALL', 'RAISE', 'BET', 'ALL-IN', 'ALL IN']
+        for action in actions:
+            if action in text:
+                return action
+        return None
+
+
+def generate_html_report(report: DiagnosticReport, output_path: Optional[Path] = None) -> str:
+    """
+    Generate an HTML report from diagnostic data.
+
+    Args:
+        report: The diagnostic report to render.
+        output_path: Optional path to write HTML file.
+
+    Returns:
+        HTML string.
+    """
+    html_parts = ["""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Frame Analysis Report</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        h3 { color: #666; margin-top: 20px; }
+        .step {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .step.success { border-left: 4px solid #4CAF50; }
+        .step.failure { border-left: 4px solid #f44336; }
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .step-name { font-weight: bold; font-size: 1.1em; }
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+        }
+        .badge.success { background: #e8f5e9; color: #2e7d32; }
+        .badge.failure { background: #ffebee; color: #c62828; }
+        .description { color: #666; margin: 10px 0; }
+        .images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .image-container {
+            text-align: center;
+        }
+        .image-container img {
+            max-width: 400px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .image-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .ocr-result {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+        .parsed-result {
+            font-weight: bold;
+            color: #1976d2;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .substeps {
+            margin-left: 30px;
+            border-left: 2px solid #e0e0e0;
+            padding-left: 20px;
+        }
+        .meta {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .meta-item { color: #666; }
+        .meta-value { font-weight: bold; color: #333; }
+        .frames-preview {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .frames-preview img {
+            max-width: 600px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+"""]
+
+    # Header
+    html_parts.append(f"<h1>🎰 Frame Analysis Report</h1>")
+
+    # Metadata
+    html_parts.append('<div class="meta">')
+    html_parts.append('<div class="meta-grid">')
+    html_parts.append(f'<div class="meta-item">Generated: <span class="meta-value">{report.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span></div>')
+    if report.frame_number is not None:
+        html_parts.append(f'<div class="meta-item">Frame #: <span class="meta-value">{report.frame_number}</span></div>')
+    if report.frame_timestamp_ms is not None:
+        html_parts.append(f'<div class="meta-item">Timestamp: <span class="meta-value">{report.frame_timestamp_ms/1000:.2f}s</span></div>')
+    html_parts.append(f'<div class="meta-item">Original Size: <span class="meta-value">{report.original_size[0]}x{report.original_size[1]}</span></div>')
+    html_parts.append(f'<div class="meta-item">Scaled Size: <span class="meta-value">{report.scaled_size[0]}x{report.scaled_size[1]}</span></div>')
+    html_parts.append('</div></div>')
+
+    # Frame previews
+    html_parts.append('<h2>Frame Preview</h2>')
+    html_parts.append('<div class="frames-preview">')
+    if report.scaled_frame is not None:
+        b64 = _image_to_base64(report.scaled_frame, max_width=700)
+        html_parts.append(f'<div class="image-container"><img src="data:image/png;base64,{b64}"><div class="image-label">Scaled Frame (used for analysis)</div></div>')
+    html_parts.append('</div>')
+
+    # Steps
+    html_parts.append('<h2>Detection Steps</h2>')
+
+    for step in report.steps:
+        html_parts.append(_render_step(step))
+
+    html_parts.append("</body></html>")
+
+    html = "\n".join(html_parts)
+
+    if output_path:
+        output_path = Path(output_path)
+        output_path.write_text(html)
+
+    return html
+
+
+def _render_step(step: DiagnosticStep, level: int = 0) -> str:
+    """Render a single step as HTML."""
+    status_class = "success" if step.success else "failure"
+    status_text = "✓ Success" if step.success else "✗ Failed"
+
+    html = f'<div class="step {status_class}">'
+    html += '<div class="step-header">'
+    html += f'<span class="step-name">{step.name}</span>'
+    html += f'<span class="badge {status_class}">{status_text}</span>'
+    html += '</div>'
+
+    html += f'<div class="description">{step.description}</div>'
+
+    # Images
+    if step.images:
+        html += '<div class="images">'
+        for label, img in step.images:
+            if img is not None and img.size > 0:
+                b64 = _image_to_base64(img)
+                html += f'<div class="image-container">'
+                html += f'<img src="data:image/png;base64,{b64}">'
+                html += f'<div class="image-label">{label}</div>'
+                html += '</div>'
+        html += '</div>'
+
+    # OCR result
+    if step.ocr_result is not None:
+        html += f'<div class="ocr-result">OCR Result: <code>{step.ocr_result}</code></div>'
+
+    # Parsed result
+    if step.parsed_result is not None:
+        html += f'<div class="parsed-result">Parsed: {step.parsed_result}</div>'
+
+    # Error
+    if step.error:
+        html += f'<div class="error">Error: {step.error}</div>'
+
+    # Substeps
+    if step.substeps:
+        html += '<div class="substeps">'
+        for substep in step.substeps:
+            html += _render_step(substep, level + 1)
+        html += '</div>'
+
+    html += '</div>'
+    return html
