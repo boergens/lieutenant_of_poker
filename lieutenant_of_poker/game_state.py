@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, List, Dict
 
+import cv2
 import numpy as np
 
 from lieutenant_of_poker.table_regions import (
@@ -116,11 +117,35 @@ class GameState:
 class GameStateExtractor:
     """Extracts complete game state from video frames."""
 
-    def __init__(self):
-        """Initialize the game state extractor."""
+    # Target resolution for processing (scale down larger frames)
+    TARGET_WIDTH = 1920
+    TARGET_HEIGHT = 1080
+
+    def __init__(self, scale_frames: bool = True):
+        """
+        Initialize the game state extractor.
+
+        Args:
+            scale_frames: If True, scale down frames larger than target resolution.
+        """
         self.card_detector = CardDetector()
         self.chip_ocr = ChipOCR()
         self.action_detector = ActionDetector()
+        self.scale_frames = scale_frames
+
+    def _scale_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Scale frame down if larger than target resolution."""
+        h, w = frame.shape[:2]
+
+        if w <= self.TARGET_WIDTH and h <= self.TARGET_HEIGHT:
+            return frame
+
+        # Calculate scale to fit within target
+        scale = min(self.TARGET_WIDTH / w, self.TARGET_HEIGHT / h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
     def extract(
         self,
@@ -139,6 +164,10 @@ class GameStateExtractor:
         Returns:
             GameState object with all detected information.
         """
+        # Scale down large frames for faster processing
+        if self.scale_frames:
+            frame = self._scale_frame(frame)
+
         # Create region detector for this frame
         region_detector = detect_table_regions(frame)
 
