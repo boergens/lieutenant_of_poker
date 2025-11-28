@@ -131,6 +131,24 @@ def main():
         help="Open the report in browser after generation"
     )
 
+    # calibrate command
+    calibrate_parser = subparsers.add_parser(
+        "calibrate", help="GUI tool for calibrating table regions"
+    )
+    calibrate_parser.add_argument("video", help="Path to video file")
+    calibrate_parser.add_argument(
+        "--frame", "-f", type=int, default=None,
+        help="Frame number to use"
+    )
+    calibrate_parser.add_argument(
+        "--timestamp", "-t", type=float, default=None,
+        help="Timestamp in seconds"
+    )
+    calibrate_parser.add_argument(
+        "--scale", "-s", type=float, default=None,
+        help="Display scale factor (auto-calculated if not specified)"
+    )
+
     # monitor command
     monitor_parser = subparsers.add_parser(
         "monitor", help="Live monitor the game with mistake detection"
@@ -191,6 +209,8 @@ def main():
             cmd_info(args)
         elif args.command == "diagnose":
             cmd_diagnose(args)
+        elif args.command == "calibrate":
+            cmd_calibrate(args)
         elif args.command == "monitor":
             cmd_monitor(args)
     except FileNotFoundError as e:
@@ -428,6 +448,41 @@ def cmd_diagnose(args):
         # Open in browser if requested
         if args.open:
             webbrowser.open(f"file://{output_path.absolute()}")
+
+
+def cmd_calibrate(args):
+    """GUI tool for calibrating table regions."""
+    from lieutenant_of_poker.calibrate import CalibrationTool
+
+    with VideoFrameExtractor(args.video) as video:
+        print(f"Video: {args.video}", file=sys.stderr)
+        print(f"Resolution: {video.width}x{video.height}", file=sys.stderr)
+
+        if args.frame is not None:
+            frame_info = video.get_frame_at(args.frame)
+        elif args.timestamp is not None:
+            frame_info = video.get_frame_at_timestamp(args.timestamp * 1000)
+        else:
+            frame_info = video.get_frame_at(0)
+
+        if frame_info is None:
+            raise ValueError("Could not read frame")
+
+        frame = frame_info.image
+
+        # Auto-calculate scale to fit on screen
+        if args.scale is None:
+            max_dim = max(video.width, video.height)
+            scale = min(1.0, 1400 / max_dim)
+        else:
+            scale = args.scale
+
+        print(f"Display scale: {scale:.2f}", file=sys.stderr)
+        print(f"\nStarting calibration tool...", file=sys.stderr)
+        print("Press 'h' in the window for help\n", file=sys.stderr)
+
+        tool = CalibrationTool(frame, scale=scale)
+        tool.run()
 
 
 def cmd_monitor(args):
