@@ -24,12 +24,11 @@ LIBRARY_DIR = Path(__file__).parent / "card_library"
 # Standard size for card comparison (cards are resized to this)
 STANDARD_SIZE = (60, 90)
 
-# Maximum difference threshold for a match (lower = stricter)
-MATCH_THRESHOLD = 0.05
-
-
 class CardMatcher:
     """Matches card images against a library of known cards."""
+
+    # Maximum difference threshold for a match (lower = stricter)
+    MATCH_THRESHOLD = 0.05
 
     def __init__(self, library_dir: Optional[Path] = None):
         """
@@ -150,7 +149,7 @@ class CardMatcher:
                     best_match = Card(rank=rank, suit=suit)
 
         # If we found a good match, return it
-        if best_match is not None and best_score < MATCH_THRESHOLD:
+        if best_match is not None and best_score < self.MATCH_THRESHOLD:
             return best_match
 
         # No match found - ask Claude Code to identify
