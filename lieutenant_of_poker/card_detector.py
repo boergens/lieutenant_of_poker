@@ -5,14 +5,19 @@ Detects playing cards from frame regions and identifies rank and suit
 using OCR and color analysis.
 """
 
+import os
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Optional, List, Tuple
 
 import cv2
 import numpy as np
 
 from .fast_ocr import ocr_card_rank
+
+# Path to reference table background color image
+TABLE_COLOR_IMAGE = Path.home() / "Desktop" / "color.png"
 
 
 class Suit(Enum):
@@ -89,8 +94,16 @@ RANK_MAP = {
 class CardDetector:
     """Detects and recognizes playing cards from image regions."""
 
+    # Default table background color (purple/magenta from Governor of Poker)
+    DEFAULT_TABLE_COLOR_BGR = np.array([204, 96, 184])
+    # Maximum color distance to consider a slot empty
+    EMPTY_SLOT_THRESHOLD = 60
+
     def __init__(self):
         """Initialize the card detector."""
+        # Load table background color from reference image
+        self.table_color = self._load_table_color()
+
         # Color thresholds for suit detection (in HSV)
         # Red for hearts/diamonds
         self.red_lower1 = np.array([0, 100, 100])
@@ -101,6 +114,36 @@ class CardDetector:
         # Black for clubs/spades
         self.black_lower = np.array([0, 0, 0])
         self.black_upper = np.array([180, 255, 80])
+
+    def _load_table_color(self) -> np.ndarray:
+        """Load the table background color from reference image."""
+        if TABLE_COLOR_IMAGE.exists():
+            img = cv2.imread(str(TABLE_COLOR_IMAGE))
+            if img is not None:
+                # Get average color
+                return np.mean(img, axis=(0, 1))
+        return self.DEFAULT_TABLE_COLOR_BGR
+
+    def is_empty_slot(self, slot_image: np.ndarray) -> bool:
+        """
+        Check if a card slot is empty (shows table background).
+
+        Args:
+            slot_image: BGR image of a card slot.
+
+        Returns:
+            True if the slot appears empty (matches table color).
+        """
+        if slot_image is None or slot_image.size == 0:
+            return True
+
+        # Get average color of the slot
+        avg_color = np.mean(slot_image, axis=(0, 1))
+
+        # Calculate Euclidean distance to table color
+        distance = np.linalg.norm(avg_color - self.table_color)
+
+        return distance < self.EMPTY_SLOT_THRESHOLD
 
     def detect_card(self, card_image: np.ndarray) -> Optional[Card]:
         """
@@ -113,6 +156,10 @@ class CardDetector:
             Card object if detected, None otherwise.
         """
         if card_image is None or card_image.size == 0:
+            return None
+
+        # Skip OCR if slot appears empty (matches table background)
+        if self.is_empty_slot(card_image):
             return None
 
         rank = self._detect_rank(card_image)

@@ -110,9 +110,10 @@ class TableRegionDetector:
         self._community_cards_region = self._scaled(Region(x=560, y=420, width=430, height=140))
 
         # Individual community card slots (5 fixed positions)
+        # Shifted one slot to the right (card_width + card_spacing = 86)
         card_width = 80
         card_spacing = 6
-        card_start_x = 560
+        card_start_x = 560 + (card_width + card_spacing)  # Shifted right by one slot
         card_y = 420
         card_height = 140
         self._community_card_slots = [
