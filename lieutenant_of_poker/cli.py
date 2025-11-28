@@ -5,6 +5,7 @@ Usage:
     lieutenant extract-frames <video> [--output-dir=<dir>] [--interval=<ms>] [--format=<fmt>]
     lieutenant analyze <video> [--interval=<ms>] [--output=<file>]
     lieutenant export <video> [--format=<fmt>] [--output=<file>]
+    lieutenant monitor [--window=<title>] [--fps=<n>] [--audio] [--overlay] [--log=<file>]
     lieutenant info <video>
     lieutenant --help
     lieutenant --version
@@ -98,6 +99,49 @@ def main():
     )
     info_parser.add_argument("video", help="Path to video file")
 
+    # monitor command
+    monitor_parser = subparsers.add_parser(
+        "monitor", help="Live monitor the game with mistake detection"
+    )
+    monitor_parser.add_argument(
+        "--window", "-w", default="Governor of Poker",
+        help="Window title to capture (default: Governor of Poker)"
+    )
+    monitor_parser.add_argument(
+        "--fps", "-f", type=int, default=10,
+        help="Frames per second to capture (default: 10)"
+    )
+    monitor_parser.add_argument(
+        "--audio", "-a", action="store_true",
+        help="Enable audio alerts"
+    )
+    monitor_parser.add_argument(
+        "--overlay", action="store_true",
+        help="Show visual overlay notifications (macOS only)"
+    )
+    monitor_parser.add_argument(
+        "--log", "-l", type=str, default=None,
+        help="Log file path for alerts"
+    )
+    monitor_parser.add_argument(
+        "--rules", "-r", nargs="*", default=None,
+        help="Specific rules to enable (default: all)"
+    )
+    monitor_parser.add_argument(
+        "--severity", "-s",
+        choices=["info", "warning", "error", "critical"],
+        default="warning",
+        help="Minimum severity to alert on (default: warning)"
+    )
+    monitor_parser.add_argument(
+        "--quiet", "-q", action="store_true",
+        help="Suppress terminal output (useful with --log)"
+    )
+    monitor_parser.add_argument(
+        "--list-rules", action="store_true",
+        help="List available rules and exit"
+    )
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -113,7 +157,12 @@ def main():
             cmd_export(args)
         elif args.command == "info":
             cmd_info(args)
+        elif args.command == "monitor":
+            cmd_monitor(args)
     except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
@@ -243,6 +292,138 @@ def cmd_info(args):
         print(f"  FPS: {video.fps:.2f}")
         print(f"  Duration: {video.duration_seconds:.1f}s ({video.duration_seconds/60:.1f} min)")
         print(f"  Total frames: {video.frame_count:,}")
+
+
+def cmd_monitor(args):
+    """Live monitor the game with mistake detection."""
+    from pathlib import Path
+
+    from lieutenant_of_poker.screen_capture import (
+        MacOSScreenCapture,
+        check_screen_recording_permission,
+        get_permission_instructions,
+    )
+    from lieutenant_of_poker.live_state_tracker import LiveStateTracker
+    from lieutenant_of_poker.rules_engine import RulesEngine, Severity
+    from lieutenant_of_poker.notifications import (
+        NotificationManager,
+        TerminalNotifier,
+        AudioNotifier,
+        LogNotifier,
+        OverlayNotifier,
+    )
+    from lieutenant_of_poker.live_monitor import LiveMonitor
+    from lieutenant_of_poker.rules import basic_rules
+
+    # List rules mode
+    if args.list_rules:
+        rules = RulesEngine()
+        basic_rules.register_all(rules)
+        print("Available rules:")
+        for name, enabled, description in rules.list_rules():
+            status = "enabled" if enabled else "disabled"
+            print(f"  {name}: {description} [{status}]")
+        return
+
+    # Check screen recording permission
+    if not check_screen_recording_permission():
+        print("Error: Screen recording permission not granted.", file=sys.stderr)
+        print(get_permission_instructions(), file=sys.stderr)
+        sys.exit(1)
+
+    # Initialize screen capture
+    try:
+        capture = MacOSScreenCapture(window_title=args.window)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        print(f"\nMake sure '{args.window}' is open and visible.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Found window: {capture.window}", file=sys.stderr)
+
+    # Initialize state tracker
+    tracker = LiveStateTracker()
+
+    # Initialize rules engine
+    rules = RulesEngine()
+    basic_rules.register_all(rules)
+
+    if args.rules:
+        # Enable only specified rules
+        rules.disable_all()
+        for rule_name in args.rules:
+            if not rules.enable_rule(rule_name):
+                print(f"Warning: Unknown rule '{rule_name}'", file=sys.stderr)
+
+    # Initialize notification channels
+    notifications = NotificationManager()
+
+    severity_map = {
+        "info": Severity.INFO,
+        "warning": Severity.WARNING,
+        "error": Severity.ERROR,
+        "critical": Severity.CRITICAL,
+    }
+    notifications.set_minimum_severity(severity_map[args.severity])
+
+    if not args.quiet:
+        term_notifier = TerminalNotifier()
+        if term_notifier.is_available():
+            notifications.add_channel(term_notifier)
+
+    if args.audio:
+        audio_notifier = AudioNotifier()
+        if audio_notifier.is_available():
+            notifications.add_channel(audio_notifier)
+        else:
+            print("Warning: Audio alerts not available", file=sys.stderr)
+
+    if args.log:
+        log_notifier = LogNotifier(Path(args.log))
+        if log_notifier.is_available():
+            notifications.add_channel(log_notifier)
+            print(f"Logging to: {args.log}", file=sys.stderr)
+        else:
+            print(f"Warning: Cannot write to log file {args.log}", file=sys.stderr)
+
+    if args.overlay:
+        overlay_notifier = OverlayNotifier()
+        if overlay_notifier.is_available():
+            notifications.add_channel(overlay_notifier)
+        else:
+            print("Warning: Overlay notifications not available", file=sys.stderr)
+
+    # Create and start monitor
+    monitor = LiveMonitor(
+        screen_capture=capture,
+        state_tracker=tracker,
+        rules_engine=rules,
+        notification_manager=notifications,
+        fps=args.fps,
+    )
+
+    print(f"\nStarting live monitor (Ctrl+C to stop)...", file=sys.stderr)
+    print(f"  Window: {args.window}", file=sys.stderr)
+    print(f"  FPS: {args.fps}", file=sys.stderr)
+    print(f"  Severity: {args.severity}+", file=sys.stderr)
+    print(f"  Channels: {notifications.channel_count}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    try:
+        monitor.start()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        monitor.stop()
+
+        stats = monitor.get_stats()
+        print(f"\nSession Summary:", file=sys.stderr)
+        print(f"  Duration: {stats.duration_seconds:.1f}s", file=sys.stderr)
+        print(f"  Frames processed: {stats.frames_processed:,}", file=sys.stderr)
+        print(f"  Hands tracked: {stats.hands_tracked}", file=sys.stderr)
+        print(f"  Violations detected: {stats.violations_detected}", file=sys.stderr)
+        print(f"  Avg frame time: {stats.avg_frame_time_ms:.1f}ms", file=sys.stderr)
+        print(f"  Actual FPS: {stats.actual_fps:.1f}", file=sys.stderr)
 
 
 def game_state_to_dict(state: GameState) -> dict:
