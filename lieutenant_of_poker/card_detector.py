@@ -11,7 +11,8 @@ from typing import Optional, List, Tuple
 
 import cv2
 import numpy as np
-import pytesseract
+
+from .fast_ocr import ocr_card_rank
 
 
 class Suit(Enum):
@@ -157,30 +158,35 @@ class CardDetector:
         # Convert to grayscale
         gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
 
-        # Try different threshold values
-        thresholds = [
-            cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1],
-            cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)[1],
-            cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)[1],
-        ]
+        # Use primary threshold
+        _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
 
-        # Try OCR on each threshold
-        for thresh in thresholds:
-            # OCR with PSM 6 (assume uniform block of text)
-            config = '--psm 6 -c tessedit_char_whitelist=0123456789JQKA'
-            text = pytesseract.image_to_string(thresh, config=config).strip()
+        # Try OCR with fast tesserocr
+        text = ocr_card_rank(thresh)
 
-            # Clean up text
-            text = text.upper().replace('O', '0').replace('I', '1')
+        # Clean up text
+        text = text.upper().replace('O', '0').replace('I', '1')
 
-            # Check for rank match
-            for char in text:
-                if char in RANK_MAP:
-                    return RANK_MAP[char]
+        # Check for rank match
+        for char in text:
+            if char in RANK_MAP:
+                return RANK_MAP[char]
 
-            # Check for "10"
-            if "10" in text or "1O" in text or "IO" in text:
-                return Rank.TEN
+        # Check for "10"
+        if "10" in text or "1O" in text or "IO" in text:
+            return Rank.TEN
+
+        # Fallback: try inverted threshold
+        _, thresh_inv = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
+        text = ocr_card_rank(thresh_inv)
+        text = text.upper().replace('O', '0').replace('I', '1')
+
+        for char in text:
+            if char in RANK_MAP:
+                return RANK_MAP[char]
+
+        if "10" in text or "1O" in text or "IO" in text:
+            return Rank.TEN
 
         return None
 

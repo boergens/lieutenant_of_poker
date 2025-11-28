@@ -45,3 +45,4 @@ This project uses **beads** for issue tracking instead of markdown TODOs or exte
 - `bd close <id>` - Complete work
 - `bd sync --from-main` - Sync beads from main branch
 - it is possible to break Claude by looking at large images.. please make sure to always check that an image is below a Megabyte first before looking at it
+- make a git commit whenever you close a bead issue

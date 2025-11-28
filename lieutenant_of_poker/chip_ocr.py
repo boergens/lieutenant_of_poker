@@ -9,7 +9,8 @@ from typing import Optional
 
 import cv2
 import numpy as np
-import pytesseract
+
+from .fast_ocr import ocr_digits
 
 
 class ChipOCR:
@@ -35,20 +36,18 @@ class ChipOCR:
         # Preprocess the image
         processed = self._preprocess(region)
 
-        # Try multiple OCR configurations
-        for config in self._get_ocr_configs():
-            text = pytesseract.image_to_string(processed, config=config).strip()
-            amount = self._parse_amount(text)
-            if amount is not None:
-                return amount
+        # Try OCR with fast tesserocr
+        text = ocr_digits(processed)
+        amount = self._parse_amount(text)
+        if amount is not None:
+            return amount
 
-        # Try with inverted colors
+        # Try with inverted colors as fallback
         inverted = cv2.bitwise_not(processed)
-        for config in self._get_ocr_configs():
-            text = pytesseract.image_to_string(inverted, config=config).strip()
-            amount = self._parse_amount(text)
-            if amount is not None:
-                return amount
+        text = ocr_digits(inverted)
+        amount = self._parse_amount(text)
+        if amount is not None:
+            return amount
 
         return None
 
@@ -111,15 +110,6 @@ class ChipOCR:
         inverted = cv2.bitwise_not(bright)
 
         return inverted
-
-    def _get_ocr_configs(self) -> list:
-        """Get list of OCR configurations to try."""
-        return [
-            '--psm 7 -c tessedit_char_whitelist=0123456789,.',  # Single line
-            '--psm 8 -c tessedit_char_whitelist=0123456789,.',  # Single word
-            '--psm 6 -c tessedit_char_whitelist=0123456789,.',  # Block of text
-            '--psm 13 -c tessedit_char_whitelist=0123456789,.',  # Raw line
-        ]
 
     def _parse_amount(self, text: str) -> Optional[int]:
         """

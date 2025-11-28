@@ -10,7 +10,8 @@ from typing import Optional, List
 
 import cv2
 import numpy as np
-import pytesseract
+
+from .fast_ocr import ocr_general
 
 
 class PlayerAction(Enum):
@@ -131,28 +132,16 @@ class ActionDetector:
         # Convert to grayscale
         gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
 
-        # Try multiple preprocessing approaches
-        results = []
+        # Use Otsu threshold (best general-purpose)
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        text = ocr_general(thresh)
 
-        # Approach 1: Otsu threshold
-        _, thresh1 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        text1 = pytesseract.image_to_string(thresh1, config='--psm 6').strip()
-        results.append(text1)
+        # If no result, try inverted
+        if not text:
+            inverted = cv2.bitwise_not(thresh)
+            text = ocr_general(inverted)
 
-        # Approach 2: Inverted
-        inverted = cv2.bitwise_not(thresh1)
-        text2 = pytesseract.image_to_string(inverted, config='--psm 6').strip()
-        results.append(text2)
-
-        # Approach 3: Adaptive threshold
-        adaptive = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-        )
-        text3 = pytesseract.image_to_string(adaptive, config='--psm 6').strip()
-        results.append(text3)
-
-        # Return the longest result (most likely to have captured the text)
-        return max(results, key=len)
+        return text
 
     def _parse_action(self, text: str) -> Optional[DetectedAction]:
         """Parse an action from OCR text."""
