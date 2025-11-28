@@ -194,8 +194,9 @@ class CardMatcher:
                 "Reply with ONLY the card identifier, nothing else."
             )
 
+            claude_path = Path.home() / ".local" / "bin" / "claude"
             result = subprocess.run(
-                ["claude", "-p", prompt, "--allowedTools", "Read"],
+                [str(claude_path), "-p", prompt, "--allowedTools", "Read"],
                 capture_output=True,
                 text=True,
                 timeout=60,
