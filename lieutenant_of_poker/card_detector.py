@@ -1,8 +1,8 @@
 """
 Card detection and recognition for Governor of Poker.
 
-Detects playing cards from frame regions and identifies rank and suit
-using OCR and color analysis.
+Detects playing cards from frame regions using a reference library.
+Unknown cards are identified by Claude Code and added to the library.
 """
 
 import os
@@ -13,8 +13,6 @@ from typing import Optional, List, Tuple
 
 import cv2
 import numpy as np
-
-from .fast_ocr import ocr_card_rank
 
 # Path to reference table background color image
 TABLE_COLOR_IMAGE = Path.home() / "Desktop" / "color.png"
@@ -99,12 +97,20 @@ class CardDetector:
     # Maximum color distance to consider a slot empty
     EMPTY_SLOT_THRESHOLD = 60
 
-    def __init__(self):
-        """Initialize the card detector."""
+    def __init__(self, use_library: bool = True):
+        """
+        Initialize the card detector.
+
+        Args:
+            use_library: If True, use the card library for matching.
+                        If False, fall back to color-based detection only.
+        """
         # Load table background color from reference image
         self.table_color = self._load_table_color()
+        self.use_library = use_library
+        self._matcher = None
 
-        # Color thresholds for suit detection (in HSV)
+        # Color thresholds for suit detection (in HSV) - fallback only
         # Red for hearts/diamonds
         self.red_lower1 = np.array([0, 100, 100])
         self.red_upper1 = np.array([10, 255, 255])
@@ -114,6 +120,14 @@ class CardDetector:
         # Black for clubs/spades
         self.black_lower = np.array([0, 0, 0])
         self.black_upper = np.array([180, 255, 80])
+
+    @property
+    def matcher(self):
+        """Lazy-load the card matcher."""
+        if self._matcher is None and self.use_library:
+            from .card_matcher import get_card_matcher
+            self._matcher = get_card_matcher()
+        return self._matcher
 
     def _load_table_color(self) -> np.ndarray:
         """Load the table background color from reference image."""
@@ -145,12 +159,16 @@ class CardDetector:
 
         return distance < self.EMPTY_SLOT_THRESHOLD
 
-    def detect_card(self, card_image: np.ndarray) -> Optional[Card]:
+    def detect_card(self, card_image: np.ndarray, slot_index: int = 0) -> Optional[Card]:
         """
         Detect a single card from an image region.
 
+        Uses the card library for matching. Unknown cards are identified
+        by Claude Code and added to the library for future matches.
+
         Args:
             card_image: BGR image of a single card.
+            slot_index: Which slot this card is from (for library naming).
 
         Returns:
             Card object if detected, None otherwise.
@@ -158,17 +176,16 @@ class CardDetector:
         if card_image is None or card_image.size == 0:
             return None
 
-        # Skip OCR if slot appears empty (matches table background)
+        # Skip if slot appears empty (matches table background)
         if self.is_empty_slot(card_image):
             return None
 
-        rank = self._detect_rank(card_image)
-        suit = self._detect_suit(card_image)
+        # Use the card library for matching
+        if self.use_library and self.matcher is not None:
+            return self.matcher.match_card(card_image, slot_index)
 
-        if rank is None or suit is None:
-            return None
-
-        return Card(rank=rank, suit=suit)
+        # Fallback to color-based detection (no rank detection without library)
+        return None
 
     def detect_cards(self, cards_region: np.ndarray, expected_count: int = 0) -> List[Card]:
         """
@@ -188,130 +205,14 @@ class CardDetector:
         card_rects = self._find_card_rectangles(cards_region)
 
         cards = []
-        for rect in card_rects:
+        for i, rect in enumerate(card_rects):
             x, y, w, h = rect
             card_img = cards_region[y:y+h, x:x+w]
-            card = self.detect_card(card_img)
+            card = self.detect_card(card_img, slot_index=i)
             if card:
                 cards.append(card)
 
         return cards
-
-    def _detect_rank(self, card_image: np.ndarray) -> Optional[Rank]:
-        """Detect the rank of a card using OCR."""
-        # Scale up the card for better OCR
-        scaled = cv2.resize(card_image, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-
-        # Convert to grayscale
-        gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
-
-        # Use primary threshold
-        _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-
-        # Try OCR with fast tesserocr
-        text = ocr_card_rank(thresh)
-
-        # Clean up text
-        text = text.upper().replace('O', '0').replace('I', '1')
-
-        # Check for rank match
-        for char in text:
-            if char in RANK_MAP:
-                return RANK_MAP[char]
-
-        # Check for "10"
-        if "10" in text or "1O" in text or "IO" in text:
-            return Rank.TEN
-
-        # Fallback: try inverted threshold
-        _, thresh_inv = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
-        text = ocr_card_rank(thresh_inv)
-        text = text.upper().replace('O', '0').replace('I', '1')
-
-        for char in text:
-            if char in RANK_MAP:
-                return RANK_MAP[char]
-
-        if "10" in text or "1O" in text or "IO" in text:
-            return Rank.TEN
-
-        return None
-
-    def _detect_suit(self, card_image: np.ndarray) -> Optional[Suit]:
-        """Detect the suit of a card using color analysis."""
-        # Convert to HSV
-        hsv = cv2.cvtColor(card_image, cv2.COLOR_BGR2HSV)
-
-        # Create masks for red and black
-        red_mask1 = cv2.inRange(hsv, self.red_lower1, self.red_upper1)
-        red_mask2 = cv2.inRange(hsv, self.red_lower2, self.red_upper2)
-        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
-
-        black_mask = cv2.inRange(hsv, self.black_lower, self.black_upper)
-
-        # Count red and black pixels
-        red_pixels = cv2.countNonZero(red_mask)
-        black_pixels = cv2.countNonZero(black_mask)
-
-        # Determine if red or black suit
-        is_red = red_pixels > black_pixels * 0.1  # Red suits have significant red
-
-        if is_red:
-            # Distinguish hearts from diamonds by shape
-            # Hearts are more rounded, diamonds are more angular
-            return self._classify_red_suit(card_image, red_mask)
-        else:
-            # Distinguish clubs from spades by shape
-            return self._classify_black_suit(card_image, black_mask)
-
-    def _classify_red_suit(self, card_image: np.ndarray, red_mask: np.ndarray) -> Suit:
-        """Classify between hearts and diamonds."""
-        # Find contours in the red mask
-        contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        if not contours:
-            return Suit.HEARTS  # Default
-
-        # Get the largest contour (likely the suit symbol)
-        largest = max(contours, key=cv2.contourArea)
-
-        # Analyze shape - diamonds are more angular
-        epsilon = 0.02 * cv2.arcLength(largest, True)
-        approx = cv2.approxPolyDP(largest, epsilon, True)
-
-        # Diamonds typically approximate to 4 points, hearts to more
-        if len(approx) <= 6:
-            return Suit.DIAMONDS
-        else:
-            return Suit.HEARTS
-
-    def _classify_black_suit(self, card_image: np.ndarray, black_mask: np.ndarray) -> Suit:
-        """Classify between clubs and spades."""
-        # Find contours
-        contours, _ = cv2.findContours(black_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        if not contours:
-            return Suit.SPADES  # Default
-
-        # Get the largest contour
-        largest = max(contours, key=cv2.contourArea)
-
-        # Analyze shape
-        # Spades have a pointed top, clubs are more rounded
-        x, y, w, h = cv2.boundingRect(largest)
-
-        # Check the top portion of the bounding box
-        top_region = black_mask[y:y+h//3, x:x+w]
-        top_pixels = cv2.countNonZero(top_region)
-        total_top = (h//3) * w
-
-        # Spades fill more of the top (pointed), clubs less (rounded lobes)
-        fill_ratio = top_pixels / total_top if total_top > 0 else 0
-
-        if fill_ratio > 0.3:
-            return Suit.SPADES
-        else:
-            return Suit.CLUBS
 
     def _find_card_rectangles(self, region: np.ndarray) -> List[Tuple[int, int, int, int]]:
         """Find individual card rectangles in a multi-card region."""

@@ -100,27 +100,25 @@ class TestCardDetector:
         # Should be sorted by x position
         assert rects[0][0] < rects[1][0]
 
-    def test_detect_suit_red(self):
-        """Test red suit detection."""
-        detector = CardDetector()
+    def test_is_empty_slot_table_color(self):
+        """Test empty slot detection with table color."""
+        detector = CardDetector(use_library=False)
 
-        # Create red image (hearts/diamonds color)
+        # Create image matching the default table color (purple)
         img = np.zeros((50, 50, 3), dtype=np.uint8)
-        img[:, :] = (0, 0, 200)  # Red in BGR
+        img[:, :] = (204, 96, 184)  # Default table color BGR
 
-        suit = detector._detect_suit(img)
-        assert suit in [Suit.HEARTS, Suit.DIAMONDS]
+        assert detector.is_empty_slot(img)
 
-    def test_detect_suit_black(self):
-        """Test black suit detection."""
-        detector = CardDetector()
+    def test_is_empty_slot_card_color(self):
+        """Test empty slot detection with card (non-table) color."""
+        detector = CardDetector(use_library=False)
 
-        # Create dark image (clubs/spades color)
+        # Create white image (like a card)
         img = np.zeros((50, 50, 3), dtype=np.uint8)
-        img[:, :] = (30, 30, 30)  # Dark gray/black
+        img[:, :] = (255, 255, 255)  # White
 
-        suit = detector._detect_suit(img)
-        assert suit in [Suit.CLUBS, Suit.SPADES]
+        assert not detector.is_empty_slot(img)
 
 
 class TestDetectCardsInRegion:

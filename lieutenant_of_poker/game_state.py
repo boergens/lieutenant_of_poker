@@ -181,8 +181,8 @@ class GameStateExtractor:
         try:
             card_slots = region_detector.extract_community_card_slots(frame)
             cards = []
-            for slot_img in card_slots:
-                card = self.card_detector.detect_card(slot_img)
+            for i, slot_img in enumerate(card_slots):
+                card = self.card_detector.detect_card(slot_img, slot_index=i)
                 if card:
                     cards.append(card)
             state.community_cards = cards
@@ -193,8 +193,9 @@ class GameStateExtractor:
         try:
             hero_slots = region_detector.extract_hero_card_slots(frame)
             cards = []
-            for slot_img in hero_slots:
-                card = self.card_detector.detect_card(slot_img)
+            for i, slot_img in enumerate(hero_slots):
+                # Use slot indices 5 and 6 for hero cards to distinguish from community
+                card = self.card_detector.detect_card(slot_img, slot_index=5 + i)
                 if card:
                     cards.append(card)
             state.hero_cards = cards
