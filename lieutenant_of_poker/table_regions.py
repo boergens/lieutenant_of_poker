@@ -1,0 +1,282 @@
+"""
+Table region detection for Governor of Poker.
+
+Defines the key UI regions of the poker table and provides utilities
+for extracting sub-images from frames.
+"""
+
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import Optional, Tuple
+
+import cv2
+import numpy as np
+
+
+class PlayerPosition(Enum):
+    """Player seat positions around the table."""
+    BOTTOM = auto()      # Main player (hero)
+    BOTTOM_LEFT = auto()
+    TOP_LEFT = auto()
+    TOP = auto()
+    TOP_RIGHT = auto()
+    BOTTOM_RIGHT = auto()
+
+
+@dataclass
+class Region:
+    """A rectangular region in the frame."""
+    x: int
+    y: int
+    width: int
+    height: int
+
+    @property
+    def x2(self) -> int:
+        """Right edge x coordinate."""
+        return self.x + self.width
+
+    @property
+    def y2(self) -> int:
+        """Bottom edge y coordinate."""
+        return self.y + self.height
+
+    @property
+    def center(self) -> Tuple[int, int]:
+        """Center point of the region."""
+        return (self.x + self.width // 2, self.y + self.height // 2)
+
+    def extract(self, frame: np.ndarray) -> np.ndarray:
+        """Extract this region from a frame."""
+        return frame[self.y:self.y2, self.x:self.x2].copy()
+
+    def scale(self, scale_x: float, scale_y: float) -> "Region":
+        """Return a new Region scaled by the given factors."""
+        return Region(
+            x=int(self.x * scale_x),
+            y=int(self.y * scale_y),
+            width=int(self.width * scale_x),
+            height=int(self.height * scale_y)
+        )
+
+    def contains_point(self, x: int, y: int) -> bool:
+        """Check if a point is inside this region."""
+        return self.x <= x < self.x2 and self.y <= y < self.y2
+
+
+@dataclass
+class PlayerRegions:
+    """Regions associated with a player position."""
+    position: PlayerPosition
+    name_chip_box: Region      # Player name and chip count area
+    cards: Optional[Region]    # Hole cards (only visible for hero or showdown)
+    action_label: Region       # Where action labels appear (CHECK, FOLD, etc.)
+
+
+# Base resolution the regions are defined for (from sample frames at 50% scale)
+BASE_WIDTH = 1728
+BASE_HEIGHT = 1117
+
+
+class TableRegionDetector:
+    """
+    Detects and provides access to key regions of the poker table UI.
+
+    Regions are defined for a base resolution and scaled to match the actual
+    frame size.
+    """
+
+    def __init__(self, frame_width: int, frame_height: int):
+        """
+        Initialize the detector for a specific frame size.
+
+        Args:
+            frame_width: Width of video frames.
+            frame_height: Height of video frames.
+        """
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.scale_x = frame_width / BASE_WIDTH
+        self.scale_y = frame_height / BASE_HEIGHT
+
+        # Define base regions (at BASE_WIDTH x BASE_HEIGHT resolution)
+        self._define_regions()
+
+    def _define_regions(self) -> None:
+        """Define all table regions at base resolution, then scale."""
+        # Pot display region (the "1,120" text in center-right of table)
+        self._pot_region = self._scaled(Region(x=760, y=355, width=140, height=55))
+
+        # Community cards region (Q♥ 3♥ 3♦ area - below pot)
+        self._community_cards_region = self._scaled(Region(x=480, y=350, width=400, height=140))
+
+        # Hero's hole cards (K♠ 5♠ at bottom center)
+        self._hero_cards_region = self._scaled(Region(x=690, y=600, width=210, height=110))
+
+        # Action buttons region (CHECK/FOLD, CALL ANY, etc. at bottom)
+        self._action_buttons_region = self._scaled(Region(x=380, y=780, width=550, height=50))
+
+        # Player regions by position
+        self._player_regions = {
+            PlayerPosition.BOTTOM: PlayerRegions(
+                position=PlayerPosition.BOTTOM,
+                name_chip_box=self._scaled(Region(x=735, y=640, width=175, height=55)),
+                cards=self._hero_cards_region,
+                action_label=self._scaled(Region(x=780, y=700, width=100, height=30)),
+            ),
+            PlayerPosition.BOTTOM_LEFT: PlayerRegions(
+                position=PlayerPosition.BOTTOM_LEFT,
+                name_chip_box=self._scaled(Region(x=200, y=480, width=175, height=55)),
+                cards=None,
+                action_label=self._scaled(Region(x=195, y=535, width=100, height=30)),
+            ),
+            PlayerPosition.TOP_LEFT: PlayerRegions(
+                position=PlayerPosition.TOP_LEFT,
+                name_chip_box=self._scaled(Region(x=320, y=165, width=170, height=55)),
+                cards=None,
+                action_label=self._scaled(Region(x=300, y=220, width=100, height=30)),
+            ),
+            PlayerPosition.TOP: PlayerRegions(
+                position=PlayerPosition.TOP,
+                name_chip_box=self._scaled(Region(x=400, y=95, width=180, height=40)),
+                cards=None,
+                action_label=self._scaled(Region(x=450, y=135, width=100, height=30)),
+            ),
+            PlayerPosition.TOP_RIGHT: PlayerRegions(
+                position=PlayerPosition.TOP_RIGHT,
+                name_chip_box=self._scaled(Region(x=920, y=165, width=170, height=55)),
+                cards=None,
+                action_label=self._scaled(Region(x=890, y=220, width=100, height=30)),
+            ),
+            PlayerPosition.BOTTOM_RIGHT: PlayerRegions(
+                position=PlayerPosition.BOTTOM_RIGHT,
+                name_chip_box=self._scaled(Region(x=1030, y=480, width=185, height=55)),
+                cards=None,
+                action_label=self._scaled(Region(x=1015, y=535, width=100, height=30)),
+            ),
+        }
+
+        # Dealer button search region (covers table area where button can appear)
+        self._dealer_button_search_region = self._scaled(Region(x=300, y=400, width=700, height=250))
+
+        # Total chips/balance display (top left)
+        self._balance_region = self._scaled(Region(x=200, y=80, width=120, height=40))
+
+    def _scaled(self, region: Region) -> Region:
+        """Scale a region from base resolution to frame resolution."""
+        return region.scale(self.scale_x, self.scale_y)
+
+    @property
+    def pot_region(self) -> Region:
+        """Region containing the pot amount display."""
+        return self._pot_region
+
+    @property
+    def community_cards_region(self) -> Region:
+        """Region containing the community cards."""
+        return self._community_cards_region
+
+    @property
+    def hero_cards_region(self) -> Region:
+        """Region containing the hero's hole cards."""
+        return self._hero_cards_region
+
+    @property
+    def action_buttons_region(self) -> Region:
+        """Region containing action buttons when visible."""
+        return self._action_buttons_region
+
+    @property
+    def dealer_button_search_region(self) -> Region:
+        """Region to search for the dealer button."""
+        return self._dealer_button_search_region
+
+    @property
+    def balance_region(self) -> Region:
+        """Region containing the player's total balance."""
+        return self._balance_region
+
+    def get_player_region(self, position: PlayerPosition) -> PlayerRegions:
+        """Get the regions for a specific player position."""
+        return self._player_regions[position]
+
+    def get_all_player_regions(self) -> dict[PlayerPosition, PlayerRegions]:
+        """Get all player regions."""
+        return self._player_regions.copy()
+
+    def extract_pot(self, frame: np.ndarray) -> np.ndarray:
+        """Extract the pot display region from a frame."""
+        return self._pot_region.extract(frame)
+
+    def extract_community_cards(self, frame: np.ndarray) -> np.ndarray:
+        """Extract the community cards region from a frame."""
+        return self._community_cards_region.extract(frame)
+
+    def extract_hero_cards(self, frame: np.ndarray) -> np.ndarray:
+        """Extract the hero's hole cards region from a frame."""
+        return self._hero_cards_region.extract(frame)
+
+    def extract_player_chips(self, frame: np.ndarray, position: PlayerPosition) -> np.ndarray:
+        """Extract the chip count region for a player."""
+        return self._player_regions[position].name_chip_box.extract(frame)
+
+    def draw_regions(self, frame: np.ndarray, include_players: bool = True) -> np.ndarray:
+        """
+        Draw all regions on a frame for debugging/visualization.
+
+        Args:
+            frame: The frame to draw on.
+            include_players: Whether to include player regions.
+
+        Returns:
+            Frame with regions drawn.
+        """
+        output = frame.copy()
+
+        # Colors for different region types
+        POT_COLOR = (0, 255, 0)       # Green
+        CARDS_COLOR = (255, 0, 0)     # Blue
+        PLAYER_COLOR = (0, 255, 255)  # Yellow
+        ACTION_COLOR = (255, 0, 255)  # Magenta
+
+        # Draw main regions
+        self._draw_region(output, self._pot_region, POT_COLOR, "POT")
+        self._draw_region(output, self._community_cards_region, CARDS_COLOR, "COMMUNITY")
+        self._draw_region(output, self._hero_cards_region, CARDS_COLOR, "HERO CARDS")
+        self._draw_region(output, self._action_buttons_region, ACTION_COLOR, "ACTIONS")
+
+        # Draw player regions
+        if include_players:
+            for pos, player in self._player_regions.items():
+                label = pos.name
+                self._draw_region(output, player.name_chip_box, PLAYER_COLOR, label)
+
+        return output
+
+    def _draw_region(
+        self,
+        frame: np.ndarray,
+        region: Region,
+        color: Tuple[int, int, int],
+        label: str
+    ) -> None:
+        """Draw a single region with label."""
+        cv2.rectangle(frame, (region.x, region.y), (region.x2, region.y2), color, 2)
+        cv2.putText(
+            frame, label, (region.x, region.y - 5),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1
+        )
+
+
+def detect_table_regions(frame: np.ndarray) -> TableRegionDetector:
+    """
+    Create a TableRegionDetector for the given frame.
+
+    Args:
+        frame: A video frame from Governor of Poker.
+
+    Returns:
+        TableRegionDetector configured for the frame's dimensions.
+    """
+    height, width = frame.shape[:2]
+    return TableRegionDetector(width, height)
