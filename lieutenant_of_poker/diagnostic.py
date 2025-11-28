@@ -23,7 +23,8 @@ class DiagnosticStep:
     name: str
     description: str
     images: List[tuple[str, np.ndarray]] = field(default_factory=list)  # (label, image)
-    ocr_result: Optional[str] = None
+    ocr_result: Optional[str] = None  # For OCR-based detection (pot, chips)
+    match_info: Optional[str] = None  # For library-based card matching
     parsed_result: Optional[Any] = None
     success: bool = True
     error: Optional[str] = None
@@ -205,10 +206,10 @@ class DiagnosticExtractor:
         self.report.steps.append(step)
 
     def _extract_community_cards(self, frame: np.ndarray, region_detector) -> None:
-        """Extract community cards with diagnostics using fixed slots."""
+        """Extract community cards with diagnostics using fixed slots and library matching."""
         step = DiagnosticStep(
             name="Community Cards Detection",
-            description="Detecting cards on the board using 5 fixed slots",
+            description="Detecting cards on the board using 5 fixed slots + library matching",
         )
 
         try:
@@ -219,7 +220,10 @@ class DiagnosticExtractor:
             # Extract each slot
             card_slots = region_detector.extract_community_card_slots(frame)
             from .card_detector import CardDetector
-            detector = CardDetector()
+            from .card_matcher import get_card_matcher
+
+            detector = CardDetector(use_library=False)  # For empty slot check only
+            matcher = get_card_matcher()
 
             cards = []
             for i, slot_img in enumerate(card_slots):
@@ -229,29 +233,48 @@ class DiagnosticExtractor:
                 )
                 substep.images.append((f"Slot {i+1}", slot_img))
 
-                card = detector.detect_card(slot_img)
+                # First check if slot is empty
+                if detector.is_empty_slot(slot_img):
+                    substep.match_info = "Empty slot (matches table background)"
+                    substep.parsed_result = "(empty slot)"
+                    substep.success = True  # Empty is a valid state
+                    step.substeps.append(substep)
+                    continue
+
+                # Try library matching
+                card = matcher.match_card(slot_img, slot_index=i)
                 if card:
+                    # Check if it was a library match or Claude identification
+                    normalized = matcher._normalize_image(slot_img)
+                    best_score = float("inf")
+                    for ref_images in matcher._library.values():
+                        for ref_img in ref_images:
+                            score = matcher._compare_images(normalized, ref_img)
+                            if score < best_score:
+                                best_score = score
+
+                    if best_score < matcher.MATCH_THRESHOLD:
+                        substep.match_info = f"Library match (score: {best_score:.4f})"
+                    else:
+                        substep.match_info = "Identified by Claude Code (added to library)"
+
                     substep.parsed_result = str(card)
                     substep.success = True
                     cards.append(card)
                 else:
-                    # Show preprocessing for failed detection
-                    scaled = cv2.resize(slot_img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-                    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
-                    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-                    substep.images.append(("Threshold", thresh))
-
-                    from .fast_ocr import ocr_card_rank
-                    text = ocr_card_rank(thresh)
-                    substep.ocr_result = text if text else "(empty)"
+                    substep.match_info = "No match found, Claude Code could not identify"
                     substep.parsed_result = "(no card detected)"
                     substep.success = False
 
                 step.substeps.append(substep)
 
             step.parsed_result = [str(c) for c in cards] if cards else []
-            step.success = len(cards) > 0
+            step.success = True  # Success even with 0 cards (preflop)
             step.description += f" - Found {len(cards)} cards"
+
+            # Show library stats
+            stats = matcher.get_library_stats()
+            step.description += f" (library has {stats['unique_cards']} unique cards)"
 
         except Exception as e:
             step.error = str(e)
@@ -260,10 +283,10 @@ class DiagnosticExtractor:
         self.report.steps.append(step)
 
     def _extract_hero_cards(self, frame: np.ndarray, region_detector) -> None:
-        """Extract hero cards with diagnostics using fixed slots."""
+        """Extract hero cards with diagnostics using fixed slots and library matching."""
         step = DiagnosticStep(
             name="Hero Cards Detection",
-            description="Detecting hero's hole cards using 2 fixed slots",
+            description="Detecting hero's hole cards using 2 fixed slots + library matching",
         )
 
         try:
@@ -274,7 +297,10 @@ class DiagnosticExtractor:
             # Extract each slot
             hero_slots = region_detector.extract_hero_card_slots(frame)
             from .card_detector import CardDetector
-            detector = CardDetector()
+            from .card_matcher import get_card_matcher
+
+            detector = CardDetector(use_library=False)  # For empty slot check only
+            matcher = get_card_matcher()
 
             cards = []
             for i, slot_img in enumerate(hero_slots):
@@ -284,28 +310,45 @@ class DiagnosticExtractor:
                 )
                 substep.images.append((f"Card {i+1}", slot_img))
 
-                card = detector.detect_card(slot_img)
+                # First check if slot is empty
+                if detector.is_empty_slot(slot_img):
+                    substep.match_info = "Empty slot (matches table background)"
+                    substep.parsed_result = "(empty slot)"
+                    substep.success = True
+                    step.substeps.append(substep)
+                    continue
+
+                # Try library matching (use slot indices 5+ for hero cards)
+                card = matcher.match_card(slot_img, slot_index=5 + i)
                 if card:
+                    # Check if it was a library match or Claude identification
+                    normalized = matcher._normalize_image(slot_img)
+                    best_score = float("inf")
+                    for ref_images in matcher._library.values():
+                        for ref_img in ref_images:
+                            score = matcher._compare_images(normalized, ref_img)
+                            if score < best_score:
+                                best_score = score
+
+                    if best_score < matcher.MATCH_THRESHOLD:
+                        substep.match_info = f"Library match (score: {best_score:.4f})"
+                    else:
+                        substep.match_info = "Identified by Claude Code (added to library)"
+
                     substep.parsed_result = str(card)
                     substep.success = True
                     cards.append(card)
                 else:
-                    # Show preprocessing for failed detection
-                    scaled = cv2.resize(slot_img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-                    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
-                    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-                    substep.images.append(("Threshold", thresh))
-
-                    from .fast_ocr import ocr_card_rank
-                    text = ocr_card_rank(thresh)
-                    substep.ocr_result = text if text else "(empty)"
+                    substep.match_info = "No match found, Claude Code could not identify"
                     substep.parsed_result = "(no card detected)"
                     substep.success = False
 
                 step.substeps.append(substep)
 
             step.parsed_result = [str(c) for c in cards] if cards else []
-            step.success = len(cards) > 0
+            step.success = len(cards) > 0 or all(
+                s.parsed_result == "(empty slot)" for s in step.substeps
+            )
             step.description += f" - Found {len(cards)} cards"
 
         except Exception as e:
@@ -382,70 +425,6 @@ class DiagnosticExtractor:
                 step.success = False
 
             self.report.steps.append(step)
-
-    def _detect_cards_diagnostic(self, region: np.ndarray, parent_step: DiagnosticStep) -> list:
-        """Detect cards with diagnostic substeps."""
-        from .card_detector import CardDetector, Card
-
-        detector = CardDetector()
-        cards = []
-
-        # Find card rectangles
-        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-        parent_step.images.append(("Card Threshold", thresh))
-
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        h, w = region.shape[:2]
-        min_area = (h * w) * 0.01
-        min_height = h * 0.3
-
-        rects = []
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            x, y, cw, ch = cv2.boundingRect(contour)
-            if area > min_area and ch > min_height:
-                rects.append((x, y, cw, ch))
-        rects.sort(key=lambda r: r[0])
-
-        # Draw detected rectangles
-        debug_img = region.copy()
-        for i, (x, y, cw, ch) in enumerate(rects):
-            cv2.rectangle(debug_img, (x, y), (x+cw, y+ch), (0, 255, 0), 2)
-            cv2.putText(debug_img, str(i+1), (x+5, y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        parent_step.images.append((f"Detected {len(rects)} card regions", debug_img))
-
-        # Process each card
-        for i, (x, y, cw, ch) in enumerate(rects):
-            card_img = region[y:y+ch, x:x+cw]
-            substep = DiagnosticStep(
-                name=f"Card {i+1}",
-                description=f"Position ({x}, {y}), size {cw}x{ch}",
-            )
-            substep.images.append(("Card Image", card_img))
-
-            # Detect rank
-            card = detector.detect_card(card_img)
-            if card:
-                substep.parsed_result = str(card)
-                substep.success = True
-                cards.append(card)
-            else:
-                # Show what we tried
-                scaled = cv2.resize(card_img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-                gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
-                _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-                substep.images.append(("Rank threshold", thresh))
-
-                from .fast_ocr import ocr_card_rank
-                text = ocr_card_rank(thresh)
-                substep.ocr_result = text if text else "(empty)"
-                substep.success = False
-
-            parent_step.substeps.append(substep)
-
-        return cards
 
     def _preprocess_for_ocr(self, region: np.ndarray, step: DiagnosticStep, name: str) -> np.ndarray:
         """Preprocess region for OCR and capture intermediate images."""
@@ -682,9 +661,13 @@ def _render_step(step: DiagnosticStep, level: int = 0) -> str:
                 html += '</div>'
         html += '</div>'
 
-    # OCR result
+    # OCR result (for pot/chips)
     if step.ocr_result is not None:
         html += f'<div class="ocr-result">OCR Result: <code>{step.ocr_result}</code></div>'
+
+    # Match info (for card library matching)
+    if step.match_info is not None:
+        html += f'<div class="ocr-result">Match: <code>{step.match_info}</code></div>'
 
     # Parsed result
     if step.parsed_result is not None:
