@@ -17,6 +17,16 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from rich.progress import (
+    Progress,
+    BarColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    MofNCompleteColumn,
+    SpinnerColumn,
+)
+
 from lieutenant_of_poker import __version__
 from lieutenant_of_poker.frame_extractor import VideoFrameExtractor
 from lieutenant_of_poker.game_state import GameStateExtractor, GameState
@@ -179,23 +189,40 @@ def cmd_extract_frames(args):
 
     with VideoFrameExtractor(args.video) as video:
         start_ms = args.start * 1000
-        end_ms = args.end * 1000 if args.end else None
+        end_ms = args.end * 1000 if args.end else video.duration_seconds * 1000
+
+        # Calculate total frames for progress bar
+        total_frames = int((end_ms - start_ms) / args.interval) + 1
 
         print(f"Extracting frames from {args.video}", file=sys.stderr)
         print(f"  Duration: {video.duration_seconds:.1f}s", file=sys.stderr)
         print(f"  Interval: {args.interval}ms", file=sys.stderr)
+        print(f"  Expected frames: {total_frames}", file=sys.stderr)
         print(f"  Output: {output_dir}/", file=sys.stderr)
 
         count = 0
-        for frame_info in video.iterate_at_interval(args.interval, start_ms, end_ms):
-            timestamp_s = frame_info.timestamp_ms / 1000
-            filename = f"frame_{timestamp_s:.2f}s.{args.format}"
-            filepath = output_dir / filename
-            cv2.imwrite(str(filepath), frame_info.image)
-            count += 1
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TextColumn("ETA:"),
+            TimeRemainingColumn(),
+            console=None,
+            transient=False,
+            disable=not sys.stderr.isatty(),
+        ) as progress:
+            task = progress.add_task("Extracting frames", total=total_frames)
 
-            if count % 10 == 0:
-                print(f"  Extracted {count} frames...", file=sys.stderr)
+            for frame_info in video.iterate_at_interval(args.interval, start_ms, end_ms if args.end else None):
+                timestamp_s = frame_info.timestamp_ms / 1000
+                filename = f"frame_{timestamp_s:.2f}s.{args.format}"
+                filepath = output_dir / filename
+                cv2.imwrite(str(filepath), frame_info.image)
+                count += 1
+                progress.update(task, advance=1)
 
         print(f"Done! Extracted {count} frames to {output_dir}/", file=sys.stderr)
 
@@ -206,31 +233,46 @@ def cmd_analyze(args):
 
     with VideoFrameExtractor(args.video) as video:
         start_ms = args.start * 1000
-        end_ms = args.end * 1000 if args.end else None
+        end_ms = args.end * 1000 if args.end else video.duration_seconds * 1000
+
+        # Calculate total frames for progress bar
+        total_frames = int((end_ms - start_ms) / args.interval) + 1
 
         if args.verbose:
             print(f"Analyzing {args.video}", file=sys.stderr)
             print(f"  Duration: {video.duration_seconds:.1f}s", file=sys.stderr)
+            print(f"  Expected frames: {total_frames}", file=sys.stderr)
 
         results = []
-        count = 0
 
-        for frame_info in video.iterate_at_interval(args.interval, start_ms, end_ms):
-            state = extractor.extract(
-                frame_info.image,
-                frame_number=frame_info.frame_number,
-                timestamp_ms=frame_info.timestamp_ms
-            )
+        # Use rich progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TextColumn("ETA:"),
+            TimeRemainingColumn(),
+            console=None,
+            transient=False,
+            disable=not sys.stderr.isatty(),  # Disable if not a terminal
+        ) as progress:
+            task = progress.add_task("Analyzing frames", total=total_frames)
 
-            result = game_state_to_dict(state)
-            results.append(result)
-            count += 1
+            for frame_info in video.iterate_at_interval(args.interval, start_ms, end_ms if args.end else None):
+                state = extractor.extract(
+                    frame_info.image,
+                    frame_number=frame_info.frame_number,
+                    timestamp_ms=frame_info.timestamp_ms
+                )
 
-            if args.verbose and count % 10 == 0:
-                print(f"  Analyzed {count} frames...", file=sys.stderr)
+                result = game_state_to_dict(state)
+                results.append(result)
+                progress.update(task, advance=1)
 
-        if args.verbose:
-            print(f"Done! Analyzed {count} frames.", file=sys.stderr)
+        print(f"Done! Analyzed {len(results)} frames.", file=sys.stderr)
 
         # Output results
         output = json.dumps(results, indent=2)
@@ -250,17 +292,36 @@ def cmd_export(args):
     with VideoFrameExtractor(args.video) as video:
         print(f"Analyzing {args.video} for hand export...", file=sys.stderr)
 
-        # Collect all game states
-        states = []
-        for frame_info in video.iterate_at_interval(args.interval):
-            state = extractor.extract(
-                frame_info.image,
-                frame_number=frame_info.frame_number,
-                timestamp_ms=frame_info.timestamp_ms
-            )
-            states.append(state)
+        # Calculate total frames for progress bar
+        total_frames = int((video.duration_seconds * 1000) / args.interval) + 1
 
-        print(f"  Collected {len(states)} game states", file=sys.stderr)
+        # Collect all game states with progress bar
+        states = []
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TextColumn("ETA:"),
+            TimeRemainingColumn(),
+            console=None,
+            transient=False,
+            disable=not sys.stderr.isatty(),
+        ) as progress:
+            task = progress.add_task("Extracting states", total=total_frames)
+
+            for frame_info in video.iterate_at_interval(args.interval):
+                state = extractor.extract(
+                    frame_info.image,
+                    frame_number=frame_info.frame_number,
+                    timestamp_ms=frame_info.timestamp_ms
+                )
+                states.append(state)
+                progress.update(task, advance=1)
+
+        print(f"Collected {len(states)} game states", file=sys.stderr)
 
         # For now, create a single hand from all states
         # (A more sophisticated implementation would detect hand boundaries)
