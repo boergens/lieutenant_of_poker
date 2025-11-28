@@ -205,20 +205,53 @@ class DiagnosticExtractor:
         self.report.steps.append(step)
 
     def _extract_community_cards(self, frame: np.ndarray, region_detector) -> None:
-        """Extract community cards with diagnostics."""
+        """Extract community cards with diagnostics using fixed slots."""
         step = DiagnosticStep(
             name="Community Cards Detection",
-            description="Detecting cards on the board",
+            description="Detecting cards on the board using 5 fixed slots",
         )
 
         try:
+            # Show the overall region
             comm_region = region_detector.extract_community_cards(frame)
             step.images.append(("Community Cards Region", comm_region))
 
-            # Find card rectangles
-            cards = self._detect_cards_diagnostic(comm_region, step)
+            # Extract each slot
+            card_slots = region_detector.extract_community_card_slots(frame)
+            from .card_detector import CardDetector
+            detector = CardDetector()
+
+            cards = []
+            for i, slot_img in enumerate(card_slots):
+                substep = DiagnosticStep(
+                    name=f"Slot {i+1}",
+                    description=f"Card slot {i+1} of 5",
+                )
+                substep.images.append((f"Slot {i+1}", slot_img))
+
+                card = detector.detect_card(slot_img)
+                if card:
+                    substep.parsed_result = str(card)
+                    substep.success = True
+                    cards.append(card)
+                else:
+                    # Show preprocessing for failed detection
+                    scaled = cv2.resize(slot_img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+                    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+                    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+                    substep.images.append(("Threshold", thresh))
+
+                    from .fast_ocr import ocr_card_rank
+                    text = ocr_card_rank(thresh)
+                    substep.ocr_result = text if text else "(empty)"
+                    substep.parsed_result = "(no card detected)"
+                    substep.success = False
+
+                step.substeps.append(substep)
+
             step.parsed_result = [str(c) for c in cards] if cards else []
             step.success = len(cards) > 0
+            step.description += f" - Found {len(cards)} cards"
 
         except Exception as e:
             step.error = str(e)
@@ -227,19 +260,53 @@ class DiagnosticExtractor:
         self.report.steps.append(step)
 
     def _extract_hero_cards(self, frame: np.ndarray, region_detector) -> None:
-        """Extract hero cards with diagnostics."""
+        """Extract hero cards with diagnostics using fixed slots."""
         step = DiagnosticStep(
             name="Hero Cards Detection",
-            description="Detecting hero's hole cards",
+            description="Detecting hero's hole cards using 2 fixed slots",
         )
 
         try:
+            # Show the overall region
             hero_region = region_detector.extract_hero_cards(frame)
             step.images.append(("Hero Cards Region", hero_region))
 
-            cards = self._detect_cards_diagnostic(hero_region, step)
+            # Extract each slot
+            hero_slots = region_detector.extract_hero_card_slots(frame)
+            from .card_detector import CardDetector
+            detector = CardDetector()
+
+            cards = []
+            for i, slot_img in enumerate(hero_slots):
+                substep = DiagnosticStep(
+                    name=f"Card {i+1}",
+                    description=f"Hero card {i+1} of 2",
+                )
+                substep.images.append((f"Card {i+1}", slot_img))
+
+                card = detector.detect_card(slot_img)
+                if card:
+                    substep.parsed_result = str(card)
+                    substep.success = True
+                    cards.append(card)
+                else:
+                    # Show preprocessing for failed detection
+                    scaled = cv2.resize(slot_img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+                    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+                    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+                    substep.images.append(("Threshold", thresh))
+
+                    from .fast_ocr import ocr_card_rank
+                    text = ocr_card_rank(thresh)
+                    substep.ocr_result = text if text else "(empty)"
+                    substep.parsed_result = "(no card detected)"
+                    substep.success = False
+
+                step.substeps.append(substep)
+
             step.parsed_result = [str(c) for c in cards] if cards else []
             step.success = len(cards) > 0
+            step.description += f" - Found {len(cards)} cards"
 
         except Exception as e:
             step.error = str(e)

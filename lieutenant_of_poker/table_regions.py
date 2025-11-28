@@ -105,13 +105,45 @@ class TableRegionDetector:
     def _define_regions(self) -> None:
         """Define all table regions at base resolution, then scale."""
         # Pot display region (the "1,120" text in center-right of table)
-        self._pot_region = self._scaled(Region(x=760, y=355, width=140, height=55))
+        self._pot_region = self._scaled(Region(x=760, y=355, width=210, height=66))
 
         # Community cards region (Q♥ 3♥ 3♦ area - below pot)
-        self._community_cards_region = self._scaled(Region(x=480, y=350, width=400, height=140))
+        self._community_cards_region = self._scaled(Region(x=560, y=420, width=430, height=140))
+
+        # Individual community card slots (5 fixed positions)
+        card_width = 80
+        card_spacing = 6
+        card_start_x = 560
+        card_y = 420
+        card_height = 140
+        self._community_card_slots = [
+            self._scaled(Region(
+                x=card_start_x + i * (card_width + card_spacing),
+                y=card_y,
+                width=card_width,
+                height=card_height
+            ))
+            for i in range(5)
+        ]
 
         # Hero's hole cards (K♠ 5♠ at bottom center)
         self._hero_cards_region = self._scaled(Region(x=690, y=600, width=210, height=110))
+
+        # Individual hero card slots (2 fixed positions)
+        hero_card_width = 100
+        hero_card_spacing = 10
+        hero_card_start_x = 690
+        hero_card_y = 600
+        hero_card_height = 110
+        self._hero_card_slots = [
+            self._scaled(Region(
+                x=hero_card_start_x + i * (hero_card_width + hero_card_spacing),
+                y=hero_card_y,
+                width=hero_card_width,
+                height=hero_card_height
+            ))
+            for i in range(2)
+        ]
 
         # Action buttons region (CHECK/FOLD, CALL ANY, etc. at bottom)
         self._action_buttons_region = self._scaled(Region(x=380, y=780, width=550, height=50))
@@ -177,9 +209,19 @@ class TableRegionDetector:
         return self._community_cards_region
 
     @property
+    def community_card_slots(self) -> list[Region]:
+        """List of 5 fixed regions for individual community cards."""
+        return self._community_card_slots
+
+    @property
     def hero_cards_region(self) -> Region:
         """Region containing the hero's hole cards."""
         return self._hero_cards_region
+
+    @property
+    def hero_card_slots(self) -> list[Region]:
+        """List of 2 fixed regions for hero's hole cards."""
+        return self._hero_card_slots
 
     @property
     def action_buttons_region(self) -> Region:
@@ -212,9 +254,17 @@ class TableRegionDetector:
         """Extract the community cards region from a frame."""
         return self._community_cards_region.extract(frame)
 
+    def extract_community_card_slots(self, frame: np.ndarray) -> list[np.ndarray]:
+        """Extract the 5 individual community card slot images."""
+        return [slot.extract(frame) for slot in self._community_card_slots]
+
     def extract_hero_cards(self, frame: np.ndarray) -> np.ndarray:
         """Extract the hero's hole cards region from a frame."""
         return self._hero_cards_region.extract(frame)
+
+    def extract_hero_card_slots(self, frame: np.ndarray) -> list[np.ndarray]:
+        """Extract the 2 individual hero card slot images."""
+        return [slot.extract(frame) for slot in self._hero_card_slots]
 
     def extract_player_chips(self, frame: np.ndarray, position: PlayerPosition) -> np.ndarray:
         """Extract the chip count region for a player."""

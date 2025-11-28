@@ -177,17 +177,27 @@ class GameStateExtractor:
             timestamp_ms=timestamp_ms
         )
 
-        # Extract community cards
+        # Extract community cards using fixed slots
         try:
-            comm_region = region_detector.extract_community_cards(frame)
-            state.community_cards = self.card_detector.detect_cards(comm_region)
+            card_slots = region_detector.extract_community_card_slots(frame)
+            cards = []
+            for slot_img in card_slots:
+                card = self.card_detector.detect_card(slot_img)
+                if card:
+                    cards.append(card)
+            state.community_cards = cards
         except Exception:
             pass
 
-        # Extract hero cards
+        # Extract hero cards using fixed slots
         try:
-            hero_region = region_detector.extract_hero_cards(frame)
-            state.hero_cards = self.card_detector.detect_cards(hero_region)
+            hero_slots = region_detector.extract_hero_card_slots(frame)
+            cards = []
+            for slot_img in hero_slots:
+                card = self.card_detector.detect_card(slot_img)
+                if card:
+                    cards.append(card)
+            state.hero_cards = cards
         except Exception:
             pass
 
