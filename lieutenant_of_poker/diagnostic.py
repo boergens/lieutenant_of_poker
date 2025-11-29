@@ -284,73 +284,99 @@ class DiagnosticExtractor:
         self.report.steps.append(step)
 
     def _extract_hero_cards(self, frame: np.ndarray, region_detector) -> None:
-        """Extract hero cards with diagnostics using fixed slots and library matching."""
+        """Extract hero cards with diagnostics using calibrated subregions."""
         step = DiagnosticStep(
             name="Hero Cards Detection",
-            description="Detecting hero's hole cards using 2 fixed slots + library matching",
+            description="Detecting hero's hole cards using calibrated subregions",
         )
 
         try:
+            from .card_detector import Card
+            from .card_matcher import (
+                get_card_matcher, HERO_LEFT_LIBRARY, HERO_RIGHT_LIBRARY,
+                HERO_LEFT_RANK_REGION, HERO_LEFT_SUIT_REGION,
+                HERO_RIGHT_RANK_REGION, HERO_RIGHT_SUIT_REGION,
+                _extract_region, _scale_hero_region,
+            )
+
             # Show the overall region
             hero_region = region_detector.extract_hero_cards(frame)
             step.images.append(("Hero Cards Region", hero_region))
 
-            # Extract each slot
-            hero_slots = region_detector.extract_hero_card_slots(frame)
-            from .card_detector import CardDetector
-            from .card_matcher import get_card_matcher
+            # Get actual hero region size for scaling
+            h, w = hero_region.shape[:2]
+            hero_size = (w, h)
 
-            detector = CardDetector(use_library=False)  # For empty slot check only
-            matcher = get_card_matcher()
+            # Scale regions to match actual hero region size
+            left_rank_region = _scale_hero_region(HERO_LEFT_RANK_REGION, hero_size)
+            left_suit_region = _scale_hero_region(HERO_LEFT_SUIT_REGION, hero_size)
+            right_rank_region = _scale_hero_region(HERO_RIGHT_RANK_REGION, hero_size)
+            right_suit_region = _scale_hero_region(HERO_RIGHT_SUIT_REGION, hero_size)
 
             cards = []
-            for i, slot_img in enumerate(hero_slots):
-                substep = DiagnosticStep(
-                    name=f"Card {i+1}",
-                    description=f"Hero card {i+1} of 2",
-                )
-                substep.images.append((f"Card {i+1}", slot_img))
 
-                # First check if slot is empty
-                if detector.is_empty_slot(slot_img):
-                    substep.match_info = "Empty slot (matches table background)"
-                    substep.parsed_result = "(empty slot)"
-                    substep.success = True
-                    step.substeps.append(substep)
-                    continue
+            # LEFT CARD
+            left_substep = DiagnosticStep(
+                name="Left Card (hero_left)",
+                description="Hero left card using hero_left library",
+            )
+            left_matcher = get_card_matcher(HERO_LEFT_LIBRARY)
 
-                # Extract and show rank/suit regions
-                rank_region = matcher.extract_rank_region(slot_img)
-                suit_region = matcher.extract_suit_region(slot_img)
-                substep.images.append(("Rank Region", rank_region))
-                substep.images.append(("Suit Region", suit_region))
+            left_rank_img = _extract_region(hero_region, left_rank_region)
+            left_suit_img = _extract_region(hero_region, left_suit_region)
+            left_substep.images.append(("Left Rank Region", left_rank_img))
+            left_substep.images.append(("Left Suit Region", left_suit_img))
 
-                # Match rank
-                rank = matcher.rank_matcher.match(rank_region)
-                rank_info = f"Rank: {rank.value if rank else 'not found'}"
+            left_rank = left_matcher.rank_matcher.match(left_rank_img)
+            left_suit = left_matcher.suit_matcher.match(left_suit_img)
 
-                # Match suit
-                suit = matcher.suit_matcher.match(suit_region)
-                suit_info = f"Suit: {suit.value if suit else 'not found'}"
+            left_rank_info = f"Rank: {left_rank.value if left_rank else 'not found'}"
+            left_suit_info = f"Suit: {left_suit.value if left_suit else 'not found'}"
+            left_substep.match_info = f"{left_rank_info}, {left_suit_info}"
 
-                substep.match_info = f"{rank_info}, {suit_info}"
+            if left_rank and left_suit:
+                left_card = Card(rank=left_rank, suit=left_suit)
+                left_substep.parsed_result = str(left_card)
+                left_substep.success = True
+                cards.append(left_card)
+            else:
+                left_substep.parsed_result = "(incomplete detection)"
+                left_substep.success = False
 
-                if rank and suit:
-                    from .card_detector import Card
-                    card = Card(rank=rank, suit=suit)
-                    substep.parsed_result = str(card)
-                    substep.success = True
-                    cards.append(card)
-                else:
-                    substep.parsed_result = "(incomplete detection)"
-                    substep.success = False
+            step.substeps.append(left_substep)
 
-                step.substeps.append(substep)
+            # RIGHT CARD
+            right_substep = DiagnosticStep(
+                name="Right Card (hero_right)",
+                description="Hero right card using hero_right library",
+            )
+            right_matcher = get_card_matcher(HERO_RIGHT_LIBRARY)
+
+            right_rank_img = _extract_region(hero_region, right_rank_region)
+            right_suit_img = _extract_region(hero_region, right_suit_region)
+            right_substep.images.append(("Right Rank Region", right_rank_img))
+            right_substep.images.append(("Right Suit Region", right_suit_img))
+
+            right_rank = right_matcher.rank_matcher.match(right_rank_img)
+            right_suit = right_matcher.suit_matcher.match(right_suit_img)
+
+            right_rank_info = f"Rank: {right_rank.value if right_rank else 'not found'}"
+            right_suit_info = f"Suit: {right_suit.value if right_suit else 'not found'}"
+            right_substep.match_info = f"{right_rank_info}, {right_suit_info}"
+
+            if right_rank and right_suit:
+                right_card = Card(rank=right_rank, suit=right_suit)
+                right_substep.parsed_result = str(right_card)
+                right_substep.success = True
+                cards.append(right_card)
+            else:
+                right_substep.parsed_result = "(incomplete detection)"
+                right_substep.success = False
+
+            step.substeps.append(right_substep)
 
             step.parsed_result = [str(c) for c in cards] if cards else []
-            step.success = len(cards) > 0 or all(
-                s.parsed_result == "(empty slot)" for s in step.substeps
-            )
+            step.success = len(cards) > 0
             step.description += f" - Found {len(cards)} cards"
 
         except Exception as e:

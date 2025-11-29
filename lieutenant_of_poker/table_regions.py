@@ -126,14 +126,14 @@ class TableRegionDetector:
             for i in range(5)
         ]
 
-        # Hero's hole cards (K♠ 5♠ at bottom center)
-        self._hero_cards_region = self._scaled(Region(x=690, y=600, width=210, height=110))
+        # Hero's hole cards (shifted so previous center is now top-left)
+        self._hero_cards_region = self._scaled(Region(x=740, y=655, width=210, height=110))
 
         # Individual hero card slots (2 fixed positions)
         hero_card_width = 100
         hero_card_spacing = 10
-        hero_card_start_x = 690
-        hero_card_y = 600
+        hero_card_start_x = 740  # Shifted right by 50 (half width)
+        hero_card_y = 655        # Shifted down by 55 (half height)
         hero_card_height = 110
         self._hero_card_slots = [
             self._scaled(Region(

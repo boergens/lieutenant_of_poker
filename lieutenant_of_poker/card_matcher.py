@@ -34,9 +34,27 @@ def get_library_dirs(library_name: str) -> tuple[Path, Path]:
 RANK_SIZE = (40, 40)
 SUIT_SIZE = (40, 40)
 
-# Crop regions within a card slot (at ~103x146 slot size)
+# Crop regions within a community card slot (at ~103x146 slot size)
 RANK_REGION = (10, 15, 55, 55)  # x, y, w, h
 SUIT_REGION = (30, 75, 60, 55)  # x, y, w, h
+
+# Hero card subregions (relative to hero_cards_region)
+# Calibrated at 420x220 hero region size - will be scaled proportionally
+HERO_CALIBRATION_SIZE = (420, 220)  # width, height at calibration time
+HERO_LEFT_RANK_REGION = (116, 21, 85, 92)   # x, y, w, h
+HERO_LEFT_SUIT_REGION = (168, 125, 92, 71)  # x, y, w, h
+HERO_RIGHT_RANK_REGION = (280, 15, 63, 87)  # x, y, w, h
+HERO_RIGHT_SUIT_REGION = (302, 110, 86, 83) # x, y, w, h
+
+
+def _scale_hero_region(region: tuple[int, int, int, int], hero_size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Scale a hero subregion to match actual hero region size."""
+    cal_w, cal_h = HERO_CALIBRATION_SIZE
+    actual_w, actual_h = hero_size
+    scale_x = actual_w / cal_w
+    scale_y = actual_h / cal_h
+    x, y, w, h = region
+    return (int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y))
 
 
 class RankMatcher:
@@ -365,3 +383,58 @@ def match_card(card_image: np.ndarray, slot_index: int = 0) -> Optional[Card]:
     else:
         library_name = COMMUNITY_LIBRARY
     return get_card_matcher(library_name).match_card(card_image, slot_index)
+
+
+def _extract_region(image: np.ndarray, region: tuple[int, int, int, int]) -> np.ndarray:
+    """Extract a subregion from an image."""
+    x, y, w, h = region
+    return image[y:y+h, x:x+w]
+
+
+def match_hero_cards(hero_region: np.ndarray) -> list[Optional[Card]]:
+    """
+    Match both hero cards from the full hero_cards_region.
+
+    Args:
+        hero_region: The full hero cards region image (both cards visible).
+
+    Returns:
+        List of [left_card, right_card], each may be None if not detected.
+    """
+    results: list[Optional[Card]] = [None, None]
+
+    # Get actual hero region size for scaling
+    h, w = hero_region.shape[:2]
+    hero_size = (w, h)
+
+    # Scale regions to match actual hero region size
+    left_rank_region = _scale_hero_region(HERO_LEFT_RANK_REGION, hero_size)
+    left_suit_region = _scale_hero_region(HERO_LEFT_SUIT_REGION, hero_size)
+    right_rank_region = _scale_hero_region(HERO_RIGHT_RANK_REGION, hero_size)
+    right_suit_region = _scale_hero_region(HERO_RIGHT_SUIT_REGION, hero_size)
+
+    # Get matchers for hero cards
+    left_matcher = get_card_matcher(HERO_LEFT_LIBRARY)
+    right_matcher = get_card_matcher(HERO_RIGHT_LIBRARY)
+
+    # Extract and match LEFT card
+    left_rank_img = _extract_region(hero_region, left_rank_region)
+    left_suit_img = _extract_region(hero_region, left_suit_region)
+
+    left_rank = left_matcher.rank_matcher.match(left_rank_img)
+    left_suit = left_matcher.suit_matcher.match(left_suit_img)
+
+    if left_rank and left_suit:
+        results[0] = Card(rank=left_rank, suit=left_suit)
+
+    # Extract and match RIGHT card
+    right_rank_img = _extract_region(hero_region, right_rank_region)
+    right_suit_img = _extract_region(hero_region, right_suit_region)
+
+    right_rank = right_matcher.rank_matcher.match(right_rank_img)
+    right_suit = right_matcher.suit_matcher.match(right_suit_img)
+
+    if right_rank and right_suit:
+        results[1] = Card(rank=right_rank, suit=right_suit)
+
+    return results

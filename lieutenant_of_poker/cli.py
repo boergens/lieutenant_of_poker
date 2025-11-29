@@ -149,6 +149,24 @@ def main():
         help="Display scale factor (auto-calculated if not specified)"
     )
 
+    # calibrate-hero command
+    calibrate_hero_parser = subparsers.add_parser(
+        "calibrate-hero", help="GUI tool for calibrating hero card subregions (rank/suit)"
+    )
+    calibrate_hero_parser.add_argument("video", help="Path to video file")
+    calibrate_hero_parser.add_argument(
+        "--frame", "-f", type=int, default=None,
+        help="Frame number to use"
+    )
+    calibrate_hero_parser.add_argument(
+        "--timestamp", "-t", type=float, default=None,
+        help="Timestamp in seconds"
+    )
+    calibrate_hero_parser.add_argument(
+        "--scale", "-s", type=float, default=4.0,
+        help="Display scale factor (default: 4.0)"
+    )
+
     # monitor command
     monitor_parser = subparsers.add_parser(
         "monitor", help="Live monitor the game with mistake detection"
@@ -211,6 +229,8 @@ def main():
             cmd_diagnose(args)
         elif args.command == "calibrate":
             cmd_calibrate(args)
+        elif args.command == "calibrate-hero":
+            cmd_calibrate_hero(args)
         elif args.command == "monitor":
             cmd_monitor(args)
     except FileNotFoundError as e:
@@ -482,6 +502,38 @@ def cmd_calibrate(args):
         print("Press 'h' in the window for help\n", file=sys.stderr)
 
         tool = CalibrationTool(frame, scale=scale)
+        tool.run()
+
+
+def cmd_calibrate_hero(args):
+    """GUI tool for calibrating hero card subregions."""
+    from lieutenant_of_poker.calibrate_hero import HeroCardCalibrationTool
+    from lieutenant_of_poker.table_regions import detect_table_regions
+
+    with VideoFrameExtractor(args.video) as video:
+        print(f"Video: {args.video}", file=sys.stderr)
+        print(f"Resolution: {video.width}x{video.height}", file=sys.stderr)
+
+        if args.frame is not None:
+            frame_info = video.get_frame_at(args.frame)
+        elif args.timestamp is not None:
+            frame_info = video.get_frame_at_timestamp(args.timestamp * 1000)
+        else:
+            frame_info = video.get_frame_at(0)
+
+        if frame_info is None:
+            raise ValueError("Could not read frame")
+
+        frame = frame_info.image
+
+        # Extract the full hero cards region
+        region_detector = detect_table_regions(frame)
+        hero_region = region_detector.extract_hero_cards(frame)
+
+        print(f"Hero region size: {hero_region.shape[1]}x{hero_region.shape[0]}", file=sys.stderr)
+        print(f"\nStarting hero card calibration tool...", file=sys.stderr)
+
+        tool = HeroCardCalibrationTool(hero_region, scale=args.scale)
         tool.run()
 
 

@@ -189,16 +189,13 @@ class GameStateExtractor:
         except Exception:
             pass
 
-        # Extract hero cards using fixed slots
+        # Extract hero cards from full hero region using calibrated subregions
         try:
-            hero_slots = region_detector.extract_hero_card_slots(frame)
-            cards = []
-            for i, slot_img in enumerate(hero_slots):
-                # Use slot indices 5 and 6 for hero cards to distinguish from community
-                card = self.card_detector.detect_card(slot_img, slot_index=5 + i)
-                if card:
-                    cards.append(card)
-            state.hero_cards = cards
+            from .card_matcher import match_hero_cards
+            hero_region = region_detector.extract_hero_cards(frame)
+            hero_cards = match_hero_cards(hero_region)
+            # Filter out None results
+            state.hero_cards = [c for c in hero_cards if c is not None]
         except Exception:
             pass
 
