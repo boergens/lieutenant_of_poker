@@ -241,29 +241,30 @@ class DiagnosticExtractor:
                     step.substeps.append(substep)
                     continue
 
-                # Try library matching
-                card = matcher.match_card(slot_img, slot_index=i)
-                if card:
-                    # Check if it was a library match or Claude identification
-                    normalized = matcher._normalize_image(slot_img)
-                    best_score = float("inf")
-                    for ref_images in matcher._library.values():
-                        for ref_img in ref_images:
-                            score = matcher._compare_images(normalized, ref_img)
-                            if score < best_score:
-                                best_score = score
+                # Extract and show rank/suit regions
+                rank_region = matcher.extract_rank_region(slot_img)
+                suit_region = matcher.extract_suit_region(slot_img)
+                substep.images.append(("Rank Region", rank_region))
+                substep.images.append(("Suit Region", suit_region))
 
-                    if best_score < matcher.MATCH_THRESHOLD:
-                        substep.match_info = f"Library match (score: {best_score:.4f})"
-                    else:
-                        substep.match_info = "Identified by Claude Code (added to library)"
+                # Match rank
+                rank = matcher.rank_matcher.match(rank_region)
+                rank_info = f"Rank: {rank.value if rank else 'not found'}"
 
+                # Match suit
+                suit = matcher.suit_matcher.match(suit_region)
+                suit_info = f"Suit: {suit.value if suit else 'not found'}"
+
+                substep.match_info = f"{rank_info}, {suit_info}"
+
+                if rank and suit:
+                    from .card_detector import Card
+                    card = Card(rank=rank, suit=suit)
                     substep.parsed_result = str(card)
                     substep.success = True
                     cards.append(card)
                 else:
-                    substep.match_info = "No match found, Claude Code could not identify"
-                    substep.parsed_result = "(no card detected)"
+                    substep.parsed_result = "(incomplete detection)"
                     substep.success = False
 
                 step.substeps.append(substep)
@@ -274,7 +275,7 @@ class DiagnosticExtractor:
 
             # Show library stats
             stats = matcher.get_library_stats()
-            step.description += f" (library has {stats['unique_cards']} unique cards)"
+            step.description += f" (ranks: {stats['ranks']}/13, suits: {stats['suits']}/4)"
 
         except Exception as e:
             step.error = str(e)
@@ -318,29 +319,30 @@ class DiagnosticExtractor:
                     step.substeps.append(substep)
                     continue
 
-                # Try library matching (use slot indices 5+ for hero cards)
-                card = matcher.match_card(slot_img, slot_index=5 + i)
-                if card:
-                    # Check if it was a library match or Claude identification
-                    normalized = matcher._normalize_image(slot_img)
-                    best_score = float("inf")
-                    for ref_images in matcher._library.values():
-                        for ref_img in ref_images:
-                            score = matcher._compare_images(normalized, ref_img)
-                            if score < best_score:
-                                best_score = score
+                # Extract and show rank/suit regions
+                rank_region = matcher.extract_rank_region(slot_img)
+                suit_region = matcher.extract_suit_region(slot_img)
+                substep.images.append(("Rank Region", rank_region))
+                substep.images.append(("Suit Region", suit_region))
 
-                    if best_score < matcher.MATCH_THRESHOLD:
-                        substep.match_info = f"Library match (score: {best_score:.4f})"
-                    else:
-                        substep.match_info = "Identified by Claude Code (added to library)"
+                # Match rank
+                rank = matcher.rank_matcher.match(rank_region)
+                rank_info = f"Rank: {rank.value if rank else 'not found'}"
 
+                # Match suit
+                suit = matcher.suit_matcher.match(suit_region)
+                suit_info = f"Suit: {suit.value if suit else 'not found'}"
+
+                substep.match_info = f"{rank_info}, {suit_info}"
+
+                if rank and suit:
+                    from .card_detector import Card
+                    card = Card(rank=rank, suit=suit)
                     substep.parsed_result = str(card)
                     substep.success = True
                     cards.append(card)
                 else:
-                    substep.match_info = "No match found, Claude Code could not identify"
-                    substep.parsed_result = "(no card detected)"
+                    substep.parsed_result = "(incomplete detection)"
                     substep.success = False
 
                 step.substeps.append(substep)
