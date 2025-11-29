@@ -86,6 +86,17 @@ def main():
     analyze_parser.add_argument(
         "--verbose", "-V", action="store_true", help="Print progress to stderr"
     )
+    analyze_parser.add_argument(
+        "--log", "-l", action="store_true", help="Output game log instead of raw JSON"
+    )
+    analyze_parser.add_argument(
+        "--debug", "-d", action="store_true",
+        help="Generate diagnostic report for frames where Claude is called"
+    )
+    analyze_parser.add_argument(
+        "--debug-dir", default="debug_frames",
+        help="Directory for debug diagnostic reports (default: debug_frames)"
+    )
 
     # export command
     export_parser = subparsers.add_parser(
@@ -131,40 +142,9 @@ def main():
         help="Open the report in browser after generation"
     )
 
-    # calibrate command
-    calibrate_parser = subparsers.add_parser(
-        "calibrate", help="GUI tool for calibrating table regions"
-    )
-    calibrate_parser.add_argument("video", help="Path to video file")
-    calibrate_parser.add_argument(
-        "--frame", "-f", type=int, default=None,
-        help="Frame number to use"
-    )
-    calibrate_parser.add_argument(
-        "--timestamp", "-t", type=float, default=None,
-        help="Timestamp in seconds"
-    )
-    calibrate_parser.add_argument(
-        "--scale", "-s", type=float, default=None,
-        help="Display scale factor (auto-calculated if not specified)"
-    )
-
-    # calibrate-hero command
-    calibrate_hero_parser = subparsers.add_parser(
-        "calibrate-hero", help="GUI tool for calibrating hero card subregions (rank/suit)"
-    )
-    calibrate_hero_parser.add_argument("video", help="Path to video file")
-    calibrate_hero_parser.add_argument(
-        "--frame", "-f", type=int, default=None,
-        help="Frame number to use"
-    )
-    calibrate_hero_parser.add_argument(
-        "--timestamp", "-t", type=float, default=None,
-        help="Timestamp in seconds"
-    )
-    calibrate_hero_parser.add_argument(
-        "--scale", "-s", type=float, default=4.0,
-        help="Display scale factor (default: 4.0)"
+    # clear-library command
+    clear_parser = subparsers.add_parser(
+        "clear-library", help="Clear all cached reference images from card libraries"
     )
 
     # monitor command
@@ -227,12 +207,10 @@ def main():
             cmd_info(args)
         elif args.command == "diagnose":
             cmd_diagnose(args)
-        elif args.command == "calibrate":
-            cmd_calibrate(args)
-        elif args.command == "calibrate-hero":
-            cmd_calibrate_hero(args)
         elif args.command == "monitor":
             cmd_monitor(args)
+        elif args.command == "clear-library":
+            cmd_clear_library(args)
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -293,7 +271,19 @@ def cmd_extract_frames(args):
 
 def cmd_analyze(args):
     """Analyze video and output game states."""
+    from lieutenant_of_poker.image_matcher import claude_was_called, reset_claude_flag
+
     extractor = GameStateExtractor()
+
+    # Setup debug mode
+    debug_dir = None
+    debug_count = 0
+    if args.debug:
+        from lieutenant_of_poker.diagnostic import DiagnosticExtractor, generate_html_report
+        debug_dir = Path(args.debug_dir)
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        diagnostic_extractor = DiagnosticExtractor()
+        print(f"Debug mode: saving diagnostics to {debug_dir}/", file=sys.stderr)
 
     with VideoFrameExtractor(args.video) as video:
         start_ms = args.start * 1000
@@ -307,7 +297,7 @@ def cmd_analyze(args):
             print(f"  Duration: {video.duration_seconds:.1f}s", file=sys.stderr)
             print(f"  Expected frames: {total_frames}", file=sys.stderr)
 
-        results = []
+        states = []
 
         # Use rich progress bar
         with Progress(
@@ -326,20 +316,43 @@ def cmd_analyze(args):
             task = progress.add_task("Analyzing frames", total=total_frames)
 
             for frame_info in video.iterate_at_interval(args.interval, start_ms, end_ms if args.end else None):
+                # Reset Claude flag before processing frame
+                if args.debug:
+                    reset_claude_flag()
+
                 state = extractor.extract(
                     frame_info.image,
                     frame_number=frame_info.frame_number,
                     timestamp_ms=frame_info.timestamp_ms
                 )
+                states.append(state)
 
-                result = game_state_to_dict(state)
-                results.append(result)
+                # Generate diagnostic if Claude was called
+                if args.debug and claude_was_called():
+                    debug_count += 1
+                    report = diagnostic_extractor.extract_with_diagnostics(
+                        frame_info.image,
+                        frame_number=frame_info.frame_number,
+                        timestamp_ms=frame_info.timestamp_ms,
+                    )
+                    report_path = debug_dir / f"frame_{frame_info.frame_number}_{frame_info.timestamp_ms:.0f}ms.html"
+                    generate_html_report(report, report_path)
+
                 progress.update(task, advance=1)
 
-        print(f"Done! Analyzed {len(results)} frames.", file=sys.stderr)
+        print(f"Done! Analyzed {len(states)} frames.", file=sys.stderr)
+        if args.debug:
+            print(f"Generated {debug_count} debug diagnostic reports in {debug_dir}/", file=sys.stderr)
 
         # Output results
-        output = json.dumps(results, indent=2)
+        if args.log:
+            from lieutenant_of_poker.video_analyzer import assemble_game_log
+            game_log = assemble_game_log(states, source=args.video)
+            output = str(game_log)
+        else:
+            results = [game_state_to_dict(s) for s in states]
+            output = json.dumps(results, indent=2)
+
         if args.output:
             with open(args.output, "w") as f:
                 f.write(output)
@@ -470,71 +483,16 @@ def cmd_diagnose(args):
             webbrowser.open(f"file://{output_path.absolute()}")
 
 
-def cmd_calibrate(args):
-    """GUI tool for calibrating table regions."""
-    from lieutenant_of_poker.calibrate import CalibrationTool
+def cmd_clear_library(args):
+    """Clear card reference image libraries."""
+    from lieutenant_of_poker.card_matcher import LIBRARY_DIR as CARD_LIBRARY_DIR
 
-    with VideoFrameExtractor(args.video) as video:
-        print(f"Video: {args.video}", file=sys.stderr)
-        print(f"Resolution: {video.width}x{video.height}", file=sys.stderr)
+    count = 0
+    for png_file in CARD_LIBRARY_DIR.rglob("*.png"):
+        png_file.unlink()
+        count += 1
 
-        if args.frame is not None:
-            frame_info = video.get_frame_at(args.frame)
-        elif args.timestamp is not None:
-            frame_info = video.get_frame_at_timestamp(args.timestamp * 1000)
-        else:
-            frame_info = video.get_frame_at(0)
-
-        if frame_info is None:
-            raise ValueError("Could not read frame")
-
-        frame = frame_info.image
-
-        # Auto-calculate scale to fit on screen
-        if args.scale is None:
-            max_dim = max(video.width, video.height)
-            scale = min(1.0, 1400 / max_dim)
-        else:
-            scale = args.scale
-
-        print(f"Display scale: {scale:.2f}", file=sys.stderr)
-        print(f"\nStarting calibration tool...", file=sys.stderr)
-        print("Press 'h' in the window for help\n", file=sys.stderr)
-
-        tool = CalibrationTool(frame, scale=scale)
-        tool.run()
-
-
-def cmd_calibrate_hero(args):
-    """GUI tool for calibrating hero card subregions."""
-    from lieutenant_of_poker.calibrate_hero import HeroCardCalibrationTool
-    from lieutenant_of_poker.table_regions import detect_table_regions
-
-    with VideoFrameExtractor(args.video) as video:
-        print(f"Video: {args.video}", file=sys.stderr)
-        print(f"Resolution: {video.width}x{video.height}", file=sys.stderr)
-
-        if args.frame is not None:
-            frame_info = video.get_frame_at(args.frame)
-        elif args.timestamp is not None:
-            frame_info = video.get_frame_at_timestamp(args.timestamp * 1000)
-        else:
-            frame_info = video.get_frame_at(0)
-
-        if frame_info is None:
-            raise ValueError("Could not read frame")
-
-        frame = frame_info.image
-
-        # Extract the full hero cards region
-        region_detector = detect_table_regions(frame)
-        hero_region = region_detector.extract_hero_cards(frame)
-
-        print(f"Hero region size: {hero_region.shape[1]}x{hero_region.shape[0]}", file=sys.stderr)
-        print(f"\nStarting hero card calibration tool...", file=sys.stderr)
-
-        tool = HeroCardCalibrationTool(hero_region, scale=args.scale)
-        tool.run()
+    print(f"Cleared {count} card library images", file=sys.stderr)
 
 
 def cmd_monitor(args):

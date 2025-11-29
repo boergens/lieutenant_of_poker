@@ -148,37 +148,45 @@ class TableRegionDetector:
         # Action buttons region (CHECK/FOLD, CALL ANY, etc. at bottom)
         self._action_buttons_region = self._scaled(Region(x=380, y=780, width=550, height=50))
 
-        # Player regions by position (coordinates from calibration at 3456x2234, converted to base 1360x768)
+        # Player regions by position (corrected to BASE_WIDTH x BASE_HEIGHT = 1728x1117)
         self._player_regions = {
             PlayerPosition.SEAT_1: PlayerRegions(
                 position=PlayerPosition.SEAT_1,
-                name_chip_box=self._scaled(Region(x=175, y=444, width=189, height=47)),
+                # Chip: top half, trimmed left 25% / right 10%
+                name_chip_box=self._scaled(Region(x=282, y=645, width=156, height=34)),
                 cards=None,
-                action_label=self._scaled(Region(x=175, y=491, width=100, height=30)),
+                # Action: left half only
+                action_label=self._scaled(Region(x=222, y=679, width=120, height=34)),
             ),
             PlayerPosition.SEAT_2: PlayerRegions(
                 position=PlayerPosition.SEAT_2,
-                name_chip_box=self._scaled(Region(x=296, y=168, width=182, height=50)),
+                # Chip: top half, trimmed left 25% / right 10%
+                name_chip_box=self._scaled(Region(x=434, y=244, width=150, height=36)),
                 cards=None,
-                action_label=self._scaled(Region(x=296, y=218, width=100, height=30)),
+                # Action: left half only
+                action_label=self._scaled(Region(x=376, y=280, width=115, height=36)),
             ),
             PlayerPosition.SEAT_3: PlayerRegions(
                 position=PlayerPosition.SEAT_3,
-                name_chip_box=self._scaled(Region(x=878, y=172, width=185, height=44)),
+                # Chip: top half, trimmed left 25% / right 10%
+                name_chip_box=self._scaled(Region(x=1174, y=250, width=153, height=31)),
                 cards=None,
-                action_label=self._scaled(Region(x=878, y=216, width=100, height=30)),
+                # Action: left half only
+                action_label=self._scaled(Region(x=1115, y=281, width=117, height=32)),
             ),
             PlayerPosition.SEAT_4: PlayerRegions(
                 position=PlayerPosition.SEAT_4,
-                name_chip_box=self._scaled(Region(x=1007, y=443, width=181, height=42)),
+                # Chip: top half, trimmed left 25% / right 10%
+                name_chip_box=self._scaled(Region(x=1336, y=644, width=149, height=30)),
                 cards=None,
-                action_label=self._scaled(Region(x=1007, y=485, width=100, height=30)),
+                # Action: left half only
+                action_label=self._scaled(Region(x=1279, y=674, width=114, height=31)),
             ),
             PlayerPosition.HERO: PlayerRegions(
                 position=PlayerPosition.HERO,
-                name_chip_box=self._scaled(Region(x=540, y=600, width=180, height=50)),
+                name_chip_box=self._scaled(Region(x=981, y=844, width=122, height=31)),
                 cards=self._hero_cards_region,
-                action_label=self._scaled(Region(x=540, y=650, width=100, height=30)),
+                action_label=self._scaled(Region(x=917, y=876, width=90, height=33)),
             ),
         }
 

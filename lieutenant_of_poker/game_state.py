@@ -15,13 +15,14 @@ from lieutenant_of_poker.table_regions import (
     TableRegionDetector,
     PlayerPosition,
     detect_table_regions,
+    BASE_WIDTH,
+    BASE_HEIGHT,
 )
 from lieutenant_of_poker.card_detector import Card, CardDetector
-from lieutenant_of_poker.chip_ocr import ChipOCR
+from lieutenant_of_poker.chip_ocr import ChipOCR, OCRCache
 from lieutenant_of_poker.action_detector import (
     PlayerAction,
     DetectedAction,
-    ActionDetector,
 )
 
 
@@ -118,8 +119,9 @@ class GameStateExtractor:
     """Extracts complete game state from video frames."""
 
     # Target resolution for processing (scale down larger frames)
-    TARGET_WIDTH = 1920
-    TARGET_HEIGHT = 1080
+    # Uses BASE from table_regions to ensure coordinates match
+    TARGET_WIDTH = BASE_WIDTH
+    TARGET_HEIGHT = BASE_HEIGHT
 
     def __init__(self, scale_frames: bool = True):
         """
@@ -130,8 +132,13 @@ class GameStateExtractor:
         """
         self.card_detector = CardDetector()
         self.chip_ocr = ChipOCR()
-        self.action_detector = ActionDetector()
         self.scale_frames = scale_frames
+
+        # Per-slot OCR caches (pot + each player position)
+        self._pot_cache = OCRCache(max_size=3)
+        self._chip_caches: Dict[PlayerPosition, OCRCache] = {
+            pos: OCRCache(max_size=3) for pos in PlayerPosition
+        }
 
     def _scale_frame(self, frame: np.ndarray) -> np.ndarray:
         """Scale frame down if larger than target resolution."""
@@ -199,10 +206,15 @@ class GameStateExtractor:
         except Exception:
             pass
 
-        # Extract pot
+        # Extract pot (with cache)
         try:
             pot_region = region_detector.extract_pot(frame)
-            state.pot = self.chip_ocr.extract_pot(pot_region)
+            found, cached_pot = self._pot_cache.get(pot_region)
+            if found:
+                state.pot = cached_pot
+            else:
+                state.pot = self.chip_ocr.extract_pot(pot_region)
+                self._pot_cache.put(pot_region, state.pot)
         except Exception:
             pass
 
@@ -232,29 +244,21 @@ class GameStateExtractor:
         player_regions = region_detector.get_player_region(position)
         player_state = PlayerState(position=position)
 
-        # Extract chips
+        # Extract chips (with per-player cache)
         try:
             chip_region = player_regions.name_chip_box.extract(frame)
-            player_state.chips = self.chip_ocr.extract_player_chips(chip_region)
+            cache = self._chip_caches[position]
+            found, cached_chips = cache.get(chip_region)
+            if found:
+                player_state.chips = cached_chips
+            else:
+                player_state.chips = self.chip_ocr.extract_player_chips(chip_region)
+                cache.put(chip_region, player_state.chips)
         except Exception:
             pass
 
-        # Extract last action
-        try:
-            action_region = player_regions.action_label.extract(frame)
-            player_state.last_action = self.action_detector.detect_action_label(
-                action_region
-            )
-        except Exception:
-            pass
-
-        # Extract cards (only for hero or during showdown)
-        if position == PlayerPosition.HERO and player_regions.cards:
-            try:
-                card_region = player_regions.cards.extract(frame)
-                player_state.cards = self.card_detector.detect_cards(card_region)
-            except Exception:
-                pass
+        # Note: Actions are now deduced from chip changes in video_analyzer.py
+        # Note: Hero cards are extracted separately via match_hero_cards()
 
         return player_state
 

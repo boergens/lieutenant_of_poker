@@ -5,12 +5,46 @@ Extracts chip counts, pot amounts, and bet values from game UI regions.
 """
 
 import re
-from typing import Optional
+from collections import deque
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
 
 from .fast_ocr import ocr_digits
+
+
+def _image_fingerprint(image: np.ndarray) -> bytes:
+    """Create a fingerprint of an image for cache lookup."""
+    # Resize to small fixed size for comparison
+    small = cv2.resize(image, (16, 8), interpolation=cv2.INTER_AREA)
+    if len(small.shape) == 3:
+        small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    # Quantize to reduce noise sensitivity
+    quantized = (small // 32).astype(np.uint8)
+    return quantized.tobytes()
+
+
+class OCRCache:
+    """Per-slot cache for OCR results."""
+
+    def __init__(self, max_size: int = 3):
+        self.max_size = max_size
+        # deque of (fingerprint, result) tuples
+        self._cache: deque[Tuple[bytes, Optional[int]]] = deque(maxlen=max_size)
+
+    def get(self, image: np.ndarray) -> Tuple[bool, Optional[int]]:
+        """Check cache for image. Returns (found, result)."""
+        fp = _image_fingerprint(image)
+        for cached_fp, result in self._cache:
+            if cached_fp == fp:
+                return True, result
+        return False, None
+
+    def put(self, image: np.ndarray, result: Optional[int]) -> None:
+        """Store result in cache."""
+        fp = _image_fingerprint(image)
+        self._cache.append((fp, result))
 
 
 class ChipOCR:
@@ -33,23 +67,9 @@ class ChipOCR:
         if region is None or region.size == 0:
             return None
 
-        # Preprocess the image
-        processed = self._preprocess(region)
-
-        # Try OCR with fast tesserocr
-        text = ocr_digits(processed)
-        amount = self._parse_amount(text)
-        if amount is not None:
-            return amount
-
-        # Try with inverted colors as fallback
-        inverted = cv2.bitwise_not(processed)
-        text = ocr_digits(inverted)
-        amount = self._parse_amount(text)
-        if amount is not None:
-            return amount
-
-        return None
+        # Pass directly to Tesseract - it handles binarization internally
+        text = ocr_digits(region)
+        return self._parse_amount(text)
 
     def extract_pot(self, pot_region: np.ndarray) -> Optional[int]:
         """
@@ -86,30 +106,6 @@ class ChipOCR:
             Bet amount as integer, or None if not detected.
         """
         return self.extract_amount(bet_region)
-
-    def _preprocess(self, region: np.ndarray) -> np.ndarray:
-        """
-        Preprocess image region for OCR.
-
-        Args:
-            region: BGR image region.
-
-        Returns:
-            Preprocessed grayscale image.
-        """
-        # Scale up for better OCR
-        scaled = cv2.resize(region, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-
-        # Convert to grayscale
-        gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
-
-        # Extract bright text (white/light colored numbers)
-        _, bright = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-
-        # Invert so text is black on white background (better for OCR)
-        inverted = cv2.bitwise_not(bright)
-
-        return inverted
 
     def _parse_amount(self, text: str) -> Optional[int]:
         """

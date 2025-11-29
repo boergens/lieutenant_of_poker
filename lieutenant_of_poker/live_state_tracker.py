@@ -15,7 +15,7 @@ import numpy as np
 
 from .frame_extractor import FrameInfo
 from .game_state import GameState, GameStateExtractor, Street
-from .action_detector import PlayerAction, DetectedAction
+from .action_detector import PlayerAction
 from .card_detector import Card
 from .table_regions import PlayerPosition
 
@@ -257,7 +257,7 @@ class LiveStateTracker:
         self, prev: Optional[GameState], curr: GameState
     ) -> list[TrackedAction]:
         """
-        Detect new actions that occurred between frames.
+        Detect new actions from chip changes between frames.
         """
         if prev is None:
             return []
@@ -268,26 +268,31 @@ class LiveStateTracker:
             prev_player = prev.players.get(position)
             curr_player = curr.players.get(position)
 
-            if curr_player and curr_player.last_action:
-                # Check if this is a new action
-                is_new = True
-                if prev_player and prev_player.last_action:
-                    if (
-                        prev_player.last_action.action
-                        == curr_player.last_action.action
-                    ):
-                        is_new = False
+            if prev_player and curr_player:
+                prev_chips = prev_player.chips
+                curr_chips = curr_player.chips
 
-                if is_new:
-                    new_actions.append(
-                        TrackedAction(
-                            position=position,
-                            action=curr_player.last_action.action,
-                            amount=curr_player.last_action.amount,
-                            street=curr.street,
-                            timestamp_ms=curr.timestamp_ms or 0.0,
+                if prev_chips is not None and curr_chips is not None:
+                    chip_decrease = prev_chips - curr_chips
+
+                    if chip_decrease > 0:
+                        # Player made a bet - deduce action type
+                        if curr_chips == 0:
+                            action = PlayerAction.ALL_IN
+                        else:
+                            # Simplified: just call it BET
+                            # More sophisticated logic would track betting rounds
+                            action = PlayerAction.BET
+
+                        new_actions.append(
+                            TrackedAction(
+                                position=position,
+                                action=action,
+                                amount=chip_decrease,
+                                street=curr.street,
+                                timestamp_ms=curr.timestamp_ms or 0.0,
+                            )
                         )
-                    )
 
         return new_actions
 

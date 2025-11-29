@@ -5,16 +5,13 @@ Instead of OCR, we compare card images against libraries of known ranks and suit
 Unknown images are identified by Claude Code and added to the libraries.
 """
 
-import re
-import subprocess
-import tempfile
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
-import cv2
 import numpy as np
 
 from .card_detector import Card, Rank, Suit
+from .image_matcher import ImageMatcher
 
 # Library locations
 LIBRARY_DIR = Path(__file__).parent / "card_library"
@@ -30,9 +27,6 @@ def get_library_dirs(library_name: str) -> tuple[Path, Path]:
     base = LIBRARY_DIR / library_name
     return base / "ranks", base / "suits"
 
-# Standard sizes for comparison
-RANK_SIZE = (40, 40)
-SUIT_SIZE = (40, 40)
 
 # Crop regions within a community card slot (at ~103x146 slot size)
 RANK_REGION = (10, 15, 55, 55)  # x, y, w, h
@@ -57,253 +51,105 @@ def _scale_hero_region(region: tuple[int, int, int, int], hero_size: tuple[int, 
     return (int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y))
 
 
-class RankMatcher:
+class RankMatcher(ImageMatcher[Rank]):
     """Matches rank images against a library."""
 
     MATCH_THRESHOLD = 0.08
+    IMAGE_SIZE = (40, 40)
 
     def __init__(self, library_name: str = COMMUNITY_LIBRARY, library_dir: Optional[Path] = None):
         if library_dir is not None:
-            self.library_dir = library_dir
+            self._library_dir = library_dir
         else:
             rank_dir, _ = get_library_dirs(library_name)
-            self.library_dir = rank_dir
-        self.library_dir.mkdir(parents=True, exist_ok=True)
-        self._library: dict[Rank, np.ndarray] = {}
-        self._load_library()
+            self._library_dir = rank_dir
+        super().__init__(self._library_dir)
 
-    def _load_library(self) -> None:
-        """Load all rank reference images."""
-        self._library.clear()
-        for image_path in self.library_dir.glob("*.png"):
-            rank = self._parse_filename(image_path.name)
-            if rank is None:
-                continue
-            img = cv2.imread(str(image_path))
-            if img is not None:
-                self._library[rank] = self._normalize(img)
-
-    def _parse_filename(self, filename: str) -> Optional[Rank]:
-        """Parse rank from filename like 'Q.png' or '10.png'."""
-        name = filename.replace(".png", "").upper()
+    def _parse_name(self, name: str) -> Optional[Rank]:
+        """Parse rank from base name like 'Q' or '10'."""
         rank_map = {
             "2": Rank.TWO, "3": Rank.THREE, "4": Rank.FOUR, "5": Rank.FIVE,
             "6": Rank.SIX, "7": Rank.SEVEN, "8": Rank.EIGHT, "9": Rank.NINE,
-            "10": Rank.TEN, "T": Rank.TEN,
-            "J": Rank.JACK, "Q": Rank.QUEEN, "K": Rank.KING, "A": Rank.ACE,
+            "10": Rank.TEN, "J": Rank.JACK, "Q": Rank.QUEEN, "K": Rank.KING, "A": Rank.ACE,
         }
-        return rank_map.get(name)
+        return rank_map.get(name.upper())
 
-    def _normalize(self, img: np.ndarray) -> np.ndarray:
-        """Normalize image for comparison."""
-        resized = cv2.resize(img, RANK_SIZE, interpolation=cv2.INTER_AREA)
-        return resized.astype(np.float32) / 255.0
+    def _value_to_filename(self, value: Rank) -> str:
+        """Convert rank to filename base."""
+        return value.value
 
-    def _compare(self, img1: np.ndarray, img2: np.ndarray) -> float:
-        """Compare two normalized images. Returns difference score."""
-        return np.mean(np.abs(img1 - img2))
+    def _get_claude_prompt(self, image_path: str) -> str:
+        """Get prompt for Claude to identify a rank."""
+        return (
+            f"Look at this playing card rank image: {image_path}\n"
+            "What rank/number is shown? Reply with ONLY the rank:\n"
+            "One of: 2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K, A\n"
+            "Reply with ONLY the rank character(s), nothing else."
+        )
 
-    def match(self, rank_image: np.ndarray) -> Optional[Rank]:
-        """Match a rank image against the library."""
-        if rank_image is None or rank_image.size == 0:
-            return None
-
-        normalized = self._normalize(rank_image)
-        best_match: Optional[Rank] = None
-        best_score = float("inf")
-
-        for rank, ref_img in self._library.items():
-            score = self._compare(normalized, ref_img)
-            if score < best_score:
-                best_score = score
-                best_match = rank
-
-        if best_match is not None and best_score < self.MATCH_THRESHOLD:
-            return best_match
-
-        # No match - ask Claude
-        rank = self._identify_with_claude(rank_image)
-        if rank is not None:
-            self._save_to_library(rank_image, rank)
-            self._library[rank] = normalized
-        return rank
-
-    def _identify_with_claude(self, image: np.ndarray) -> Optional[Rank]:
-        """Use Claude Code to identify an unknown rank."""
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            temp_path = f.name
-            cv2.imwrite(temp_path, image)
-
-        try:
-            prompt = (
-                f"Look at this playing card rank image: {temp_path}\n"
-                "What rank/number is shown? Reply with ONLY the rank:\n"
-                "One of: 2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K, A\n"
-                "Reply with ONLY the rank character(s), nothing else."
-            )
-
-            claude_path = Path.home() / ".local" / "bin" / "claude"
-            result = subprocess.run(
-                [str(claude_path), "-p", prompt, "--allowedTools", "Read"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-
-            if result.returncode != 0:
-                return None
-
-            response = result.stdout.strip().upper()
-            rank_map = {
-                "2": Rank.TWO, "3": Rank.THREE, "4": Rank.FOUR, "5": Rank.FIVE,
-                "6": Rank.SIX, "7": Rank.SEVEN, "8": Rank.EIGHT, "9": Rank.NINE,
-                "10": Rank.TEN, "J": Rank.JACK, "Q": Rank.QUEEN,
-                "K": Rank.KING, "A": Rank.ACE,
-            }
-
-            # Try to find a rank in the response
-            for key, rank in rank_map.items():
-                if key in response:
-                    return rank
-            return None
-
-        except Exception:
-            return None
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
-
-    def _save_to_library(self, image: np.ndarray, rank: Rank) -> None:
-        """Save a rank image to the library."""
-        filename = f"{rank.value}.png"
-        filepath = self.library_dir / filename
-        if not filepath.exists():
-            cv2.imwrite(str(filepath), image)
-
-    def get_library_size(self) -> int:
-        return len(self._library)
+    def _parse_claude_response(self, response: str) -> Optional[Rank]:
+        """Parse Claude's response into a rank."""
+        response = response.upper()
+        rank_map = {
+            "2": Rank.TWO, "3": Rank.THREE, "4": Rank.FOUR, "5": Rank.FIVE,
+            "6": Rank.SIX, "7": Rank.SEVEN, "8": Rank.EIGHT, "9": Rank.NINE,
+            "10": Rank.TEN, "J": Rank.JACK, "Q": Rank.QUEEN,
+            "K": Rank.KING, "A": Rank.ACE,
+        }
+        for key, rank in rank_map.items():
+            if key in response:
+                return rank
+        return None
 
 
-class SuitMatcher:
+class SuitMatcher(ImageMatcher[Suit]):
     """Matches suit images against a library."""
 
     MATCH_THRESHOLD = 0.08
+    IMAGE_SIZE = (40, 40)
 
     def __init__(self, library_name: str = COMMUNITY_LIBRARY, library_dir: Optional[Path] = None):
         if library_dir is not None:
-            self.library_dir = library_dir
+            self._library_dir = library_dir
         else:
             _, suit_dir = get_library_dirs(library_name)
-            self.library_dir = suit_dir
-        self.library_dir.mkdir(parents=True, exist_ok=True)
-        self._library: dict[Suit, np.ndarray] = {}
-        self._load_library()
+            self._library_dir = suit_dir
+        super().__init__(self._library_dir)
 
-    def _load_library(self) -> None:
-        """Load all suit reference images."""
-        self._library.clear()
-        for image_path in self.library_dir.glob("*.png"):
-            suit = self._parse_filename(image_path.name)
-            if suit is None:
-                continue
-            img = cv2.imread(str(image_path))
-            if img is not None:
-                self._library[suit] = self._normalize(img)
-
-    def _parse_filename(self, filename: str) -> Optional[Suit]:
-        """Parse suit from filename like 'hearts.png'."""
-        name = filename.replace(".png", "").lower()
+    def _parse_name(self, name: str) -> Optional[Suit]:
+        """Parse suit from base name like 'hearts'."""
         suit_map = {
-            "hearts": Suit.HEARTS, "h": Suit.HEARTS,
-            "diamonds": Suit.DIAMONDS, "d": Suit.DIAMONDS,
-            "clubs": Suit.CLUBS, "c": Suit.CLUBS,
-            "spades": Suit.SPADES, "s": Suit.SPADES,
+            "hearts": Suit.HEARTS,
+            "diamonds": Suit.DIAMONDS,
+            "clubs": Suit.CLUBS,
+            "spades": Suit.SPADES,
         }
-        return suit_map.get(name)
+        return suit_map.get(name.lower())
 
-    def _normalize(self, img: np.ndarray) -> np.ndarray:
-        """Normalize image for comparison."""
-        resized = cv2.resize(img, SUIT_SIZE, interpolation=cv2.INTER_AREA)
-        return resized.astype(np.float32) / 255.0
+    def _value_to_filename(self, value: Suit) -> str:
+        """Convert suit to filename base."""
+        return value.value
 
-    def _compare(self, img1: np.ndarray, img2: np.ndarray) -> float:
-        """Compare two normalized images. Returns difference score."""
-        return np.mean(np.abs(img1 - img2))
+    def _get_claude_prompt(self, image_path: str) -> str:
+        """Get prompt for Claude to identify a suit."""
+        return (
+            f"Look at this playing card suit symbol: {image_path}\n"
+            "What suit is shown? Reply with ONLY one of:\n"
+            "hearts, diamonds, clubs, spades\n"
+            "Reply with ONLY the suit name, nothing else."
+        )
 
-    def match(self, suit_image: np.ndarray) -> Optional[Suit]:
-        """Match a suit image against the library."""
-        if suit_image is None or suit_image.size == 0:
-            return None
-
-        normalized = self._normalize(suit_image)
-        best_match: Optional[Suit] = None
-        best_score = float("inf")
-
-        for suit, ref_img in self._library.items():
-            score = self._compare(normalized, ref_img)
-            if score < best_score:
-                best_score = score
-                best_match = suit
-
-        if best_match is not None and best_score < self.MATCH_THRESHOLD:
-            return best_match
-
-        # No match - ask Claude
-        suit = self._identify_with_claude(suit_image)
-        if suit is not None:
-            self._save_to_library(suit_image, suit)
-            self._library[suit] = normalized
-        return suit
-
-    def _identify_with_claude(self, image: np.ndarray) -> Optional[Suit]:
-        """Use Claude Code to identify an unknown suit."""
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            temp_path = f.name
-            cv2.imwrite(temp_path, image)
-
-        try:
-            prompt = (
-                f"Look at this playing card suit symbol: {temp_path}\n"
-                "What suit is shown? Reply with ONLY one of:\n"
-                "hearts, diamonds, clubs, spades\n"
-                "Reply with ONLY the suit name, nothing else."
-            )
-
-            claude_path = Path.home() / ".local" / "bin" / "claude"
-            result = subprocess.run(
-                [str(claude_path), "-p", prompt, "--allowedTools", "Read"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-
-            if result.returncode != 0:
-                return None
-
-            response = result.stdout.strip().lower()
-            suit_map = {
-                "hearts": Suit.HEARTS, "diamonds": Suit.DIAMONDS,
-                "clubs": Suit.CLUBS, "spades": Suit.SPADES,
-            }
-
-            for key, suit in suit_map.items():
-                if key in response:
-                    return suit
-            return None
-
-        except Exception:
-            return None
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
-
-    def _save_to_library(self, image: np.ndarray, suit: Suit) -> None:
-        """Save a suit image to the library."""
-        filename = f"{suit.value}.png"
-        filepath = self.library_dir / filename
-        if not filepath.exists():
-            cv2.imwrite(str(filepath), image)
-
-    def get_library_size(self) -> int:
-        return len(self._library)
+    def _parse_claude_response(self, response: str) -> Optional[Suit]:
+        """Parse Claude's response into a suit."""
+        response = response.lower()
+        suit_map = {
+            "hearts": Suit.HEARTS, "diamonds": Suit.DIAMONDS,
+            "clubs": Suit.CLUBS, "spades": Suit.SPADES,
+        }
+        for key, suit in suit_map.items():
+            if key in response:
+                return suit
+        return None
 
 
 class CardMatcher:
@@ -401,7 +247,10 @@ def match_hero_cards(hero_region: np.ndarray) -> list[Optional[Card]]:
     Returns:
         List of [left_card, right_card], each may be None if not detected.
     """
+    from .card_detector import CardDetector
+
     results: list[Optional[Card]] = [None, None]
+    detector = CardDetector(use_library=False)  # Just for background check
 
     # Get actual hero region size for scaling
     h, w = hero_region.shape[:2]
@@ -421,20 +270,24 @@ def match_hero_cards(hero_region: np.ndarray) -> list[Optional[Card]]:
     left_rank_img = _extract_region(hero_region, left_rank_region)
     left_suit_img = _extract_region(hero_region, left_suit_region)
 
-    left_rank = left_matcher.rank_matcher.match(left_rank_img)
-    left_suit = left_matcher.suit_matcher.match(left_suit_img)
+    # Skip if region matches table background (no card present)
+    if not detector.is_empty_slot(left_rank_img):
+        left_rank = left_matcher.rank_matcher.match(left_rank_img)
+        left_suit = left_matcher.suit_matcher.match(left_suit_img)
 
-    if left_rank and left_suit:
-        results[0] = Card(rank=left_rank, suit=left_suit)
+        if left_rank and left_suit:
+            results[0] = Card(rank=left_rank, suit=left_suit)
 
     # Extract and match RIGHT card
     right_rank_img = _extract_region(hero_region, right_rank_region)
     right_suit_img = _extract_region(hero_region, right_suit_region)
 
-    right_rank = right_matcher.rank_matcher.match(right_rank_img)
-    right_suit = right_matcher.suit_matcher.match(right_suit_img)
+    # Skip if region matches table background (no card present)
+    if not detector.is_empty_slot(right_rank_img):
+        right_rank = right_matcher.rank_matcher.match(right_rank_img)
+        right_suit = right_matcher.suit_matcher.match(right_suit_img)
 
-    if right_rank and right_suit:
-        results[1] = Card(rank=right_rank, suit=right_suit)
+        if right_rank and right_suit:
+            results[1] = Card(rank=right_rank, suit=right_suit)
 
     return results

@@ -35,8 +35,6 @@ from lieutenant_of_poker.chip_ocr import (
 from lieutenant_of_poker.action_detector import (
     PlayerAction,
     DetectedAction,
-    ActionDetector,
-    detect_player_action,
 )
 from lieutenant_of_poker.game_state import (
     Street,
@@ -72,11 +70,9 @@ __all__ = [
     # Chip OCR
     "ChipOCR",
     "extract_chip_amount",
-    # Action detection
+    # Action types
     "PlayerAction",
     "DetectedAction",
-    "ActionDetector",
-    "detect_player_action",
     # Game state
     "Street",
     "PlayerState",

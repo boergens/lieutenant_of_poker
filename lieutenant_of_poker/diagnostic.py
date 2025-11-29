@@ -16,6 +16,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from lieutenant_of_poker.table_regions import BASE_WIDTH, BASE_HEIGHT
+
 
 @dataclass
 class DiagnosticStep:
@@ -128,7 +130,7 @@ class DiagnosticExtractor:
     def _scale_frame(self, frame: np.ndarray) -> np.ndarray:
         """Scale frame and record the step."""
         h, w = frame.shape[:2]
-        target_w, target_h = 1920, 1080
+        target_w, target_h = BASE_WIDTH, BASE_HEIGHT
 
         step = DiagnosticStep(
             name="Frame Scaling",
@@ -165,39 +167,12 @@ class DiagnosticExtractor:
             pot_region = region_detector.extract_pot(frame)
             step.images.append(("Pot Region", pot_region))
 
-            # Preprocess
-            preprocessed = self._preprocess_for_ocr(pot_region, step, "pot")
-
-            # OCR
-            from .fast_ocr import ocr_digits
-            text = ocr_digits(preprocessed)
-            step.ocr_result = text if text else "(empty)"
-
-            # Parse
-            amount = self._parse_amount(text)
+            # Use mainline ChipOCR
+            from .chip_ocr import ChipOCR
+            chip_ocr = ChipOCR()
+            amount = chip_ocr.extract_pot(pot_region)
             step.parsed_result = amount
             step.success = amount is not None
-
-            if not step.success and text:
-                step.description += f" - OCR returned '{text}' but couldn't parse"
-
-                # Try inverted
-                substep = DiagnosticStep(
-                    name="Fallback: Inverted",
-                    description="Trying inverted colors",
-                )
-                inverted = cv2.bitwise_not(preprocessed)
-                substep.images.append(("Inverted", inverted))
-                text2 = ocr_digits(inverted)
-                substep.ocr_result = text2 if text2 else "(empty)"
-                amount2 = self._parse_amount(text2)
-                substep.parsed_result = amount2
-                substep.success = amount2 is not None
-                step.substeps.append(substep)
-
-                if amount2 is not None:
-                    step.parsed_result = amount2
-                    step.success = True
 
         except Exception as e:
             step.error = str(e)
@@ -291,7 +266,7 @@ class DiagnosticExtractor:
         )
 
         try:
-            from .card_detector import Card
+            from .card_detector import Card, CardDetector
             from .card_matcher import (
                 get_card_matcher, HERO_LEFT_LIBRARY, HERO_RIGHT_LIBRARY,
                 HERO_LEFT_RANK_REGION, HERO_LEFT_SUIT_REGION,
@@ -313,6 +288,9 @@ class DiagnosticExtractor:
             right_rank_region = _scale_hero_region(HERO_RIGHT_RANK_REGION, hero_size)
             right_suit_region = _scale_hero_region(HERO_RIGHT_SUIT_REGION, hero_size)
 
+            # Background detector for empty slot check
+            bg_detector = CardDetector(use_library=False)
+
             cards = []
 
             # LEFT CARD
@@ -327,21 +305,27 @@ class DiagnosticExtractor:
             left_substep.images.append(("Left Rank Region", left_rank_img))
             left_substep.images.append(("Left Suit Region", left_suit_img))
 
-            left_rank = left_matcher.rank_matcher.match(left_rank_img)
-            left_suit = left_matcher.suit_matcher.match(left_suit_img)
-
-            left_rank_info = f"Rank: {left_rank.value if left_rank else 'not found'}"
-            left_suit_info = f"Suit: {left_suit.value if left_suit else 'not found'}"
-            left_substep.match_info = f"{left_rank_info}, {left_suit_info}"
-
-            if left_rank and left_suit:
-                left_card = Card(rank=left_rank, suit=left_suit)
-                left_substep.parsed_result = str(left_card)
+            # Check if slot is empty (matches table background)
+            if bg_detector.is_empty_slot(left_rank_img):
+                left_substep.match_info = "Empty slot (matches table background)"
+                left_substep.parsed_result = "(empty slot)"
                 left_substep.success = True
-                cards.append(left_card)
             else:
-                left_substep.parsed_result = "(incomplete detection)"
-                left_substep.success = False
+                left_rank = left_matcher.rank_matcher.match(left_rank_img)
+                left_suit = left_matcher.suit_matcher.match(left_suit_img)
+
+                left_rank_info = f"Rank: {left_rank.value if left_rank else 'not found'}"
+                left_suit_info = f"Suit: {left_suit.value if left_suit else 'not found'}"
+                left_substep.match_info = f"{left_rank_info}, {left_suit_info}"
+
+                if left_rank and left_suit:
+                    left_card = Card(rank=left_rank, suit=left_suit)
+                    left_substep.parsed_result = str(left_card)
+                    left_substep.success = True
+                    cards.append(left_card)
+                else:
+                    left_substep.parsed_result = "(incomplete detection)"
+                    left_substep.success = False
 
             step.substeps.append(left_substep)
 
@@ -357,21 +341,27 @@ class DiagnosticExtractor:
             right_substep.images.append(("Right Rank Region", right_rank_img))
             right_substep.images.append(("Right Suit Region", right_suit_img))
 
-            right_rank = right_matcher.rank_matcher.match(right_rank_img)
-            right_suit = right_matcher.suit_matcher.match(right_suit_img)
-
-            right_rank_info = f"Rank: {right_rank.value if right_rank else 'not found'}"
-            right_suit_info = f"Suit: {right_suit.value if right_suit else 'not found'}"
-            right_substep.match_info = f"{right_rank_info}, {right_suit_info}"
-
-            if right_rank and right_suit:
-                right_card = Card(rank=right_rank, suit=right_suit)
-                right_substep.parsed_result = str(right_card)
+            # Check if slot is empty (matches table background)
+            if bg_detector.is_empty_slot(right_rank_img):
+                right_substep.match_info = "Empty slot (matches table background)"
+                right_substep.parsed_result = "(empty slot)"
                 right_substep.success = True
-                cards.append(right_card)
             else:
-                right_substep.parsed_result = "(incomplete detection)"
-                right_substep.success = False
+                right_rank = right_matcher.rank_matcher.match(right_rank_img)
+                right_suit = right_matcher.suit_matcher.match(right_suit_img)
+
+                right_rank_info = f"Rank: {right_rank.value if right_rank else 'not found'}"
+                right_suit_info = f"Suit: {right_suit.value if right_suit else 'not found'}"
+                right_substep.match_info = f"{right_rank_info}, {right_suit_info}"
+
+                if right_rank and right_suit:
+                    right_card = Card(rank=right_rank, suit=right_suit)
+                    right_substep.parsed_result = str(right_card)
+                    right_substep.success = True
+                    cards.append(right_card)
+                else:
+                    right_substep.parsed_result = "(incomplete detection)"
+                    right_substep.success = False
 
             step.substeps.append(right_substep)
 
@@ -405,13 +395,10 @@ class DiagnosticExtractor:
                     chip_region = player_regions.name_chip_box.extract(frame)
                     chip_substep.images.append(("Chip Region", chip_region))
 
-                    preprocessed = self._preprocess_for_ocr(chip_region, chip_substep, "chips")
-
-                    from .fast_ocr import ocr_digits
-                    text = ocr_digits(preprocessed)
-                    chip_substep.ocr_result = text if text else "(empty)"
-
-                    amount = self._parse_amount(text)
+                    # Use mainline ChipOCR
+                    from .chip_ocr import ChipOCR
+                    chip_ocr = ChipOCR()
+                    amount = chip_ocr.extract_player_chips(chip_region)
                     chip_substep.parsed_result = amount
                     chip_substep.success = amount is not None
                 except Exception as e:
@@ -420,88 +407,14 @@ class DiagnosticExtractor:
 
                 step.substeps.append(chip_substep)
 
-                # Action detection
-                action_substep = DiagnosticStep(
-                    name="Last Action",
-                    description="Detecting last action",
-                )
-                try:
-                    action_region = player_regions.action_label.extract(frame)
-                    action_substep.images.append(("Action Region", action_region))
-
-                    # Preprocess
-                    scaled = cv2.resize(action_region, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-                    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
-                    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                    action_substep.images.append(("Threshold", thresh))
-
-                    from .fast_ocr import ocr_general
-                    text = ocr_general(thresh)
-                    action_substep.ocr_result = text if text else "(empty)"
-                    action_substep.parsed_result = self._parse_action(text)
-                    action_substep.success = action_substep.parsed_result is not None
-                except Exception as e:
-                    action_substep.error = str(e)
-                    action_substep.success = False
-
-                step.substeps.append(action_substep)
-
-                step.success = chip_substep.success or action_substep.success
+                # Note: Actions are deduced from chip changes, not detected from labels
+                step.success = chip_substep.success
 
             except Exception as e:
                 step.error = str(e)
                 step.success = False
 
             self.report.steps.append(step)
-
-    def _preprocess_for_ocr(self, region: np.ndarray, step: DiagnosticStep, name: str) -> np.ndarray:
-        """Preprocess region for OCR and capture intermediate images."""
-        # Scale up
-        scaled = cv2.resize(region, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-        step.images.append((f"{name.title()} Scaled 4x", scaled))
-
-        # Grayscale
-        gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
-
-        # Threshold
-        _, bright = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-        step.images.append((f"{name.title()} Threshold", bright))
-
-        # Invert
-        inverted = cv2.bitwise_not(bright)
-        step.images.append((f"{name.title()} Inverted", inverted))
-
-        return inverted
-
-    def _parse_amount(self, text: str) -> Optional[int]:
-        """Parse numeric amount from OCR text."""
-        if not text:
-            return None
-
-        text = text.strip().upper()
-        text = text.replace('O', '0').replace('I', '1').replace('L', '1')
-        text = text.replace('S', '5').replace('B', '8').replace('Z', '2')
-        text = text.replace(',', '').replace(' ', '').replace('.', '')
-
-        digits = ''.join(c for c in text if c.isdigit())
-        if digits:
-            try:
-                return int(digits)
-            except ValueError:
-                pass
-        return None
-
-    def _parse_action(self, text: str) -> Optional[str]:
-        """Parse action from OCR text."""
-        if not text:
-            return None
-
-        text = text.upper()
-        actions = ['FOLD', 'CHECK', 'CALL', 'RAISE', 'BET', 'ALL-IN', 'ALL IN']
-        for action in actions:
-            if action in text:
-                return action
-        return None
 
 
 def generate_html_report(report: DiagnosticReport, output_path: Optional[Path] = None) -> str:
