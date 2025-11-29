@@ -10,6 +10,8 @@ import cv2
 from lieutenant_of_poker.card_matcher import (
     CardMatcher, RankMatcher, SuitMatcher,
     RANK_REGION, SUIT_REGION,
+    COMMUNITY_LIBRARY, HERO_LEFT_LIBRARY, HERO_RIGHT_LIBRARY,
+    get_card_matcher, match_card,
 )
 from lieutenant_of_poker.card_detector import Card, Rank, Suit
 
@@ -138,10 +140,28 @@ class TestCardMatcher:
         matcher = CardMatcher()
         stats = matcher.get_library_stats()
 
+        assert "library_name" in stats
         assert "ranks" in stats
         assert "suits" in stats
         assert "total_possible" in stats
         assert stats["total_possible"] == 17  # 13 ranks + 4 suits
+        assert stats["library_name"] == COMMUNITY_LIBRARY
+
+    def test_library_name_parameter(self, tmp_path):
+        """Test creating matchers with different library names."""
+        # Create matchers with different library names using tmp directory
+        community_matcher = CardMatcher(library_name=COMMUNITY_LIBRARY)
+        left_matcher = CardMatcher(library_name=HERO_LEFT_LIBRARY)
+        right_matcher = CardMatcher(library_name=HERO_RIGHT_LIBRARY)
+
+        # Verify they have different library names
+        assert community_matcher.library_name == COMMUNITY_LIBRARY
+        assert left_matcher.library_name == HERO_LEFT_LIBRARY
+        assert right_matcher.library_name == HERO_RIGHT_LIBRARY
+
+        # Verify they use different directories
+        assert community_matcher.rank_matcher.library_dir != left_matcher.rank_matcher.library_dir
+        assert left_matcher.rank_matcher.library_dir != right_matcher.rank_matcher.library_dir
 
     def test_match_empty_image(self):
         """Test matching with empty image."""

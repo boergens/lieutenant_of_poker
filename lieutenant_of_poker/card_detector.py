@@ -108,7 +108,6 @@ class CardDetector:
         # Load table background color from reference image
         self.table_color = self._load_table_color()
         self.use_library = use_library
-        self._matcher = None
 
         # Color thresholds for suit detection (in HSV) - fallback only
         # Red for hearts/diamonds
@@ -121,13 +120,12 @@ class CardDetector:
         self.black_lower = np.array([0, 0, 0])
         self.black_upper = np.array([180, 255, 80])
 
-    @property
-    def matcher(self):
-        """Lazy-load the card matcher."""
-        if self._matcher is None and self.use_library:
-            from .card_matcher import get_card_matcher
-            self._matcher = get_card_matcher()
-        return self._matcher
+    def _match_card(self, card_image: np.ndarray, slot_index: int) -> Optional[Card]:
+        """Match a card using the appropriate library based on slot index."""
+        if not self.use_library:
+            return None
+        from .card_matcher import match_card
+        return match_card(card_image, slot_index)
 
     def _load_table_color(self) -> np.ndarray:
         """Load the table background color from reference image."""
@@ -181,8 +179,8 @@ class CardDetector:
             return None
 
         # Use the card library for matching
-        if self.use_library and self.matcher is not None:
-            return self.matcher.match_card(card_image, slot_index)
+        if self.use_library:
+            return self._match_card(card_image, slot_index)
 
         # Fallback to color-based detection (no rank detection without library)
         return None

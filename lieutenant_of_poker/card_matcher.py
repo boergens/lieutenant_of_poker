@@ -18,8 +18,17 @@ from .card_detector import Card, Rank, Suit
 
 # Library locations
 LIBRARY_DIR = Path(__file__).parent / "card_library"
-RANK_LIBRARY_DIR = LIBRARY_DIR / "ranks"
-SUIT_LIBRARY_DIR = LIBRARY_DIR / "suits"
+
+# Library names for different card positions
+COMMUNITY_LIBRARY = "community"
+HERO_LEFT_LIBRARY = "hero_left"
+HERO_RIGHT_LIBRARY = "hero_right"
+
+
+def get_library_dirs(library_name: str) -> tuple[Path, Path]:
+    """Get rank and suit library directories for a named library."""
+    base = LIBRARY_DIR / library_name
+    return base / "ranks", base / "suits"
 
 # Standard sizes for comparison
 RANK_SIZE = (40, 40)
@@ -35,8 +44,12 @@ class RankMatcher:
 
     MATCH_THRESHOLD = 0.08
 
-    def __init__(self, library_dir: Optional[Path] = None):
-        self.library_dir = library_dir or RANK_LIBRARY_DIR
+    def __init__(self, library_name: str = COMMUNITY_LIBRARY, library_dir: Optional[Path] = None):
+        if library_dir is not None:
+            self.library_dir = library_dir
+        else:
+            rank_dir, _ = get_library_dirs(library_name)
+            self.library_dir = rank_dir
         self.library_dir.mkdir(parents=True, exist_ok=True)
         self._library: dict[Rank, np.ndarray] = {}
         self._load_library()
@@ -157,8 +170,12 @@ class SuitMatcher:
 
     MATCH_THRESHOLD = 0.08
 
-    def __init__(self, library_dir: Optional[Path] = None):
-        self.library_dir = library_dir or SUIT_LIBRARY_DIR
+    def __init__(self, library_name: str = COMMUNITY_LIBRARY, library_dir: Optional[Path] = None):
+        if library_dir is not None:
+            self.library_dir = library_dir
+        else:
+            _, suit_dir = get_library_dirs(library_name)
+            self.library_dir = suit_dir
         self.library_dir.mkdir(parents=True, exist_ok=True)
         self._library: dict[Suit, np.ndarray] = {}
         self._load_library()
@@ -274,9 +291,10 @@ class SuitMatcher:
 class CardMatcher:
     """Matches card images using separate rank and suit matchers."""
 
-    def __init__(self):
-        self.rank_matcher = RankMatcher()
-        self.suit_matcher = SuitMatcher()
+    def __init__(self, library_name: str = COMMUNITY_LIBRARY):
+        self.library_name = library_name
+        self.rank_matcher = RankMatcher(library_name=library_name)
+        self.suit_matcher = SuitMatcher(library_name=library_name)
 
     def extract_rank_region(self, slot_image: np.ndarray) -> np.ndarray:
         """Extract the rank region from a card slot image."""
@@ -317,24 +335,33 @@ class CardMatcher:
     def get_library_stats(self) -> dict:
         """Get statistics about the card libraries."""
         return {
+            "library_name": self.library_name,
             "ranks": self.rank_matcher.get_library_size(),
             "suits": self.suit_matcher.get_library_size(),
             "total_possible": 13 + 4,  # 13 ranks + 4 suits
         }
 
 
-# Singleton instance
-_matcher: Optional[CardMatcher] = None
+# Singleton instances by library name
+_matchers: dict[str, CardMatcher] = {}
 
 
-def get_card_matcher() -> CardMatcher:
-    """Get the singleton CardMatcher instance."""
-    global _matcher
-    if _matcher is None:
-        _matcher = CardMatcher()
-    return _matcher
+def get_card_matcher(library_name: str = COMMUNITY_LIBRARY) -> CardMatcher:
+    """Get the CardMatcher instance for a specific library."""
+    global _matchers
+    if library_name not in _matchers:
+        _matchers[library_name] = CardMatcher(library_name=library_name)
+    return _matchers[library_name]
 
 
 def match_card(card_image: np.ndarray, slot_index: int = 0) -> Optional[Card]:
-    """Convenience function to match a card image."""
-    return get_card_matcher().match_card(card_image, slot_index)
+    """Convenience function to match a card image using the appropriate library."""
+    # Determine library based on slot index
+    # Slots 0-4 are community cards, 5 is hero left, 6 is hero right
+    if slot_index == 5:
+        library_name = HERO_LEFT_LIBRARY
+    elif slot_index == 6:
+        library_name = HERO_RIGHT_LIBRARY
+    else:
+        library_name = COMMUNITY_LIBRARY
+    return get_card_matcher(library_name).match_card(card_image, slot_index)
