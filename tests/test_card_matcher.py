@@ -7,117 +7,145 @@ import numpy as np
 import pytest
 import cv2
 
-from lieutenant_of_poker.card_matcher import CardMatcher
+from lieutenant_of_poker.card_matcher import (
+    CardMatcher, RankMatcher, SuitMatcher,
+    RANK_REGION, SUIT_REGION,
+)
 from lieutenant_of_poker.card_detector import Card, Rank, Suit
+
+
+class TestRankMatcher:
+    """Tests for RankMatcher class."""
+
+    @pytest.fixture
+    def temp_library(self, tmp_path):
+        """Create a temporary library directory."""
+        return tmp_path / "ranks"
+
+    def test_initialization(self, temp_library):
+        """Test matcher initializes and creates library directory."""
+        matcher = RankMatcher(library_dir=temp_library)
+        assert matcher is not None
+        assert temp_library.exists()
+
+    def test_parse_filename_valid(self, temp_library):
+        """Test parsing valid rank filenames."""
+        matcher = RankMatcher(library_dir=temp_library)
+
+        assert matcher._parse_filename("Q.png") == Rank.QUEEN
+        assert matcher._parse_filename("A.png") == Rank.ACE
+        assert matcher._parse_filename("10.png") == Rank.TEN
+        assert matcher._parse_filename("2.png") == Rank.TWO
+
+    def test_parse_filename_invalid(self, temp_library):
+        """Test parsing invalid rank filenames."""
+        matcher = RankMatcher(library_dir=temp_library)
+
+        assert matcher._parse_filename("invalid.png") is None
+        assert matcher._parse_filename("X.png") is None
+
+    def test_save_and_load_library(self, temp_library):
+        """Test saving rank to library and loading it back."""
+        img = np.zeros((50, 50, 3), dtype=np.uint8)
+        img[10:40, 10:40] = (255, 255, 255)
+
+        matcher = RankMatcher(library_dir=temp_library)
+        matcher._save_to_library(img, Rank.ACE)
+        matcher._load_library()
+
+        assert Rank.ACE in matcher._library
+
+
+class TestSuitMatcher:
+    """Tests for SuitMatcher class."""
+
+    @pytest.fixture
+    def temp_library(self, tmp_path):
+        """Create a temporary library directory."""
+        return tmp_path / "suits"
+
+    def test_initialization(self, temp_library):
+        """Test matcher initializes and creates library directory."""
+        matcher = SuitMatcher(library_dir=temp_library)
+        assert matcher is not None
+        assert temp_library.exists()
+
+    def test_parse_filename_valid(self, temp_library):
+        """Test parsing valid suit filenames."""
+        matcher = SuitMatcher(library_dir=temp_library)
+
+        assert matcher._parse_filename("hearts.png") == Suit.HEARTS
+        assert matcher._parse_filename("diamonds.png") == Suit.DIAMONDS
+        assert matcher._parse_filename("clubs.png") == Suit.CLUBS
+        assert matcher._parse_filename("spades.png") == Suit.SPADES
+
+    def test_parse_filename_invalid(self, temp_library):
+        """Test parsing invalid suit filenames."""
+        matcher = SuitMatcher(library_dir=temp_library)
+
+        assert matcher._parse_filename("invalid.png") is None
+        assert matcher._parse_filename("X.png") is None
+
+    def test_save_and_load_library(self, temp_library):
+        """Test saving suit to library and loading it back."""
+        img = np.zeros((50, 50, 3), dtype=np.uint8)
+        img[10:40, 10:40] = (255, 0, 0)
+
+        matcher = SuitMatcher(library_dir=temp_library)
+        matcher._save_to_library(img, Suit.HEARTS)
+        matcher._load_library()
+
+        assert Suit.HEARTS in matcher._library
 
 
 class TestCardMatcher:
     """Tests for CardMatcher class."""
 
-    @pytest.fixture
-    def temp_library(self, tmp_path):
-        """Create a temporary card library directory."""
-        return tmp_path / "card_library"
+    def test_initialization(self):
+        """Test matcher initializes with rank and suit matchers."""
+        matcher = CardMatcher()
+        assert matcher.rank_matcher is not None
+        assert matcher.suit_matcher is not None
 
-    def test_initialization(self, temp_library):
-        """Test matcher initializes and creates library directory."""
-        matcher = CardMatcher(library_dir=temp_library)
-        assert matcher is not None
-        assert temp_library.exists()
+    def test_extract_rank_region(self):
+        """Test rank region extraction."""
+        matcher = CardMatcher()
 
-    def test_parse_filename_valid(self, temp_library):
-        """Test parsing valid card filenames."""
-        matcher = CardMatcher(library_dir=temp_library)
+        # Create a test image
+        img = np.zeros((150, 110, 3), dtype=np.uint8)
+        x, y, w, h = RANK_REGION
+        img[y:y+h, x:x+w] = (255, 255, 255)  # White rank region
 
-        card = matcher._parse_filename("Q_hearts.png")
-        assert card is not None
-        assert card.rank == Rank.QUEEN
-        assert card.suit == Suit.HEARTS
+        rank_region = matcher.extract_rank_region(img)
+        assert rank_region.shape == (h, w, 3)
+        assert np.all(rank_region == 255)
 
-        card = matcher._parse_filename("A_spades.png")
-        assert card is not None
-        assert card.rank == Rank.ACE
-        assert card.suit == Suit.SPADES
+    def test_extract_suit_region(self):
+        """Test suit region extraction."""
+        matcher = CardMatcher()
 
-        card = matcher._parse_filename("10_diamonds.png")
-        assert card is not None
-        assert card.rank == Rank.TEN
-        assert card.suit == Suit.DIAMONDS
+        # Create a test image
+        img = np.zeros((150, 110, 3), dtype=np.uint8)
+        x, y, w, h = SUIT_REGION
+        img[y:y+h, x:x+w] = (0, 0, 255)  # Red suit region
 
-    def test_parse_filename_invalid(self, temp_library):
-        """Test parsing invalid card filenames."""
-        matcher = CardMatcher(library_dir=temp_library)
+        suit_region = matcher.extract_suit_region(img)
+        assert suit_region.shape == (h, w, 3)
+        assert np.all(suit_region == (0, 0, 255))
 
-        assert matcher._parse_filename("invalid.png") is None
-        assert matcher._parse_filename("X_hearts.png") is None
-        assert matcher._parse_filename("Q_invalid.png") is None
-
-    def test_normalize_image(self, temp_library):
-        """Test image normalization."""
-        matcher = CardMatcher(library_dir=temp_library)
-
-        # Create test image
-        img = np.zeros((100, 80, 3), dtype=np.uint8)
-        img[:, :] = (128, 128, 128)
-
-        normalized = matcher._normalize_image(img)
-
-        # Check size is standard
-        assert normalized.shape[:2] == (90, 60)
-        # Check values are normalized to 0-1
-        assert normalized.dtype == np.float32
-        assert np.all(normalized >= 0) and np.all(normalized <= 1)
-
-    def test_compare_images_identical(self, temp_library):
-        """Test comparing identical images."""
-        matcher = CardMatcher(library_dir=temp_library)
-
-        img = np.random.rand(90, 60, 3).astype(np.float32)
-        score = matcher._compare_images(img, img)
-
-        assert score == 0.0
-
-    def test_compare_images_different(self, temp_library):
-        """Test comparing different images."""
-        matcher = CardMatcher(library_dir=temp_library)
-
-        img1 = np.zeros((90, 60, 3), dtype=np.float32)
-        img2 = np.ones((90, 60, 3), dtype=np.float32)
-
-        score = matcher._compare_images(img1, img2)
-        assert score > 0.5  # Very different
-
-    def test_save_and_load_library(self, temp_library):
-        """Test saving card to library and loading it back."""
-        # Create a unique test image
-        img = np.zeros((100, 80, 3), dtype=np.uint8)
-        img[20:80, 20:60] = (255, 255, 255)  # White rectangle
-
-        matcher = CardMatcher(library_dir=temp_library)
-
-        # Manually save a card to the library
-        card = Card(rank=Rank.ACE, suit=Suit.SPADES)
-        matcher._save_to_library(img, card)
-
-        # Reload the library
-        matcher._load_library()
-
-        # Check the card is in the library
-        key = (Rank.ACE, Suit.SPADES)
-        assert key in matcher._library
-
-    def test_get_library_stats(self, temp_library):
+    def test_get_library_stats(self):
         """Test library statistics."""
-        matcher = CardMatcher(library_dir=temp_library)
-
+        matcher = CardMatcher()
         stats = matcher.get_library_stats()
-        assert "total_images" in stats
-        assert "unique_cards" in stats
-        assert "cards" in stats
 
-    def test_match_empty_image(self, temp_library):
+        assert "ranks" in stats
+        assert "suits" in stats
+        assert "total_possible" in stats
+        assert stats["total_possible"] == 17  # 13 ranks + 4 suits
+
+    def test_match_empty_image(self):
         """Test matching with empty image."""
-        matcher = CardMatcher(library_dir=temp_library)
+        matcher = CardMatcher()
 
         result = matcher.match_card(None)
         assert result is None
