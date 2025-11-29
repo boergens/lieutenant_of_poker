@@ -1,32 +1,34 @@
 """
-Fast OCR module using tesserocr for low-latency text recognition.
+Fast OCR module using PaddleOCR for text recognition.
 
-Uses tesserocr (C API bindings) instead of pytesseract (subprocess)
-for ~15x faster OCR calls by keeping the tesseract engine loaded.
+PaddleOCR provides faster and more accurate OCR than Tesseract,
+especially for small text regions like chip amounts.
 """
 
 from typing import Optional
 import threading
+import logging
 
 import cv2
 import numpy as np
-from PIL import Image
-import tesserocr
+
+# Suppress PaddleOCR's verbose logging
+logging.getLogger("ppocr").setLevel(logging.WARNING)
 
 
 class FastOCR:
     """
-    Fast OCR using tesserocr with reusable API instance.
+    Fast OCR using PaddleOCR with reusable model instance.
 
-    Thread-safe singleton that maintains a tesserocr API instance
-    for fast repeated OCR calls without subprocess overhead.
+    Thread-safe singleton that maintains a PaddleOCR instance
+    for fast repeated OCR calls without model reload overhead.
     """
 
     _instance: Optional["FastOCR"] = None
     _lock = threading.Lock()
 
     def __new__(cls) -> "FastOCR":
-        """Singleton pattern for shared API instance."""
+        """Singleton pattern for shared instance."""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -35,23 +37,20 @@ class FastOCR:
         return cls._instance
 
     def __init__(self):
-        """Initialize the OCR API (only once due to singleton)."""
+        """Initialize the OCR model (only once due to singleton)."""
         if self._initialized:
             return
 
-        # Create API instances for different use cases
-        self._api_digits = tesserocr.PyTessBaseAPI(
-            psm=tesserocr.PSM.SINGLE_LINE
-        )
-        self._api_digits.SetVariable("tessedit_char_whitelist", "0123456789,.")
+        from paddleocr import PaddleOCR
 
-        self._api_cards = tesserocr.PyTessBaseAPI(
-            psm=tesserocr.PSM.SINGLE_CHAR
-        )
-        self._api_cards.SetVariable("tessedit_char_whitelist", "0123456789JQKA")
-
-        self._api_general = tesserocr.PyTessBaseAPI(
-            psm=tesserocr.PSM.SINGLE_LINE
+        # Initialize PaddleOCR with optimized settings
+        # use_angle_cls=False for speed (our images are upright)
+        # show_log=False to reduce noise
+        self._ocr = PaddleOCR(
+            use_angle_cls=False,
+            lang="en",
+            show_log=False,
+            use_gpu=False,  # CPU is usually faster for small images
         )
 
         self._initialized = True
@@ -61,62 +60,61 @@ class FastOCR:
         OCR optimized for digit recognition (chip amounts, pot).
 
         Args:
-            image: BGR or grayscale numpy array.
+            image: BGR numpy array.
 
         Returns:
-            Recognized text string.
+            Recognized text string containing digits.
         """
-        pil_image = self._to_pil(image)
-        with self._lock:
-            self._api_digits.SetImage(pil_image)
-            return self._api_digits.GetUTF8Text().strip()
+        return self._ocr_image(image)
 
     def ocr_card_rank(self, image: np.ndarray) -> str:
         """
         OCR optimized for card rank recognition.
 
         Args:
-            image: BGR or grayscale numpy array of card rank area.
+            image: BGR numpy array of card rank area.
 
         Returns:
             Recognized text string.
         """
-        pil_image = self._to_pil(image)
-        with self._lock:
-            self._api_cards.SetImage(pil_image)
-            return self._api_cards.GetUTF8Text().strip()
+        return self._ocr_image(image)
 
     def ocr_general(self, image: np.ndarray) -> str:
         """
         General OCR for any text.
 
         Args:
-            image: BGR or grayscale numpy array.
+            image: BGR numpy array.
 
         Returns:
             Recognized text string.
         """
-        pil_image = self._to_pil(image)
-        with self._lock:
-            self._api_general.SetImage(pil_image)
-            return self._api_general.GetUTF8Text().strip()
+        return self._ocr_image(image)
 
-    def _to_pil(self, image: np.ndarray) -> Image.Image:
-        """Convert numpy array to PIL Image."""
-        if len(image.shape) == 3:
-            # BGR to RGB
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        return Image.fromarray(image)
+    def _ocr_image(self, image: np.ndarray) -> str:
+        """Run OCR on an image and return concatenated text."""
+        if image is None or image.size == 0:
+            return ""
+
+        with self._lock:
+            # PaddleOCR expects BGR or RGB, handles both
+            result = self._ocr.ocr(image, cls=False)
+
+        if not result or not result[0]:
+            return ""
+
+        # Extract text from all detected regions
+        texts = []
+        for line in result[0]:
+            if line and len(line) >= 2:
+                text, confidence = line[1]
+                texts.append(text)
+
+        return " ".join(texts)
 
     def close(self):
-        """Release tesserocr resources."""
+        """Release resources."""
         with self._lock:
-            if hasattr(self, '_api_digits'):
-                self._api_digits.End()
-            if hasattr(self, '_api_cards'):
-                self._api_cards.End()
-            if hasattr(self, '_api_general'):
-                self._api_general.End()
             self._initialized = False
             FastOCR._instance = None
 
