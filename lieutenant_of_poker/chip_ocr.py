@@ -1,8 +1,7 @@
 """
 Chip/money detection module for Governor of Poker.
 
-Extracts chip counts, pot amounts, and bet values from game UI regions
-using template matching for fast, accurate digit recognition.
+Extracts chip counts, pot amounts, and bet values from game UI regions.
 """
 
 import re
@@ -12,7 +11,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from .digit_matcher import match_digits
+from .fast_ocr import ocr_digits
 
 
 def _image_fingerprint(image: np.ndarray) -> bytes:
@@ -49,7 +48,7 @@ class OCRCache:
 
 
 class ChipOCR:
-    """Extract chip/money values from game UI regions using template matching."""
+    """Extract chip/money values from game UI regions using OCR."""
 
     def __init__(self):
         """Initialize the chip extractor."""
@@ -68,8 +67,7 @@ class ChipOCR:
         if region is None or region.size == 0:
             return None
 
-        # Use template matching for digit recognition
-        text = match_digits(region)
+        text = ocr_digits(region)
         return self._parse_amount(text)
 
     def extract_pot(self, pot_region: np.ndarray) -> Optional[int]:
