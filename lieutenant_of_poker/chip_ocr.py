@@ -1,7 +1,8 @@
 """
-Chip/money OCR module for Governor of Poker.
+Chip/money detection module for Governor of Poker.
 
-Extracts chip counts, pot amounts, and bet values from game UI regions.
+Extracts chip counts, pot amounts, and bet values from game UI regions
+using template matching for fast, accurate digit recognition.
 """
 
 import re
@@ -11,7 +12,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from .fast_ocr import ocr_digits
+from .digit_matcher import match_digits
 
 
 def _image_fingerprint(image: np.ndarray) -> bytes:
@@ -48,10 +49,10 @@ class OCRCache:
 
 
 class ChipOCR:
-    """Extract chip/money values from game UI regions using OCR."""
+    """Extract chip/money values from game UI regions using template matching."""
 
     def __init__(self):
-        """Initialize the chip OCR extractor."""
+        """Initialize the chip extractor."""
         pass
 
     def extract_amount(self, region: np.ndarray) -> Optional[int]:
@@ -67,8 +68,8 @@ class ChipOCR:
         if region is None or region.size == 0:
             return None
 
-        # Pass directly to Tesseract - it handles binarization internally
-        text = ocr_digits(region)
+        # Use template matching for digit recognition
+        text = match_digits(region)
         return self._parse_amount(text)
 
     def extract_pot(self, pot_region: np.ndarray) -> Optional[int]:
