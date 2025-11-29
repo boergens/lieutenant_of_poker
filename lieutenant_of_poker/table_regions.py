@@ -110,12 +110,12 @@ class TableRegionDetector:
         self._community_cards_region = self._scaled(Region(x=560, y=420, width=430, height=140))
 
         # Individual community card slots (5 fixed positions)
-        # Shifted one slot to the right (card_width + card_spacing = 86)
-        card_width = 80
-        card_spacing = 6
-        card_start_x = 560 + (card_width + card_spacing)  # Shifted right by one slot
-        card_y = 420
-        card_height = 140
+        # Tuned for 10px background padding around each card
+        card_width = 93  # Gives ~103px at output for 83px card + 20px padding
+        card_spacing = -4  # 89px slot-to-slot spacing (was -7, cards drifted right)
+        card_start_x = 641  # Shifted to center card with 10px left padding
+        card_y = 429  # Moved down so card has 10px top padding
+        card_height = 132  # Gives ~147px at output for 127px card + 20px padding
         self._community_card_slots = [
             self._scaled(Region(
                 x=card_start_x + i * (card_width + card_spacing),

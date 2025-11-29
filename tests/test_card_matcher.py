@@ -29,7 +29,7 @@ class TestCardMatcher:
         """Test parsing valid card filenames."""
         matcher = CardMatcher(library_dir=temp_library)
 
-        card = matcher._parse_filename("Q_hearts_slot3.png")
+        card = matcher._parse_filename("Q_hearts.png")
         assert card is not None
         assert card.rank == Rank.QUEEN
         assert card.suit == Suit.HEARTS
@@ -39,7 +39,7 @@ class TestCardMatcher:
         assert card.rank == Rank.ACE
         assert card.suit == Suit.SPADES
 
-        card = matcher._parse_filename("10_diamonds_slot0.png")
+        card = matcher._parse_filename("10_diamonds.png")
         assert card is not None
         assert card.rank == Rank.TEN
         assert card.suit == Suit.DIAMONDS
@@ -97,7 +97,7 @@ class TestCardMatcher:
 
         # Manually save a card to the library
         card = Card(rank=Rank.ACE, suit=Suit.SPADES)
-        matcher._save_to_library(img, card, slot_index=0)
+        matcher._save_to_library(img, card)
 
         # Reload the library
         matcher._load_library()
@@ -105,7 +105,6 @@ class TestCardMatcher:
         # Check the card is in the library
         key = (Rank.ACE, Suit.SPADES)
         assert key in matcher._library
-        assert len(matcher._library[key]) == 1
 
     def test_get_library_stats(self, temp_library):
         """Test library statistics."""

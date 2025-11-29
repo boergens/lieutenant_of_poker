@@ -40,8 +40,9 @@ class CardMatcher:
         self.library_dir = library_dir or LIBRARY_DIR
         self.library_dir.mkdir(parents=True, exist_ok=True)
 
-        # Cache of loaded reference images: {(rank, suit): [normalized_images]}
-        self._library: dict[Tuple[Rank, Suit], list[np.ndarray]] = {}
+        # Cache of loaded reference images: {(rank, suit): normalized_image}
+        # One reference image per unique card
+        self._library: dict[Tuple[Rank, Suit], np.ndarray] = {}
         self._load_library()
 
     def _load_library(self) -> None:
@@ -60,13 +61,13 @@ class CardMatcher:
             normalized = self._normalize_image(img)
             key = (card.rank, card.suit)
 
+            # Only keep one reference per card
             if key not in self._library:
-                self._library[key] = []
-            self._library[key].append(normalized)
+                self._library[key] = normalized
 
     def _parse_filename(self, filename: str) -> Optional[Card]:
         """
-        Parse card from filename like 'Q_hearts_slot3.png' or 'A_spades.png'.
+        Parse card from filename like 'Q_hearts.png'.
 
         Returns Card or None if invalid filename.
         """
@@ -127,7 +128,7 @@ class CardMatcher:
 
         Args:
             card_image: BGR image of a card.
-            slot_index: Which slot this card is from (for naming new library entries).
+            slot_index: Ignored (kept for API compatibility).
 
         Returns:
             Card if matched or identified, None if unable to identify.
@@ -141,12 +142,11 @@ class CardMatcher:
         best_match: Optional[Card] = None
         best_score = float("inf")
 
-        for (rank, suit), ref_images in self._library.items():
-            for ref_img in ref_images:
-                score = self._compare_images(normalized, ref_img)
-                if score < best_score:
-                    best_score = score
-                    best_match = Card(rank=rank, suit=suit)
+        for (rank, suit), ref_img in self._library.items():
+            score = self._compare_images(normalized, ref_img)
+            if score < best_score:
+                best_score = score
+                best_match = Card(rank=rank, suit=suit)
 
         # If we found a good match, return it
         if best_match is not None and best_score < self.MATCH_THRESHOLD:
@@ -157,12 +157,11 @@ class CardMatcher:
 
         if card is not None:
             # Save to library for future matches
-            self._save_to_library(card_image, card, slot_index)
+            self._save_to_library(card_image, card)
             # Add to in-memory cache
             key = (card.rank, card.suit)
             if key not in self._library:
-                self._library[key] = []
-            self._library[key].append(normalized)
+                self._library[key] = normalized
 
         return card
 
@@ -239,38 +238,29 @@ class CardMatcher:
             # Clean up temp file
             Path(temp_path).unlink(missing_ok=True)
 
-    def _save_to_library(self, card_image: np.ndarray, card: Card, slot_index: int) -> None:
+    def _save_to_library(self, card_image: np.ndarray, card: Card) -> None:
         """Save a card image to the library."""
-        # Create filename like "Q_hearts_slot3.png"
+        # Create filename like "Q_hearts.png"
         rank_str = card.rank.value
         suit_str = card.suit.value
 
-        # Find a unique filename
-        base_name = f"{rank_str}_{suit_str}"
-        filename = f"{base_name}_slot{slot_index}.png"
+        filename = f"{rank_str}_{suit_str}.png"
         filepath = self.library_dir / filename
 
-        # If file exists, add a counter
-        counter = 1
-        while filepath.exists():
-            filename = f"{base_name}_slot{slot_index}_{counter}.png"
-            filepath = self.library_dir / filename
-            counter += 1
-
-        cv2.imwrite(str(filepath), card_image)
+        # Only save if we don't already have this card
+        if not filepath.exists():
+            cv2.imwrite(str(filepath), card_image)
 
     def get_library_stats(self) -> dict:
         """Get statistics about the card library."""
-        total_images = sum(len(imgs) for imgs in self._library.values())
         unique_cards = len(self._library)
 
         return {
-            "total_images": total_images,
+            "total_images": unique_cards,
             "unique_cards": unique_cards,
             "cards": [
-                f"{card.rank.value} of {card.suit.value}"
+                f"{rank.value} of {suit.value}"
                 for (rank, suit) in self._library.keys()
-                for card in [Card(rank=rank, suit=suit)]
             ],
         }
 
