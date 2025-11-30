@@ -46,10 +46,6 @@ class VideoFrameExtractor:
         if not self.video_path.exists():
             raise FileNotFoundError(f"Video file not found: {self.video_path}")
 
-        self._open()
-
-    def _open(self) -> None:
-        """Open the video capture."""
         self._cap = cv2.VideoCapture(str(self.video_path))
         if not self._cap.isOpened():
             raise ValueError(f"Cannot open video file: {self.video_path}")
@@ -121,11 +117,13 @@ class VideoFrameExtractor:
             FrameInfo with frame data, or None if end of video.
         """
         frame_num = self.current_frame
-        timestamp = self.current_timestamp_ms
 
         ret, frame = self._cap.read()
         if not ret:
             return None
+
+        # Get timestamp AFTER read - more accurate after seeks
+        timestamp = self.current_timestamp_ms
 
         return FrameInfo(
             frame_number=frame_num,
