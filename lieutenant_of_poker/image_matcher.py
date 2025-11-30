@@ -75,10 +75,6 @@ class ImageMatcher(ABC, Generic[T]):
         resized = cv2.resize(img, self.IMAGE_SIZE, interpolation=cv2.INTER_AREA)
         return resized.astype(np.float32) / 255.0
 
-    def _compare(self, img1: np.ndarray, img2: np.ndarray) -> float:
-        """Compare two normalized images. Returns difference score (lower = more similar)."""
-        return float(np.mean(np.abs(img1 - img2)))
-
     def match(self, image: np.ndarray) -> Optional[T]:
         """
         Match an image against the library.
@@ -95,7 +91,7 @@ class ImageMatcher(ABC, Generic[T]):
 
         for value, ref_images in self._library.items():
             for ref_img in ref_images:
-                score = self._compare(normalized, ref_img)
+                score = float(np.mean(np.abs(normalized - ref_img)))
                 if score < best_score:
                     best_score = score
                     best_match = value
@@ -222,7 +218,7 @@ class ImageMatcherWithNone(ImageMatcher[T]):
 
         # Check if this matches a known "no match" image
         for none_img in self._none_images:
-            if self._compare(normalized, none_img) < self.MATCH_THRESHOLD:
+            if float(np.mean(np.abs(normalized - none_img))) < self.MATCH_THRESHOLD:
                 return None
 
         # Check against main library
@@ -231,7 +227,7 @@ class ImageMatcherWithNone(ImageMatcher[T]):
 
         for value, ref_images in self._library.items():
             for ref_img in ref_images:
-                score = self._compare(normalized, ref_img)
+                score = float(np.mean(np.abs(normalized - ref_img)))
                 if score < best_score:
                     best_score = score
                     best_match = value
