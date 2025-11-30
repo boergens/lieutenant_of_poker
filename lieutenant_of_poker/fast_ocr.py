@@ -129,7 +129,7 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
         image: BGR or grayscale numpy array.
 
     Returns:
-        Preprocessed image as numpy array (grayscale, inverted, contrast-boosted).
+        Preprocessed image as numpy array (grayscale, inverted, contrast-boosted, left-trimmed).
     """
     # Convert to grayscale if needed
     if len(image.shape) == 3:
@@ -138,4 +138,13 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     image = 255 - image
     # Boost contrast: pull values above 200 to 255
     image = np.where(image > 200, 255, image).astype(np.uint8)
+    # Trim empty columns from left until we hit text (majority of pixels >= 200)
+    left = 0
+    while left < image.shape[1] - 1:
+        col = image[:, left]
+        if np.sum(col >= 200) > len(col) // 2:
+            break
+        left += 1
+    if left > 0:
+        image = image[:, left:]
     return image

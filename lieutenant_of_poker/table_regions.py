@@ -184,7 +184,7 @@ class TableRegionDetector:
             ),
             PlayerPosition.HERO: PlayerRegions(
                 position=PlayerPosition.HERO,
-                name_chip_box=self._scaled(Region(x=979, y=845, width=123, height=29)),
+                name_chip_box=self._scaled(Region(x=974, y=845, width=128, height=29)),
                 cards=self._hero_cards_region,
                 action_label=self._scaled(Region(x=917, y=876, width=90, height=33)),
             ),
