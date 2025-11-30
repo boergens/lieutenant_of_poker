@@ -27,6 +27,7 @@ black .
 # Lint
 ruff check .
 ruff check --fix .
+pylint lieutenant_of_poker
 ```
 
 ## External Dependencies

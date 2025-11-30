@@ -27,6 +27,7 @@ dependencies = [
 dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
+    "pylint>=3.0.0",
 ]
 
 [project.scripts]
@@ -42,3 +43,25 @@ target-version = ["py310"]
 [tool.ruff]
 line-length = 88
 select = ["E", "F", "I", "N", "W"]
+
+[tool.pylint.main]
+ignore-patterns = ["test_.*\\.py"]
+jobs = 0  # Auto-detect CPU count
+extension-pkg-allow-list = ["cv2"]
+
+[tool.pylint.typecheck]
+generated-members = ["cv2.*", "tesserocr.*", "Quartz.*", "AppKit.*"]
+
+[tool.pylint.messages_control]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-locals",
+    "too-many-instance-attributes",
+]
+
+[tool.pylint.format]
+max-line-length = 88
