@@ -51,17 +51,18 @@ class FastOCR:
 
         self._initialized = True
 
-    def ocr_digits(self, image: np.ndarray) -> str:
+    def ocr_digits(self, image: np.ndarray, trim_left: bool = True) -> str:
         """
         OCR optimized for digit recognition (chip amounts, pot).
 
         Args:
             image: BGR or grayscale numpy array.
+            trim_left: If True, trim empty columns from left until hitting text.
 
         Returns:
             Recognized text string.
         """
-        pil_image = self._to_pil(image)
+        pil_image = self._to_pil(image, trim_left=trim_left)
         with self._lock:
             self._api_digits.SetImage(pil_image)
             return self._api_digits.GetUTF8Text().strip()
@@ -81,9 +82,9 @@ class FastOCR:
             self._api_general.SetImage(pil_image)
             return self._api_general.GetUTF8Text().strip()
 
-    def _to_pil(self, image: np.ndarray) -> Image.Image:
+    def _to_pil(self, image: np.ndarray, trim_left: bool = True) -> Image.Image:
         """Convert numpy array to PIL Image using shared preprocessing."""
-        preprocessed = preprocess_for_ocr(image)
+        preprocessed = preprocess_for_ocr(image, trim_left=trim_left)
         return Image.fromarray(preprocessed)
 
     def close(self):
@@ -109,9 +110,9 @@ def get_fast_ocr() -> FastOCR:
     return _fast_ocr
 
 
-def ocr_digits(image: np.ndarray) -> str:
+def ocr_digits(image: np.ndarray, trim_left: bool = True) -> str:
     """OCR for digits (chip amounts)."""
-    return get_fast_ocr().ocr_digits(image)
+    return get_fast_ocr().ocr_digits(image, trim_left=trim_left)
 
 
 def ocr_general(image: np.ndarray) -> str:
@@ -119,7 +120,7 @@ def ocr_general(image: np.ndarray) -> str:
     return get_fast_ocr().ocr_general(image)
 
 
-def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
+def preprocess_for_ocr(image: np.ndarray, trim_left: bool = True) -> np.ndarray:
     """
     Return the preprocessed image that would be sent to tesseract.
 
@@ -127,9 +128,10 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
 
     Args:
         image: BGR or grayscale numpy array.
+        trim_left: If True, trim empty columns from left until hitting text.
 
     Returns:
-        Preprocessed image as numpy array (grayscale, inverted, contrast-boosted, left-trimmed).
+        Preprocessed image as numpy array (grayscale, inverted, contrast-boosted).
     """
     # Convert to grayscale if needed
     if len(image.shape) == 3:
@@ -139,12 +141,13 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     # Boost contrast: pull values above 200 to 255
     image = np.where(image > 200, 255, image).astype(np.uint8)
     # Trim empty columns from left until we hit text (majority of pixels >= 200)
-    left = 0
-    while left < image.shape[1] - 1:
-        col = image[:, left]
-        if np.sum(col >= 200) > len(col) // 2:
-            break
-        left += 1
-    if left > 0:
-        image = image[:, left:]
+    if trim_left:
+        left = 0
+        while left < image.shape[1] - 1:
+            col = image[:, left]
+            if np.sum(col >= 200) > len(col) // 2:
+                break
+            left += 1
+        if left > 0:
+            image = image[:, left:]
     return image

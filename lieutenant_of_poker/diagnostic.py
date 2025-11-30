@@ -167,9 +167,9 @@ class DiagnosticExtractor:
             pot_region = region_detector.extract_pot(frame)
             step.images.append(("Pot Region", pot_region))
 
-            # Show preprocessed image that tesseract actually sees
+            # Show preprocessed image that tesseract actually sees (no left trim for pot)
             from .fast_ocr import preprocess_for_ocr
-            preprocessed = preprocess_for_ocr(pot_region)
+            preprocessed = preprocess_for_ocr(pot_region, trim_left=False)
             step.images.append(("OCR Input (inverted)", preprocessed))
 
             # Use mainline ChipOCR

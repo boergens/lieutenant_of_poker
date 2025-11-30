@@ -54,12 +54,13 @@ class ChipOCR:
         """Initialize the chip extractor."""
         pass
 
-    def extract_amount(self, region: np.ndarray) -> Optional[int]:
+    def extract_amount(self, region: np.ndarray, trim_left: bool = True) -> Optional[int]:
         """
         Extract a chip/money amount from an image region.
 
         Args:
             region: BGR image region containing a chip amount.
+            trim_left: If True, trim empty columns from left until hitting text.
 
         Returns:
             Integer amount if successfully extracted, None otherwise.
@@ -67,7 +68,7 @@ class ChipOCR:
         if region is None or region.size == 0:
             return None
 
-        text = ocr_digits(region)
+        text = ocr_digits(region, trim_left=trim_left)
         return self._parse_amount(text)
 
     def extract_pot(self, pot_region: np.ndarray) -> Optional[int]:
@@ -80,7 +81,7 @@ class ChipOCR:
         Returns:
             Pot amount as integer, or None if not detected.
         """
-        return self.extract_amount(pot_region)
+        return self.extract_amount(pot_region, trim_left=False)
 
     def extract_player_chips(self, chip_region: np.ndarray) -> Optional[int]:
         """
