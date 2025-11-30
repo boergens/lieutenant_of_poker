@@ -131,22 +131,19 @@ class GameLog:
         return "\n".join(lines)
 
 
-def _get_position_order() -> List[PlayerPosition]:
-    """Get positions in clockwise order around the table."""
-    return [
-        PlayerPosition.SEAT_1,
-        PlayerPosition.SEAT_2,
-        PlayerPosition.SEAT_3,
-        PlayerPosition.SEAT_4,
-        PlayerPosition.HERO,
-    ]
+_POSITION_ORDER = [
+    PlayerPosition.SEAT_1,
+    PlayerPosition.SEAT_2,
+    PlayerPosition.SEAT_3,
+    PlayerPosition.SEAT_4,
+    PlayerPosition.HERO,
+]
 
 
 def _position_before(pos: PlayerPosition) -> PlayerPosition:
     """Get the position before (to the right of) the given position."""
-    order = _get_position_order()
-    idx = order.index(pos)
-    return order[(idx - 1) % len(order)]
+    idx = _POSITION_ORDER.index(pos)
+    return _POSITION_ORDER[(idx - 1) % len(_POSITION_ORDER)]
 
 
 def _deduce_blinds(hand: HandRecord) -> None:
