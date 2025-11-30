@@ -129,10 +129,13 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
         image: BGR or grayscale numpy array.
 
     Returns:
-        Preprocessed image as numpy array (grayscale, inverted).
+        Preprocessed image as numpy array (grayscale, inverted, contrast-boosted).
     """
     # Convert to grayscale if needed
     if len(image.shape) == 3:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     # Invert colors - tesseract works better with dark text on light background
-    return 255 - image
+    image = 255 - image
+    # Boost contrast: pull values above 200 to 255
+    image = np.where(image > 200, 255, image).astype(np.uint8)
+    return image
