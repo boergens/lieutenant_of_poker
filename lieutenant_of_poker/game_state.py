@@ -140,20 +140,6 @@ class GameStateExtractor:
             pos: OCRCache(max_size=3) for pos in PlayerPosition
         }
 
-    def _scale_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Scale frame down if larger than target resolution."""
-        h, w = frame.shape[:2]
-
-        if w <= self.TARGET_WIDTH and h <= self.TARGET_HEIGHT:
-            return frame
-
-        # Calculate scale to fit within target
-        scale = min(self.TARGET_WIDTH / w, self.TARGET_HEIGHT / h)
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-
-        return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
     def extract(
         self,
         frame: np.ndarray,
@@ -173,7 +159,12 @@ class GameStateExtractor:
         """
         # Scale down large frames for faster processing
         if self.scale_frames:
-            frame = self._scale_frame(frame)
+            h, w = frame.shape[:2]
+            if w > self.TARGET_WIDTH or h > self.TARGET_HEIGHT:
+                scale = min(self.TARGET_WIDTH / w, self.TARGET_HEIGHT / h)
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
         # Create region detector for this frame
         region_detector = detect_table_regions(frame)
