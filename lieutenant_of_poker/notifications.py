@@ -341,9 +341,9 @@ class NotificationManager:
 
     def __init__(self):
         """Initialize the notification manager."""
-        self._channels: list[NotificationChannel] = []
+        self._channels: list[NotificationChannel] = list()
         self._severity_filter: Severity = Severity.WARNING
-        self._notification_history: list[Notification] = []
+        self._notification_history: list[Notification] = list()
         self._max_history: int = 100
 
     def add_channel(self, channel: NotificationChannel) -> bool:

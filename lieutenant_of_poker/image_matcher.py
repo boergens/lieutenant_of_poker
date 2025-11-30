@@ -187,7 +187,7 @@ class ImageMatcherWithNone(ImageMatcher[T]):
     """
 
     def __init__(self, library_dir: Path):
-        self._none_images: list[np.ndarray] = []
+        self._none_images: list[np.ndarray] = list()
         super().__init__(library_dir)
 
     def _load_library(self) -> None:

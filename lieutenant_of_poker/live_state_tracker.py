@@ -127,7 +127,7 @@ class LiveStateTracker:
         """
         self.extractor = extractor or GameStateExtractor()
         self.current_hand: Optional[TrackedHand] = None
-        self.hand_history: list[TrackedHand] = []
+        self.hand_history: list[TrackedHand] = list()
         self._prev_state: Optional[GameState] = None
         self._prev_hero_turn: bool = False
 
@@ -148,8 +148,8 @@ class LiveStateTracker:
             timestamp_ms=frame.timestamp_ms,
         )
 
-        events: list[GameEvent] = []
-        new_actions: list[TrackedAction] = []
+        events: list[GameEvent] = list()
+        new_actions: list[TrackedAction] = list()
 
         # Check for new hand
         if self._is_new_hand(self._prev_state, state):
