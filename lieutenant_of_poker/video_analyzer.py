@@ -140,12 +140,6 @@ _POSITION_ORDER = [
 ]
 
 
-def _position_before(pos: PlayerPosition) -> PlayerPosition:
-    """Get the position before (to the right of) the given position."""
-    idx = _POSITION_ORDER.index(pos)
-    return _POSITION_ORDER[(idx - 1) % len(_POSITION_ORDER)]
-
-
 def _deduce_blinds(hand: HandRecord) -> None:
     """Deduce blind positions from first preflop action."""
     if not hand.preflop_actions:
@@ -153,8 +147,11 @@ def _deduce_blinds(hand: HandRecord) -> None:
 
     # First preflop actor is UTG (position after BB)
     first_actor = hand.preflop_actions[0].position
-    hand.big_blind_pos = _position_before(first_actor)
-    hand.small_blind_pos = _position_before(hand.big_blind_pos)
+    # Get position before (to the right of) each position
+    bb_idx = _POSITION_ORDER.index(first_actor)
+    hand.big_blind_pos = _POSITION_ORDER[(bb_idx - 1) % len(_POSITION_ORDER)]
+    sb_idx = _POSITION_ORDER.index(hand.big_blind_pos)
+    hand.small_blind_pos = _POSITION_ORDER[(sb_idx - 1) % len(_POSITION_ORDER)]
 
     # Try to deduce blind amounts from initial pot
     # Initial pot = SB + BB, and typically BB = 2 * SB
