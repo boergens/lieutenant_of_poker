@@ -82,10 +82,12 @@ class FastOCR:
             return self._api_general.GetUTF8Text().strip()
 
     def _to_pil(self, image: np.ndarray) -> Image.Image:
-        """Convert numpy array to PIL Image."""
+        """Convert numpy array to PIL Image, inverting for better OCR."""
         if len(image.shape) == 3:
             # BGR to RGB
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Invert colors - tesseract works better with dark text on light background
+        image = 255 - image
         return Image.fromarray(image)
 
     def close(self):
@@ -119,3 +121,22 @@ def ocr_digits(image: np.ndarray) -> str:
 def ocr_general(image: np.ndarray) -> str:
     """General OCR."""
     return get_fast_ocr().ocr_general(image)
+
+
+def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
+    """
+    Return the preprocessed image that would be sent to tesseract.
+
+    Useful for diagnostics to see exactly what OCR receives.
+
+    Args:
+        image: BGR or grayscale numpy array.
+
+    Returns:
+        Preprocessed image as numpy array (RGB, inverted).
+    """
+    if len(image.shape) == 3:
+        # BGR to RGB
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # Invert colors - tesseract works better with dark text on light background
+    return 255 - image

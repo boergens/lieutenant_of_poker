@@ -167,6 +167,11 @@ class DiagnosticExtractor:
             pot_region = region_detector.extract_pot(frame)
             step.images.append(("Pot Region", pot_region))
 
+            # Show preprocessed image that tesseract actually sees
+            from .fast_ocr import preprocess_for_ocr
+            preprocessed = preprocess_for_ocr(pot_region)
+            step.images.append(("OCR Input (inverted)", preprocessed))
+
             # Use mainline ChipOCR
             from .chip_ocr import ChipOCR
             chip_ocr = ChipOCR()
@@ -395,6 +400,11 @@ class DiagnosticExtractor:
                 try:
                     chip_region = player_regions.name_chip_box.extract(frame)
                     chip_substep.images.append(("Chip Region", chip_region))
+
+                    # Show preprocessed image that tesseract actually sees
+                    from .fast_ocr import preprocess_for_ocr
+                    preprocessed = preprocess_for_ocr(chip_region)
+                    chip_substep.images.append(("OCR Input (inverted)", preprocessed))
 
                     # Use mainline ChipOCR
                     from .chip_ocr import ChipOCR
