@@ -327,15 +327,23 @@ def cmd_analyze(args):
                 )
                 states.append(state)
 
-                # Generate diagnostic if Claude was called
-                if args.debug and claude_was_called():
+                # Check for detection failures
+                has_failure = (
+                    state.pot is None or
+                    state.hero_chips is None or
+                    any(p.chips is None for p in state.players.values())
+                )
+
+                # Generate diagnostic if Claude was called OR detection failed
+                if args.debug and (claude_was_called() or has_failure):
                     debug_count += 1
                     report = diagnostic_extractor.extract_with_diagnostics(
                         frame_info.image,
                         frame_number=frame_info.frame_number,
                         timestamp_ms=frame_info.timestamp_ms,
                     )
-                    report_path = debug_dir / f"frame_{frame_info.frame_number}_{frame_info.timestamp_ms:.0f}ms.html"
+                    reason = "claude_called" if claude_was_called() else "detection_failed"
+                    report_path = debug_dir / f"frame_{frame_info.frame_number}_{frame_info.timestamp_ms:.0f}ms_{reason}.html"
                     generate_html_report(report, report_path)
 
                 progress.update(task, advance=1)
