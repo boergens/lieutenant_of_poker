@@ -32,12 +32,6 @@ def reset_claude_flag() -> None:
     _claude_was_called = False
 
 
-def _notify_claude_called() -> None:
-    """Internal: mark that Claude was called."""
-    global _claude_was_called
-    _claude_was_called = True
-
-
 class ImageMatcher(ABC, Generic[T]):
     """
     Base class for matching images against a reference library.
@@ -120,7 +114,8 @@ class ImageMatcher(ABC, Generic[T]):
 
     def _identify_with_claude(self, image: np.ndarray) -> Optional[T]:
         """Use Claude Code to identify an unknown image."""
-        _notify_claude_called()
+        global _claude_was_called
+        _claude_was_called = True
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
             cv2.imwrite(temp_path, image)
