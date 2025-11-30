@@ -123,7 +123,7 @@ class HandHistoryExporter:
         # Hole cards
         f.write("*** HOLE CARDS ***\n")
         if hand.hero_cards:
-            cards_str = " ".join(self._format_card(c) for c in hand.hero_cards)
+            cards_str = " ".join(c.short_name for c in hand.hero_cards)
             f.write(f"Dealt to Hero [{cards_str}]\n")
 
         # Preflop actions
@@ -132,24 +132,24 @@ class HandHistoryExporter:
 
         # Flop
         if hand.flop_cards:
-            cards_str = " ".join(self._format_card(c) for c in hand.flop_cards)
+            cards_str = " ".join(c.short_name for c in hand.flop_cards)
             f.write(f"*** FLOP *** [{cards_str}]\n")
             for action in hand.flop_actions:
                 f.write(f"{action}\n")
 
         # Turn
         if hand.turn_card:
-            flop_str = " ".join(self._format_card(c) for c in hand.flop_cards)
-            turn_str = self._format_card(hand.turn_card)
+            flop_str = " ".join(c.short_name for c in hand.flop_cards)
+            turn_str = hand.turn_card.short_name
             f.write(f"*** TURN *** [{flop_str}] [{turn_str}]\n")
             for action in hand.turn_actions:
                 f.write(f"{action}\n")
 
         # River
         if hand.river_card:
-            board_str = " ".join(self._format_card(c) for c in hand.flop_cards)
-            board_str += f" {self._format_card(hand.turn_card)}"
-            river_str = self._format_card(hand.river_card)
+            board_str = " ".join(c.short_name for c in hand.flop_cards)
+            board_str += f" {hand.turn_card.short_name}"
+            river_str = hand.river_card.short_name
             f.write(f"*** RIVER *** [{board_str}] [{river_str}]\n")
             for action in hand.river_actions:
                 f.write(f"{action}\n")
@@ -165,15 +165,11 @@ class HandHistoryExporter:
         if hand.river_card:
             board_cards.append(hand.river_card)
         if board_cards:
-            board_str = " ".join(self._format_card(c) for c in board_cards)
+            board_str = " ".join(c.short_name for c in board_cards)
             f.write(f"Board [{board_str}]\n")
 
         if hand.winner and hand.winnings:
             f.write(f"{hand.winner} collected ${hand.winnings} from pot\n")
-
-    def _format_card(self, card: Card) -> str:
-        """Format a card in PokerStars notation (e.g., 'Ah' for Ace of hearts)."""
-        return card.short_name
 
     def create_hand_from_states(
         self,
