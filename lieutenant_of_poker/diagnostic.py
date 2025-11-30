@@ -366,7 +366,8 @@ class DiagnosticExtractor:
             step.substeps.append(right_substep)
 
             step.parsed_result = [str(c) for c in cards] if cards else []
-            step.success = len(cards) > 0
+            # Success if all substeps succeeded (even if both are empty slots)
+            step.success = all(s.success for s in step.substeps)
             step.description += f" - Found {len(cards)} cards"
 
         except Exception as e:
