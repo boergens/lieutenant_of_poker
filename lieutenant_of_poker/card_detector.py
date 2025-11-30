@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 # Path to reference table background color image
-TABLE_COLOR_IMAGE = Path.home() / "Desktop" / "color.png"
+TABLE_COLOR_IMAGE = Path(__file__).parent / "card_library" / "table_background.png"
 
 
 class Suit(Enum):
