@@ -29,7 +29,7 @@ def get_library_dirs(library_name: str) -> tuple[Path, Path]:
 
 
 # Crop regions within a community card slot (at ~103x146 slot size)
-RANK_REGION = (10, 15, 55, 55)  # x, y, w, h
+RANK_REGION = (10, 15, 55, 50)  # x, y, w, h
 SUIT_REGION = (30, 75, 60, 55)  # x, y, w, h
 
 # Hero card subregions (relative to hero_cards_region)
