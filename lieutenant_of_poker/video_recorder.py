@@ -1,0 +1,348 @@
+"""
+Video recording from frame sources.
+
+Provides a simple VideoRecorder that can record frames from any ScreenCapture
+implementation to a video file.
+"""
+
+import time
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+from typing import Callable, Optional, Union
+
+import cv2
+import numpy as np
+
+from .frame_extractor import FrameInfo
+from .screen_capture import ScreenCapture
+
+# Path to the mask file (in package directory)
+MASK_PATH = Path(__file__).parent / "mask.png"
+
+
+class BrightnessDetector:
+    """
+    Detects recording start/stop based on brightness in a masked region.
+
+    Uses a mask image to define the region of interest. When the average
+    brightness in that region crosses a threshold for consecutive frames,
+    it triggers start/stop events.
+    """
+
+    def __init__(
+        self,
+        mask_path: Path = MASK_PATH,
+        threshold: float = 250.0,
+        consecutive_frames: int = 3,
+    ):
+        """
+        Initialize the brightness detector.
+
+        Args:
+            mask_path: Path to the mask image (grayscale PNG).
+            threshold: Brightness threshold (0-255).
+            consecutive_frames: Number of consecutive frames needed to trigger.
+        """
+        self.threshold = threshold
+        self.consecutive_frames = consecutive_frames
+        self._mask: Optional[np.ndarray] = None
+        self._brightness_history: deque = deque(maxlen=consecutive_frames)
+        self._is_bright = False
+
+        # Load mask
+        if mask_path.exists():
+            mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+            if mask_img is not None:
+                # Normalize to binary mask (0 or 1)
+                self._mask = (mask_img > 127).astype(np.uint8)
+
+    @property
+    def is_available(self) -> bool:
+        """Check if mask was loaded successfully."""
+        return self._mask is not None
+
+    def check_frame(self, frame: FrameInfo) -> Optional[bool]:
+        """
+        Check a frame for brightness trigger.
+
+        Args:
+            frame: The captured frame.
+
+        Returns:
+            True if should start recording, False if should stop, None if no change.
+        """
+        if self._mask is None:
+            return None
+
+        image = frame.image
+
+        # Resize mask to match frame if needed
+        mask = self._mask
+        if mask.shape[:2] != image.shape[:2]:
+            mask = cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+        # Convert to grayscale if needed
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+
+        # Calculate average brightness in masked region
+        masked_pixels = gray[mask > 0]
+        if len(masked_pixels) == 0:
+            return None
+
+        avg_brightness = np.mean(masked_pixels)
+        self._brightness_history.append(avg_brightness)
+
+        # Need enough history
+        if len(self._brightness_history) < self.consecutive_frames:
+            return None
+
+        # Check if all recent frames are above/below threshold
+        all_bright = all(b > self.threshold for b in self._brightness_history)
+        all_dark = all(b <= self.threshold for b in self._brightness_history)
+
+        # Trigger on state change
+        if all_bright and not self._is_bright:
+            self._is_bright = True
+            return True  # Start recording
+        elif all_dark and self._is_bright:
+            self._is_bright = False
+            return False  # Stop recording
+
+        return None
+
+
+class VideoRecorder:
+    """
+    Records frames to a video file.
+
+    Can be used standalone or composed with other components.
+    Buffers the last few frames so they can be discarded when recording stops
+    (useful when stop is triggered by detecting something in those frames).
+    """
+
+    def __init__(self, fps: int = 10, codec: str = "mp4v", trailing_frames_to_drop: int = 3):
+        """
+        Initialize the recorder.
+
+        Args:
+            fps: Frames per second for output video.
+            codec: FourCC codec code (default: 'mp4v' for .mp4).
+            trailing_frames_to_drop: Number of trailing frames to discard on stop.
+        """
+        self.fps = fps
+        self.codec = codec
+        self.trailing_frames_to_drop = trailing_frames_to_drop
+        self._writer: Optional[cv2.VideoWriter] = None
+        self._recording_path: Optional[Path] = None
+        self._frame_count = 0
+        self._frame_buffer: deque = deque(maxlen=trailing_frames_to_drop)
+
+    def start(self, output_path: Union[str, Path]) -> None:
+        """Start recording to the specified path."""
+        if self._writer is not None:
+            self.stop()
+        self._recording_path = Path(output_path)
+        self._frame_count = 0
+        self._frame_buffer.clear()
+        # Writer is lazily initialized on first frame (need dimensions)
+
+    def stop(self) -> Optional[Path]:
+        """Stop recording and return the output path. Discards buffered trailing frames."""
+        # Discard buffered frames (don't write them)
+        self._frame_buffer.clear()
+
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+        path = self._recording_path
+        self._recording_path = None
+        return path
+
+    def write_frame(self, frame: FrameInfo) -> None:
+        """Write a frame to the video file (with trailing frame buffer)."""
+        if self._recording_path is None:
+            return
+
+        image = frame.image
+
+        # Initialize writer on first frame (now we know dimensions)
+        if self._writer is None:
+            height, width = image.shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*self.codec)
+            self._writer = cv2.VideoWriter(
+                str(self._recording_path),
+                fourcc,
+                self.fps,
+                (width, height),
+            )
+
+        # Buffer frames - only write when buffer is full (delayed by trailing_frames_to_drop)
+        if len(self._frame_buffer) == self.trailing_frames_to_drop:
+            # Write the oldest buffered frame
+            oldest_image = self._frame_buffer[0]
+            self._writer.write(oldest_image)
+            self._frame_count += 1
+
+        # Add current frame to buffer
+        self._frame_buffer.append(image.copy())
+
+    @property
+    def is_recording(self) -> bool:
+        """Check if currently recording."""
+        return self._recording_path is not None
+
+    @property
+    def frame_count(self) -> int:
+        """Number of frames written."""
+        return self._frame_count
+
+    @property
+    def current_path(self) -> Optional[Path]:
+        """Path to current recording, if any."""
+        return self._recording_path
+
+
+class RecordingSession:
+    """
+    A complete recording session with capture and recording.
+
+    Provides a simple interface for the 'just record' use case.
+    """
+
+    def __init__(
+        self,
+        capture: ScreenCapture,
+        output_dir: Union[str, Path] = ".",
+        fps: int = 10,
+        codec: str = "mp4v",
+        file_prefix: str = "recording",
+        auto_detect: bool = False,
+        on_recording_change: Optional[Callable[[bool, Optional[Path]], None]] = None,
+    ):
+        """
+        Initialize a recording session.
+
+        Args:
+            capture: Screen capture implementation to use.
+            output_dir: Directory to save recordings.
+            fps: Frames per second.
+            codec: Video codec.
+            file_prefix: Prefix for auto-generated filenames.
+            auto_detect: Enable automatic recording based on mask brightness.
+            on_recording_change: Callback when recording starts/stops.
+                                 Args: (is_recording, path_if_stopped)
+        """
+        self.capture = capture
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.fps = fps
+        self.file_prefix = file_prefix
+        self.on_recording_change = on_recording_change
+
+        self._recorder = VideoRecorder(fps=fps, codec=codec)
+        self._running = False
+        self._recordings: list[Path] = []
+
+        # Auto-detection
+        self._detector: Optional[BrightnessDetector] = None
+        if auto_detect:
+            self._detector = BrightnessDetector()
+            if not self._detector.is_available:
+                self._detector = None
+
+    @property
+    def auto_detect_available(self) -> bool:
+        """Check if auto-detection is available."""
+        return self._detector is not None
+
+    def toggle_recording(self) -> tuple[bool, Optional[Path]]:
+        """
+        Toggle recording on/off.
+
+        Returns:
+            Tuple of (is_now_recording, path_if_just_stopped)
+        """
+        if self._recorder.is_recording:
+            path = self._recorder.stop()
+            if path:
+                self._recordings.append(path)
+            return False, path
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = self.output_dir / f"{self.file_prefix}_{timestamp}.mp4"
+            self._recorder.start(filename)
+            return True, None
+
+    def _start_recording(self) -> Path:
+        """Start a new recording and return the path."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = self.output_dir / f"{self.file_prefix}_{timestamp}.mp4"
+        self._recorder.start(filename)
+        return filename
+
+    def _stop_recording(self) -> Optional[Path]:
+        """Stop recording and return the path."""
+        path = self._recorder.stop()
+        if path:
+            self._recordings.append(path)
+        return path
+
+    def start(self) -> None:
+        """Start the capture loop (blocking)."""
+        self._running = True
+        interval = 1.0 / self.fps
+
+        while self._running:
+            loop_start = time.time()
+
+            frame = self.capture.capture_frame()
+            if frame is not None:
+                # Check for auto-detection trigger
+                if self._detector is not None:
+                    trigger = self._detector.check_frame(frame)
+                    if trigger is True and not self._recorder.is_recording:
+                        path = self._start_recording()
+                        if self.on_recording_change:
+                            self.on_recording_change(True, path)
+                    elif trigger is False and self._recorder.is_recording:
+                        path = self._stop_recording()
+                        if self.on_recording_change:
+                            self.on_recording_change(False, path)
+
+                # Write frame if recording
+                if self._recorder.is_recording:
+                    self._recorder.write_frame(frame)
+
+            # Sleep to maintain target FPS
+            elapsed = time.time() - loop_start
+            sleep_time = interval - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+    def stop(self) -> None:
+        """Stop the capture loop."""
+        self._running = False
+        # Stop any active recording
+        if self._recorder.is_recording:
+            path = self._recorder.stop()
+            if path:
+                self._recordings.append(path)
+
+    @property
+    def is_recording(self) -> bool:
+        """Check if currently recording."""
+        return self._recorder.is_recording
+
+    @property
+    def recordings(self) -> list[Path]:
+        """List of completed recordings."""
+        return self._recordings.copy()
+
+    @property
+    def is_running(self) -> bool:
+        """Check if capture loop is running."""
+        return self._running
