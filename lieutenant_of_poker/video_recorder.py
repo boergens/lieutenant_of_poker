@@ -223,7 +223,7 @@ class RecordingSession:
         auto_detect: bool = False,
         on_recording_change: Optional[Callable[[bool, Optional[Path]], None]] = None,
         on_frame_drop: Optional[Callable[[float, float], None]] = None,
-        frame_drop_threshold: float = 0.5,
+        frame_drop_threshold: float = 0.75,
         frame_drop_cooldown: float = 5.0,
     ):
         """
@@ -240,7 +240,7 @@ class RecordingSession:
                                  Args: (is_recording, path_if_stopped)
             on_frame_drop: Callback when frame drops are detected.
                           Args: (actual_fps, target_fps)
-            frame_drop_threshold: FPS ratio below which to trigger notification (0.5 = 50%).
+            frame_drop_threshold: FPS ratio below which to trigger notification (0.75 = 75%).
             frame_drop_cooldown: Seconds between frame drop notifications.
         """
         self.capture = capture
