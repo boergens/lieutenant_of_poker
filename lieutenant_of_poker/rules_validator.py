@@ -21,10 +21,13 @@ class ViolationType(Enum):
     COMMUNITY_CARDS_INVALID_COUNT = auto()
     COMMUNITY_CARDS_CHANGED = auto()
     HERO_CARDS_CHANGED = auto()
+    HERO_CARDS_DISAPPEARED = auto()
     DUPLICATE_CARDS = auto()
     POT_DECREASED = auto()
+    POT_DISAPPEARED = auto()
     STREET_REGRESSION = auto()
     CHIPS_INCREASED_WITHOUT_WIN = auto()
+    CHIPS_DISAPPEARED = auto()
     TOTAL_CHIPS_CHANGED = auto()
 
 
@@ -271,8 +274,16 @@ class RulesValidator:
         """Validate hero cards don't change during a hand."""
         violations = []
 
+        # Hero cards disappeared (had 2 cards, now have fewer)
+        if len(prev.hero_cards) == 2 and len(curr.hero_cards) < 2:
+            violations.append(Violation(
+                violation_type=ViolationType.HERO_CARDS_DISAPPEARED,
+                message=f"Hero cards disappeared (had {cards_to_str(prev.hero_cards)})",
+                previous_value=cards_to_str(prev.hero_cards),
+                current_value=cards_to_str(curr.hero_cards),
+            ))
         # If both states have hero cards, they should match
-        if len(prev.hero_cards) == 2 and len(curr.hero_cards) == 2:
+        elif len(prev.hero_cards) == 2 and len(curr.hero_cards) == 2:
             prev_set = cards_to_set(prev.hero_cards)
             curr_set = cards_to_set(curr.hero_cards)
             if prev_set != curr_set:
@@ -322,7 +333,15 @@ class RulesValidator:
         """Validate pot can only increase during a hand."""
         violations = []
 
-        if prev.pot is not None and curr.pot is not None:
+        # Pot disappeared (went from value to None) - likely OCR failure
+        if prev.pot is not None and curr.pot is None:
+            violations.append(Violation(
+                violation_type=ViolationType.POT_DISAPPEARED,
+                message=f"Pot disappeared (was {prev.pot})",
+                previous_value=str(prev.pot),
+                current_value="None",
+            ))
+        elif prev.pot is not None and curr.pot is not None:
             # Pot decreased significantly (small decreases might be rounding)
             # Allow pot to reset to 0 or small value for new hand
             if curr.pot < prev.pot:

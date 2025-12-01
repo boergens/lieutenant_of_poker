@@ -195,6 +195,13 @@ def analyze_video(
     """
     Analyze a video file and extract game states.
 
+    Assumes we're analyzing a single poker hand from a clean starting state
+    (hero cards dealt, blinds posted, no community cards).
+
+    State changes are only accepted when 3 consecutive VALID frames agree
+    on the same change. Invalid frames (OCR errors, impossible states) are
+    discarded completely.
+
     Args:
         video_path: Path to the video file.
         config: Analysis configuration.
@@ -205,8 +212,8 @@ def analyze_video(
         validate_rules: If True, filter out states with illegal transitions.
         on_invalid_state: Optional callback when a state is rejected.
                          Args: (state, validation_result)
-        consensus_frames: Number of consecutive matching rejected frames needed
-                         to accept a state change (default 3).
+        consensus_frames: Number of consecutive VALID frames needed to accept
+                         a state change (default 3).
 
     Returns:
         List of GameState objects extracted from the video.
@@ -219,12 +226,23 @@ def analyze_video(
     extractor = GameStateExtractor()
     clear_caches()
 
-    # Initialize rules validator if enabled
-    validator = RulesValidator() if validate_rules else None
+    # Initialize rules validator - no new hand detection (single game)
+    validator = RulesValidator(allow_new_hand=False) if validate_rules else None
 
     states = []
     initial_states = []  # Collect first N frames for majority voting
-    rejected_buffer = []  # Buffer for rejected states (consensus mechanism)
+    pending_change_buffer = []  # Buffer for valid frames proposing a state change
+
+    def is_valid_frame(state: GameState) -> bool:
+        """Check if a frame has all required values (no None in critical fields)."""
+        if state.pot is None or state.hero_chips is None:
+            return False
+        if len(state.hero_cards) < 2:
+            return False
+        for player in state.players.values():
+            if player.chips is None:
+                return False
+        return True
 
     with VideoFrameExtractor(video_path) as video:
         start_ms = config.start_ms
@@ -249,7 +267,7 @@ def analyze_video(
                 timestamp_ms=frame_info.timestamp_ms,
             )
 
-            # Pool first N frames for majority voting
+            # Pool first N frames for majority voting to establish initial state
             if current_frame < initial_frames:
                 initial_states.append(state)
                 # When we have enough frames, compute consolidated initial state
@@ -257,40 +275,56 @@ def analyze_video(
                     consolidated = compute_initial_state(initial_states)
                     states.append(consolidated)
             else:
-                # Validate state transition if enabled
-                if validator and states:
-                    result = validator.validate_transition(states[-1], state)
+                # First check: frame must have all values (no None in critical fields)
+                if not is_valid_frame(state):
+                    # Invalid frame - discard completely, reset pending buffer
+                    if on_invalid_state:
+                        on_invalid_state(state, ValidationResult(
+                            is_valid=False,
+                            violations=[],
+                        ))
+                    pending_change_buffer = []
+                    current_frame += 1
+                    if on_progress:
+                        on_progress(AnalysisProgress(
+                            current_frame=current_frame,
+                            total_frames=total_frames,
+                            timestamp_ms=frame_info.timestamp_ms,
+                            ocr_calls=get_ocr_calls(),
+                        ))
+                    continue
+
+                # Second check: validate against current accepted state
+                current_state = states[-1] if states else None
+                if validator and current_state:
+                    result = validator.validate_transition(current_state, state)
                     if not result.is_valid:
-                        # State is invalid - add to rejected buffer
+                        # Invalid transition - discard frame, reset pending buffer
                         if on_invalid_state:
                             on_invalid_state(state, result)
-
-                        # Check for consensus: if this state matches others in buffer
-                        if rejected_buffer and states_equivalent(rejected_buffer[-1], state):
-                            rejected_buffer.append(state)
-                        else:
-                            # Different state - reset buffer
-                            rejected_buffer = [state]
-
-                        # If we have enough consecutive matching states, accept the change
-                        if len(rejected_buffer) >= consensus_frames:
-                            # Use the most recent state (has latest timestamp)
-                            states.append(rejected_buffer[-1])
-                            rejected_buffer = []
+                        pending_change_buffer = []
+                    elif states_equivalent(current_state, state):
+                        # Valid but no change - keep current state, reset pending buffer
+                        pending_change_buffer = []
                     else:
-                        # Valid state - accept it and clear rejected buffer
-                        states.append(state)
-                        rejected_buffer = []
+                        # Valid frame with a state change - add to pending buffer
+                        if pending_change_buffer and states_equivalent(pending_change_buffer[-1], state):
+                            # Matches previous pending change
+                            pending_change_buffer.append(state)
+                        else:
+                            # Different change - start new pending buffer
+                            pending_change_buffer = [state]
+
+                        # Accept change when we have enough consecutive valid frames
+                        if len(pending_change_buffer) >= consensus_frames:
+                            states.append(pending_change_buffer[-1])
+                            pending_change_buffer = []
                 else:
                     states.append(state)
 
             # Check if debug callback should be invoked
             if on_debug_frame:
-                has_failure = (
-                    state.pot is None
-                    or state.hero_chips is None
-                    or any(p.chips is None for p in state.players.values())
-                )
+                has_failure = not is_valid_frame(state)
                 if unmatched_was_saved():
                     on_debug_frame(frame_info, state, "unmatched_saved")
                 elif has_failure:
