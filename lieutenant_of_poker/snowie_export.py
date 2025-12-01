@@ -27,8 +27,6 @@ class PlayerAction:
 def states_to_snowie(
     states: List[GameState],
     hero_name: str = "hero",
-    small_blind: int = 10,
-    big_blind: int = 20,
     button_pos: int = 0,
 ) -> str:
     """
@@ -37,8 +35,6 @@ def states_to_snowie(
     Args:
         states: List of GameState objects from a single hand.
         hero_name: Name to use for the hero player.
-        small_blind: Small blind amount.
-        big_blind: Big blind amount.
         button_pos: Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero).
 
     Returns:
@@ -46,6 +42,11 @@ def states_to_snowie(
     """
     if not states:
         return ""
+
+    # Infer blinds from initial pot (assuming SB:BB = 1:2)
+    initial_pot = states[0].pot or 60
+    small_blind = initial_pot // 3
+    big_blind = small_blind * 2
 
     output = io.StringIO()
     _write_snowie(output, states, hero_name, small_blind, big_blind, button_pos)
