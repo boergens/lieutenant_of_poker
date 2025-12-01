@@ -48,6 +48,10 @@ def _preprocess_for_tesseract(image: np.ndarray) -> np.ndarray:
     return image
 
 
+# Public alias for diagnostic module
+preprocess_for_ocr = _preprocess_for_tesseract
+
+
 def _get_filters() -> np.ndarray:
     """Load and cache the digit matched filters."""
     global _digit_filters
