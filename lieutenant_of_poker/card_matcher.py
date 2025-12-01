@@ -2,7 +2,7 @@
 Card matching using separate rank and suit reference libraries.
 
 Instead of OCR, we compare card images against libraries of known ranks and suits.
-Unknown images are identified by Claude Code and added to the libraries.
+Unmatched images are saved to an 'unmatched' subfolder for manual review.
 """
 
 from pathlib import Path
@@ -30,12 +30,12 @@ def get_library_dirs(library_name: str) -> tuple[Path, Path]:
 
 # Crop regions within a community card slot (at ~103x146 slot size)
 RANK_REGION = (10, 15, 55, 50)  # x, y, w, h
-SUIT_REGION = (30, 75, 60, 55)  # x, y, w, h
+SUIT_REGION = (30, 75, 52, 40)  # x, y, w, h
 
 # Hero card subregions (relative to hero_cards_region)
 # Calibrated at 420x220 hero region size - will be scaled proportionally
 HERO_CALIBRATION_SIZE = (420, 220)  # width, height at calibration time
-HERO_LEFT_RANK_REGION = (116, 21, 85, 92)   # x, y, w, h
+HERO_LEFT_RANK_REGION = (116, 23, 85, 90)   # x, y, w, h
 HERO_LEFT_SUIT_REGION = (168, 125, 92, 71)  # x, y, w, h
 HERO_RIGHT_RANK_REGION = (280, 15, 63, 87)  # x, y, w, h
 HERO_RIGHT_SUIT_REGION = (302, 110, 86, 83) # x, y, w, h
@@ -78,29 +78,6 @@ class RankMatcher(ImageMatcher[Rank]):
         """Convert rank to filename base."""
         return value.value
 
-    def _get_claude_prompt(self, image_path: str) -> str:
-        """Get prompt for Claude to identify a rank."""
-        return (
-            f"Look at this playing card rank image: {image_path}\n"
-            "What rank/number is shown? Reply with ONLY the rank:\n"
-            "One of: 2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K, A\n"
-            "Reply with ONLY the rank character(s), nothing else."
-        )
-
-    def _parse_claude_response(self, response: str) -> Optional[Rank]:
-        """Parse Claude's response into a rank."""
-        response = response.upper()
-        rank_map = {
-            "2": Rank.TWO, "3": Rank.THREE, "4": Rank.FOUR, "5": Rank.FIVE,
-            "6": Rank.SIX, "7": Rank.SEVEN, "8": Rank.EIGHT, "9": Rank.NINE,
-            "10": Rank.TEN, "J": Rank.JACK, "Q": Rank.QUEEN,
-            "K": Rank.KING, "A": Rank.ACE,
-        }
-        for key, rank in rank_map.items():
-            if key in response:
-                return rank
-        return None
-
 
 class SuitMatcher(ImageMatcher[Suit]):
     """Matches suit images against a library."""
@@ -129,27 +106,6 @@ class SuitMatcher(ImageMatcher[Suit]):
     def _value_to_filename(self, value: Suit) -> str:
         """Convert suit to filename base."""
         return value.value
-
-    def _get_claude_prompt(self, image_path: str) -> str:
-        """Get prompt for Claude to identify a suit."""
-        return (
-            f"Look at this playing card suit symbol: {image_path}\n"
-            "What suit is shown? Reply with ONLY one of:\n"
-            "hearts, diamonds, clubs, spades\n"
-            "Reply with ONLY the suit name, nothing else."
-        )
-
-    def _parse_claude_response(self, response: str) -> Optional[Suit]:
-        """Parse Claude's response into a suit."""
-        response = response.lower()
-        suit_map = {
-            "hearts": Suit.HEARTS, "diamonds": Suit.DIAMONDS,
-            "clubs": Suit.CLUBS, "spades": Suit.SPADES,
-        }
-        for key, suit in suit_map.items():
-            if key in response:
-                return suit
-        return None
 
 
 class CardMatcher:

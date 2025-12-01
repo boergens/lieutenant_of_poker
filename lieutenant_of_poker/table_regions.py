@@ -153,7 +153,7 @@ class TableRegionDetector:
             PlayerPosition.SEAT_1: PlayerRegions(
                 position=PlayerPosition.SEAT_1,
                 # Chip: top half, trimmed left 25% / right 10%
-                name_chip_box=self._scaled(Region(x=287, y=646, width=150, height=32)),
+                name_chip_box=self._scaled(Region(x=287, y=646, width=150, height=29)),
                 cards=None,
                 # Action: left half only
                 action_label=self._scaled(Region(x=222, y=679, width=120, height=34)),
@@ -161,7 +161,7 @@ class TableRegionDetector:
             PlayerPosition.SEAT_2: PlayerRegions(
                 position=PlayerPosition.SEAT_2,
                 # Chip: top half, trimmed left 25% / right 10%
-                name_chip_box=self._scaled(Region(x=439, y=245, width=144, height=34)),
+                name_chip_box=self._scaled(Region(x=439, y=245, width=144, height=31)),
                 cards=None,
                 # Action: left half only
                 action_label=self._scaled(Region(x=376, y=280, width=115, height=36)),
@@ -169,7 +169,7 @@ class TableRegionDetector:
             PlayerPosition.SEAT_3: PlayerRegions(
                 position=PlayerPosition.SEAT_3,
                 # Chip: top half, trimmed left 25% / right 10%
-                name_chip_box=self._scaled(Region(x=1179, y=251, width=147, height=29)),
+                name_chip_box=self._scaled(Region(x=1179, y=251, width=147, height=26)),
                 cards=None,
                 # Action: left half only
                 action_label=self._scaled(Region(x=1115, y=281, width=117, height=32)),
