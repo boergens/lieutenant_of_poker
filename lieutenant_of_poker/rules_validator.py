@@ -385,22 +385,23 @@ class RulesValidator:
         prev: GameState,
         curr: GameState,
     ) -> List[Violation]:
-        """Validate chip increases are only from winning pots."""
+        """Validate chip decreases are matched by pot increases."""
         violations = []
+
+        # Calculate pot change
+        pot_increase = 0
+        if prev.pot is not None and curr.pot is not None:
+            pot_increase = curr.pot - prev.pot
 
         # Check hero chips
         if prev.hero_chips is not None and curr.hero_chips is not None:
-            if curr.hero_chips > prev.hero_chips:
-                # This could be a legitimate pot win, so we check if pot decreased
-                pot_decreased = (
-                    prev.pot is not None and
-                    curr.pot is not None and
-                    curr.pot < prev.pot
-                )
-                if not pot_decreased:
+            chip_decrease = prev.hero_chips - curr.hero_chips
+            if chip_decrease > 0:
+                # Chips decreased - pot should increase by similar amount
+                if pot_increase < chip_decrease * 0.5:
                     violations.append(Violation(
-                        violation_type=ViolationType.CHIPS_INCREASED_WITHOUT_WIN,
-                        message=f"Hero chips increased without pot decrease",
+                        violation_type=ViolationType.CHIPS_DECREASED_WITHOUT_POT_INCREASE,
+                        message=f"Hero chips decreased by {chip_decrease} but pot only increased by {pot_increase}",
                         previous_value=str(prev.hero_chips),
                         current_value=str(curr.hero_chips),
                     ))
@@ -411,16 +412,13 @@ class RulesValidator:
                 prev_chips = prev.players[pos].chips
                 curr_chips = curr.players[pos].chips
                 if prev_chips is not None and curr_chips is not None:
-                    if curr_chips > prev_chips:
-                        pot_decreased = (
-                            prev.pot is not None and
-                            curr.pot is not None and
-                            curr.pot < prev.pot
-                        )
-                        if not pot_decreased:
+                    chip_decrease = prev_chips - curr_chips
+                    if chip_decrease > 0:
+                        # Chips decreased - pot should increase
+                        if pot_increase < chip_decrease * 0.5:
                             violations.append(Violation(
-                                violation_type=ViolationType.CHIPS_INCREASED_WITHOUT_WIN,
-                                message=f"Player {pos.name} chips increased without pot decrease",
+                                violation_type=ViolationType.CHIPS_DECREASED_WITHOUT_POT_INCREASE,
+                                message=f"Player {pos.name} chips decreased by {chip_decrease} but pot only increased by {pot_increase}",
                                 previous_value=str(prev_chips),
                                 current_value=str(curr_chips),
                             ))
