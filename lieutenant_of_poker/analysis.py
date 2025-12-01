@@ -17,6 +17,48 @@ from .game_state import GameStateExtractor, GameState, PlayerPosition, PlayerSta
 
 T = TypeVar("T")
 
+# Number of consecutive matching rejected frames needed to accept a state change
+CONSENSUS_FRAMES = 3
+
+
+def states_equivalent(state1: GameState, state2: GameState) -> bool:
+    """
+    Check if two game states have equivalent significant values.
+
+    Compares hero cards, community cards, pot, hero chips, and player chips.
+    Used to detect if consecutive rejected frames are requesting the same change.
+    """
+    # Compare hero cards
+    if len(state1.hero_cards) != len(state2.hero_cards):
+        return False
+    for c1, c2 in zip(state1.hero_cards, state2.hero_cards):
+        if c1.rank != c2.rank or c1.suit != c2.suit:
+            return False
+
+    # Compare community cards
+    if len(state1.community_cards) != len(state2.community_cards):
+        return False
+    for c1, c2 in zip(state1.community_cards, state2.community_cards):
+        if c1.rank != c2.rank or c1.suit != c2.suit:
+            return False
+
+    # Compare pot
+    if state1.pot != state2.pot:
+        return False
+
+    # Compare hero chips
+    if state1.hero_chips != state2.hero_chips:
+        return False
+
+    # Compare player chips
+    if set(state1.players.keys()) != set(state2.players.keys()):
+        return False
+    for pos in state1.players:
+        if state1.players[pos].chips != state2.players[pos].chips:
+            return False
+
+    return True
+
 
 def majority_vote(values: List[T]) -> Optional[T]:
     """
@@ -148,6 +190,7 @@ def analyze_video(
     initial_frames: int = 3,
     validate_rules: bool = True,
     on_invalid_state: Optional[Callable[[GameState, "ValidationResult"], None]] = None,
+    consensus_frames: int = CONSENSUS_FRAMES,
 ) -> List[GameState]:
     """
     Analyze a video file and extract game states.
@@ -162,6 +205,8 @@ def analyze_video(
         validate_rules: If True, filter out states with illegal transitions.
         on_invalid_state: Optional callback when a state is rejected.
                          Args: (state, validation_result)
+        consensus_frames: Number of consecutive matching rejected frames needed
+                         to accept a state change (default 3).
 
     Returns:
         List of GameState objects extracted from the video.
@@ -179,6 +224,7 @@ def analyze_video(
 
     states = []
     initial_states = []  # Collect first N frames for majority voting
+    rejected_buffer = []  # Buffer for rejected states (consensus mechanism)
 
     with VideoFrameExtractor(video_path) as video:
         start_ms = config.start_ms
@@ -215,11 +261,26 @@ def analyze_video(
                 if validator and states:
                     result = validator.validate_transition(states[-1], state)
                     if not result.is_valid:
-                        # State is invalid - skip it
+                        # State is invalid - add to rejected buffer
                         if on_invalid_state:
                             on_invalid_state(state, result)
+
+                        # Check for consensus: if this state matches others in buffer
+                        if rejected_buffer and states_equivalent(rejected_buffer[-1], state):
+                            rejected_buffer.append(state)
+                        else:
+                            # Different state - reset buffer
+                            rejected_buffer = [state]
+
+                        # If we have enough consecutive matching states, accept the change
+                        if len(rejected_buffer) >= consensus_frames:
+                            # Use the most recent state (has latest timestamp)
+                            states.append(rejected_buffer[-1])
+                            rejected_buffer = []
                     else:
+                        # Valid state - accept it and clear rejected buffer
                         states.append(state)
+                        rejected_buffer = []
                 else:
                     states.append(state)
 
