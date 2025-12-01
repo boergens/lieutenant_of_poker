@@ -572,6 +572,13 @@ def cmd_record(args):
             play_sound("Glass")
             overlay.send_message("Recording Stopped", str(Path(path).name))
 
+    # Callback for frame drops
+    def on_frame_drop(actual_fps: float, target_fps: float):
+        pct = (actual_fps / target_fps) * 100
+        print(f"\n⚠️  Frame drop detected: {actual_fps:.1f}/{target_fps} FPS ({pct:.0f}%)", file=sys.stderr)
+        play_sound("Basso")  # Warning sound
+        overlay.send_message("⚠️ Dropping Frames", f"{actual_fps:.1f} FPS (target: {target_fps})")
+
     # Create recording session
     session = RecordingSession(
         capture=capture,
@@ -580,6 +587,7 @@ def cmd_record(args):
         file_prefix=args.prefix,
         auto_detect=args.auto,
         on_recording_change=on_recording_change if args.auto else None,
+        on_frame_drop=on_frame_drop,
     )
 
     # Set up hotkey for manual toggle

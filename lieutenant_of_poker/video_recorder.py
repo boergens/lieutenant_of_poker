@@ -222,6 +222,9 @@ class RecordingSession:
         file_prefix: str = "recording",
         auto_detect: bool = False,
         on_recording_change: Optional[Callable[[bool, Optional[Path]], None]] = None,
+        on_frame_drop: Optional[Callable[[float, float], None]] = None,
+        frame_drop_threshold: float = 0.5,
+        frame_drop_cooldown: float = 5.0,
     ):
         """
         Initialize a recording session.
@@ -235,6 +238,10 @@ class RecordingSession:
             auto_detect: Enable automatic recording based on mask brightness.
             on_recording_change: Callback when recording starts/stops.
                                  Args: (is_recording, path_if_stopped)
+            on_frame_drop: Callback when frame drops are detected.
+                          Args: (actual_fps, target_fps)
+            frame_drop_threshold: FPS ratio below which to trigger notification (0.5 = 50%).
+            frame_drop_cooldown: Seconds between frame drop notifications.
         """
         self.capture = capture
         self.output_dir = Path(output_dir)
@@ -242,10 +249,17 @@ class RecordingSession:
         self.fps = fps
         self.file_prefix = file_prefix
         self.on_recording_change = on_recording_change
+        self.on_frame_drop = on_frame_drop
+        self.frame_drop_threshold = frame_drop_threshold
+        self.frame_drop_cooldown = frame_drop_cooldown
 
         self._recorder = VideoRecorder(fps=fps, codec=codec)
         self._running = False
         self._recordings: list[Path] = []
+
+        # Frame drop tracking
+        self._frame_times: deque = deque(maxlen=30)  # Track last 30 frame times
+        self._last_frame_drop_notification: float = 0.0
 
         # Auto-detection
         self._detector: Optional[BrightnessDetector] = None
@@ -258,6 +272,31 @@ class RecordingSession:
     def auto_detect_available(self) -> bool:
         """Check if auto-detection is available."""
         return self._detector is not None
+
+    def _check_frame_drops(self) -> None:
+        """Check for frame drops and notify if needed."""
+        if self.on_frame_drop is None or len(self._frame_times) < 10:
+            return
+
+        # Calculate actual FPS from recent frame times
+        if len(self._frame_times) < 2:
+            return
+
+        frame_times = list(self._frame_times)
+        total_time = frame_times[-1] - frame_times[0]
+        if total_time <= 0:
+            return
+
+        actual_fps = (len(frame_times) - 1) / total_time
+
+        # Check if we're dropping frames (below threshold of target FPS)
+        fps_ratio = actual_fps / self.fps
+        if fps_ratio < self.frame_drop_threshold:
+            # Check cooldown
+            now = time.time()
+            if now - self._last_frame_drop_notification >= self.frame_drop_cooldown:
+                self._last_frame_drop_notification = now
+                self.on_frame_drop(actual_fps, self.fps)
 
     def toggle_recording(self) -> tuple[bool, Optional[Path]]:
         """
@@ -294,10 +333,15 @@ class RecordingSession:
     def start(self) -> None:
         """Start the capture loop (blocking)."""
         self._running = True
+        self._frame_times.clear()
+        self._last_frame_drop_notification = 0.0
         interval = 1.0 / self.fps
 
         while self._running:
             loop_start = time.time()
+
+            # Track frame time for drop detection
+            self._frame_times.append(loop_start)
 
             frame = self.capture.capture_frame()
             if frame is not None:
@@ -316,6 +360,10 @@ class RecordingSession:
                 # Write frame if recording
                 if self._recorder.is_recording:
                     self._recorder.write_frame(frame)
+
+            # Check for frame drops (only while recording)
+            if self._recorder.is_recording:
+                self._check_frame_drops()
 
             # Sleep to maintain target FPS
             elapsed = time.time() - loop_start
