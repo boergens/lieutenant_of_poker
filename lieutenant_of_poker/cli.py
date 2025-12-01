@@ -391,14 +391,31 @@ def cmd_analyze(args):
             report_path = debug_dir / f"frame_{frame_info.frame_number}_{frame_info.timestamp_ms:.0f}ms_{reason}.html"
             generate_html_report(report, report_path)
 
+        rejected_count = 0
+        def on_invalid_state(state, result):
+            nonlocal rejected_count
+            rejected_count += 1
+            if args.verbose:
+                frame_num = state.frame_number or "?"
+                ts = state.timestamp_ms or 0
+                print(f"  [REJECTED] Frame {frame_num} ({ts:.0f}ms):", file=sys.stderr)
+                if result.violations:
+                    for v in result.violations:
+                        print(f"    - {v.message}", file=sys.stderr)
+                else:
+                    print(f"    - Missing required values (None in critical fields)", file=sys.stderr)
+
         states = analyze_video(
             args.video,
             config,
             on_progress=on_progress,
             on_debug_frame=on_debug_frame if args.debug else None,
+            on_invalid_state=on_invalid_state if args.verbose else None,
         )
 
-    print(f"Done! Analyzed {len(states)} frames.", file=sys.stderr)
+    print(f"Done! Analyzed {len(states)} state changes.", file=sys.stderr)
+    if args.verbose:
+        print(f"  Rejected frames: {rejected_count}", file=sys.stderr)
     if args.debug:
         from lieutenant_of_poker.fast_ocr import disable_ocr_debug
         disable_ocr_debug()
