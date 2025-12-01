@@ -121,6 +121,10 @@ def main():
     export_parser.add_argument(
         "--verbose", "-V", action="store_true", help="Print progress to stderr"
     )
+    export_parser.add_argument(
+        "--button", "-b", type=int, default=0,
+        help="Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero)"
+    )
 
     # info command
     info_parser = subparsers.add_parser(
@@ -501,7 +505,7 @@ def cmd_export(args):
 
     # Export based on format
     if args.format == "snowie":
-        output = states_to_snowie(states)
+        output = states_to_snowie(states, button_pos=args.button)
     elif args.format == "pokerstars":
         exporter = HandHistoryExporter()
         hand = exporter.create_hand_from_states(states)

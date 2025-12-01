@@ -29,6 +29,7 @@ def states_to_snowie(
     hero_name: str = "hero",
     small_blind: int = 10,
     big_blind: int = 20,
+    button_pos: int = 0,
 ) -> str:
     """
     Convert a sequence of GameStates to PokerSnowie format.
@@ -38,6 +39,7 @@ def states_to_snowie(
         hero_name: Name to use for the hero player.
         small_blind: Small blind amount.
         big_blind: Big blind amount.
+        button_pos: Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero).
 
     Returns:
         String in PokerSnowie/Freezeout format.
@@ -46,7 +48,7 @@ def states_to_snowie(
         return ""
 
     output = io.StringIO()
-    _write_snowie(output, states, hero_name, small_blind, big_blind)
+    _write_snowie(output, states, hero_name, small_blind, big_blind, button_pos)
     return output.getvalue()
 
 
@@ -56,6 +58,7 @@ def _write_snowie(
     hero_name: str,
     small_blind: int,
     big_blind: int,
+    button_pos: int,
 ) -> None:
     """Write states in PokerSnowie format."""
     initial = states[0]
@@ -65,24 +68,25 @@ def _write_snowie(
     game_id = str(abs(hash(str(initial.timestamp_ms))) % 100000000)
     timestamp = datetime.now()
 
-    # Build player info
-    players = []  # List of (seat_index, name, chips)
+    # Canonical seat order (clockwise around table)
+    seat_order = [
+        PlayerPosition.SEAT_1,
+        PlayerPosition.SEAT_2,
+        PlayerPosition.SEAT_3,
+        PlayerPosition.SEAT_4,
+        PlayerPosition.HERO,
+    ]
+
+    # Build player info in proper seat order
+    players = []  # List of (seat_index, name, chips, position)
     seat_to_name = {}
-    for i, (pos, player) in enumerate(initial.players.items()):
-        name = hero_name if pos == PlayerPosition.HERO else pos.name
-        chips = player.chips or 2000
-        players.append((i, name, chips))
-        seat_to_name[pos] = name
-
-    # Find hero's seat index
-    hero_seat = 0
-    for i, (pos, _) in enumerate(initial.players.items()):
-        if pos == PlayerPosition.HERO:
-            hero_seat = i
-            break
-
-    # Determine button position (assume SEAT_1 is button for now)
-    button_pos = len(players) - 1  # Last seat is button
+    for i, pos in enumerate(seat_order):
+        if pos in initial.players:
+            player = initial.players[pos]
+            name = hero_name if pos == PlayerPosition.HERO else pos.name
+            chips = player.chips or 2000
+            players.append((i, name, chips, pos))
+            seat_to_name[pos] = name
 
     # Header
     f.write("GameStart\n")
@@ -102,7 +106,7 @@ def _write_snowie(
     f.write(f"DealerPosition: {button_pos}\n")
 
     # Seats
-    for seat_idx, name, chips in players:
+    for seat_idx, name, chips, _pos in players:
         f.write(f"Seat {seat_idx} {name} {chips}\n")
 
     # Blinds (SB is button+1, BB is button+2)
