@@ -236,3 +236,145 @@ def export_hand_to_pokerstars(hand: HandHistory) -> str:
     """
     exporter = HandHistoryExporter()
     return exporter.export_pokerstars_format(hand)
+
+
+class SnowieExporter:
+    """Exports hand histories in Snowie/Freezeout format."""
+
+    def __init__(self, hero_name: str = "hero"):
+        """
+        Initialize the exporter.
+
+        Args:
+            hero_name: Name to use for the hero player.
+        """
+        self.hero_name = hero_name
+        self._game_counter = 0
+
+    def _format_card(self, card: Card) -> str:
+        """Format a card for Snowie format (e.g., 'Jd', 'Qs')."""
+        return card.short_name
+
+    def _format_cards(self, cards: List[Card]) -> str:
+        """Format cards for Snowie format (e.g., '[JdQs]' or '[6s Jh 8c]')."""
+        if not cards:
+            return "[]"
+        # Hole cards: no spaces, community cards: with spaces
+        if len(cards) == 2:
+            return "[" + "".join(self._format_card(c) for c in cards) + "]"
+        else:
+            return "[" + " ".join(self._format_card(c) for c in cards) + "]"
+
+    def _format_action(self, action: HandAction) -> str:
+        """Format an action for Snowie format."""
+        player = action.player_name
+        amount = action.amount or 0
+
+        if action.action == PlayerAction.FOLD:
+            return f"Move: {player} folds 0"
+        elif action.action == PlayerAction.CHECK:
+            return f"Move: {player} call_check 0"
+        elif action.action == PlayerAction.CALL:
+            return f"Move: {player} call_check {amount}"
+        elif action.action in (PlayerAction.RAISE, PlayerAction.BET, PlayerAction.ALL_IN):
+            return f"Move: {player} raise_bet {amount}"
+        else:
+            return f"Move: {player} call_check 0"
+
+    def export(self, hand: HandHistory) -> str:
+        """
+        Export hand history in Snowie/Freezeout format.
+
+        Args:
+            hand: HandHistory object to export.
+
+        Returns:
+            String in Snowie format.
+        """
+        output = io.StringIO()
+        self._write_snowie_format(hand, output)
+        return output.getvalue()
+
+    def _write_snowie_format(self, hand: HandHistory, f: TextIO) -> None:
+        """Write hand history in Snowie format."""
+        self._game_counter += 1
+
+        # Header
+        f.write("GameStart\n")
+        f.write("PokerClient: ExportFormat\n")
+        f.write(f"Date: {hand.timestamp.strftime('%d/%m/%Y')}\n")
+        f.write("TimeZone: GMT\n")
+        f.write(f"Time: {hand.timestamp.strftime('%H:%M:%S')}\n")
+        f.write(f"GameId:{hand.hand_id}\n")
+        f.write("GameType:NoLimit\n")
+        f.write("GameCurrency: $\n")
+        f.write(f"SmallBlindStake: {hand.small_blind}\n")
+        f.write(f"BigBlindStake: {hand.big_blind}\n")
+        f.write("AnteStake: 0\n")
+        f.write(f"TableName: {hand.table_name}\n")
+        f.write(f"Max number of players: {len(hand.players)}\n")
+        f.write(f"MyPlayerName: {self.hero_name}\n")
+        f.write(f"DealerPosition: {hand.button_position}\n")
+
+        # Seats - Snowie uses 0-indexed seats
+        for i, (name, chips, pos) in enumerate(hand.players):
+            f.write(f"Seat {i} {name} {chips}\n")
+
+        # Blinds
+        if len(hand.players) >= 2:
+            sb_idx = (hand.button_position + 1) % len(hand.players)
+            bb_idx = (hand.button_position + 2) % len(hand.players)
+            sb_name = hand.players[sb_idx][0]
+            bb_name = hand.players[bb_idx][0]
+            f.write(f"SmallBlind: {sb_name} {hand.small_blind}\n")
+            f.write(f"BigBlind: {bb_name} {hand.big_blind}\n")
+
+        # Dealt cards (hero's hole cards)
+        if hand.hero_cards:
+            f.write(f"Dealt Cards: {self._format_cards(hand.hero_cards)}\n")
+
+        # Preflop actions
+        for action in hand.preflop_actions:
+            f.write(f"{self._format_action(action)}\n")
+
+        # Flop
+        if hand.flop_cards:
+            f.write(f"FLOP Community Cards:{self._format_cards(hand.flop_cards)}\n")
+            for action in hand.flop_actions:
+                f.write(f"{self._format_action(action)}\n")
+
+        # Turn
+        if hand.turn_card:
+            turn_board = hand.flop_cards + [hand.turn_card]
+            f.write(f"TURN Community Cards:{self._format_cards(turn_board)}\n")
+            for action in hand.turn_actions:
+                f.write(f"{self._format_action(action)}\n")
+
+        # River
+        if hand.river_card:
+            river_board = hand.flop_cards + [hand.turn_card, hand.river_card]
+            f.write(f"RIVER Community Cards:{self._format_cards(river_board)}\n")
+            for action in hand.river_actions:
+                f.write(f"{self._format_action(action)}\n")
+
+        # Winner
+        if hand.winner and hand.winnings:
+            f.write(f"Winner: {hand.winner} {hand.winnings:.2f}\n")
+
+        f.write("GameEnd\n")
+        f.write("\n")
+
+
+def export_hand_to_snowie(hand: HandHistory, hero_name: str = "hero") -> str:
+    """
+    Convenience function to export a hand in Snowie format.
+
+    Args:
+        hand: HandHistory to export.
+        hero_name: Name to use for the hero player.
+
+    Returns:
+        Snowie format string.
+    """
+    exporter = SnowieExporter(hero_name=hero_name)
+    return exporter.export(hand)
