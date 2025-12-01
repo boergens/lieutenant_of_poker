@@ -103,14 +103,23 @@ def main():
     )
     export_parser.add_argument("video", help="Path to video file")
     export_parser.add_argument(
-        "--format", "-f", default="pokerstars", choices=["pokerstars", "json"],
-        help="Output format (default: pokerstars)"
+        "--format", "-f", default="snowie", choices=["pokerstars", "snowie", "json"],
+        help="Output format (default: snowie)"
     )
     export_parser.add_argument(
         "--output", "-o", default=None, help="Output file (default: stdout)"
     )
     export_parser.add_argument(
-        "--interval", "-i", type=int, default=500, help="Analysis interval in ms (default: 500)"
+        "--interval", "-i", type=int, default=100, help="Analysis interval in ms (default: 100)"
+    )
+    export_parser.add_argument(
+        "--start", "-s", type=float, default=0, help="Start timestamp in seconds (default: 0)"
+    )
+    export_parser.add_argument(
+        "--end", "-e", type=float, default=None, help="End timestamp in seconds (default: end of video)"
+    )
+    export_parser.add_argument(
+        "--verbose", "-V", action="store_true", help="Print progress to stderr"
     )
 
     # info command
@@ -444,14 +453,24 @@ def cmd_analyze(args):
 def cmd_export(args):
     """Export hand histories."""
     from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig, get_video_info
+    from lieutenant_of_poker.snowie_export import states_to_snowie
 
-    exporter = HandHistoryExporter()
     info = get_video_info(args.video)
-    total_frames = int((info['duration_seconds'] * 1000) / args.interval) + 1
+    start_ms = args.start * 1000
+    end_ms = args.end * 1000 if args.end else info['duration_seconds'] * 1000
+    total_frames = int((end_ms - start_ms) / args.interval) + 1
 
-    print(f"Analyzing {args.video} for hand export...", file=sys.stderr)
+    if args.verbose:
+        print(f"Analyzing {args.video} for hand export...", file=sys.stderr)
+        print(f"  Duration: {info['duration_seconds']:.1f}s", file=sys.stderr)
+        print(f"  Interval: {args.interval}ms", file=sys.stderr)
+        print(f"  Expected frames: {total_frames}", file=sys.stderr)
 
-    config = AnalysisConfig(interval_ms=args.interval)
+    config = AnalysisConfig(
+        interval_ms=args.interval,
+        start_ms=start_ms,
+        end_ms=end_ms if args.end else None,
+    )
 
     with Progress(
         SpinnerColumn(),
@@ -473,20 +492,25 @@ def cmd_export(args):
 
         states = analyze_video(args.video, config, on_progress=on_progress)
 
-    print(f"Collected {len(states)} game states", file=sys.stderr)
+    if args.verbose:
+        print(f"Collected {len(states)} game states", file=sys.stderr)
 
-    # Create hand from states
-    hand = exporter.create_hand_from_states(states)
-
-    if hand is None:
+    if not states:
         print("No hand data detected.", file=sys.stderr)
         return
 
-    # Export
-    if args.format == "pokerstars":
+    # Export based on format
+    if args.format == "snowie":
+        output = states_to_snowie(states)
+    elif args.format == "pokerstars":
+        exporter = HandHistoryExporter()
+        hand = exporter.create_hand_from_states(states)
+        if hand is None:
+            print("No hand data detected.", file=sys.stderr)
+            return
         output = exporter.export_pokerstars_format(hand)
-    else:
-        output = json.dumps(hand_to_dict(hand), indent=2)
+    else:  # json
+        output = json.dumps([game_state_to_dict(s) for s in states], indent=2)
 
     if args.output:
         with open(args.output, "w") as f:
