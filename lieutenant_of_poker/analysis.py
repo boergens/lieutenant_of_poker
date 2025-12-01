@@ -5,14 +5,119 @@ This module provides the main entry points for analyzing poker videos,
 extracting frames, and generating reports.
 """
 
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Iterator, Optional, Callable, List
+from typing import Iterator, Optional, Callable, List, TypeVar
 
 import cv2
 
 from .frame_extractor import VideoFrameExtractor, FrameInfo
-from .game_state import GameStateExtractor, GameState
+from .game_state import GameStateExtractor, GameState, PlayerPosition, PlayerState
+
+T = TypeVar("T")
+
+
+def majority_vote(values: List[T]) -> Optional[T]:
+    """
+    Return the most common value from a list, or None if the list is empty.
+
+    For values that appear equally often, returns the first one encountered.
+    None values are filtered out before voting.
+    """
+    # Filter out None values
+    valid_values = [v for v in values if v is not None]
+    if not valid_values:
+        return None
+    counter = Counter(valid_values)
+    return counter.most_common(1)[0][0]
+
+
+def compute_initial_state(states: List[GameState]) -> GameState:
+    """
+    Compute a consolidated initial state from multiple frame states using majority voting.
+
+    Pools hero cards and chip values from the provided states and returns
+    a new GameState with the majority-voted values.
+
+    Args:
+        states: List of GameState objects from the first few frames.
+
+    Returns:
+        A consolidated GameState with majority-voted values.
+    """
+    if not states:
+        return GameState()
+
+    # Use the first state as the base (for metadata like frame_number, timestamp)
+    base_state = states[0]
+
+    # Majority vote for hero cards
+    # Cards are compared by their (rank, suit) tuple for hashability
+    hero_cards_left = []
+    hero_cards_right = []
+    for state in states:
+        if len(state.hero_cards) >= 1:
+            hero_cards_left.append((state.hero_cards[0].rank, state.hero_cards[0].suit))
+        if len(state.hero_cards) >= 2:
+            hero_cards_right.append((state.hero_cards[1].rank, state.hero_cards[1].suit))
+
+    from .card_detector import Card
+    voted_hero_cards = []
+    voted_left = majority_vote(hero_cards_left)
+    if voted_left:
+        voted_hero_cards.append(Card(rank=voted_left[0], suit=voted_left[1]))
+    voted_right = majority_vote(hero_cards_right)
+    if voted_right:
+        voted_hero_cards.append(Card(rank=voted_right[0], suit=voted_right[1]))
+
+    # Majority vote for pot
+    pots = [s.pot for s in states]
+    voted_pot = majority_vote(pots)
+
+    # Majority vote for hero_chips
+    hero_chips_list = [s.hero_chips for s in states]
+    voted_hero_chips = majority_vote(hero_chips_list)
+
+    # Majority vote for each player's chips
+    # First, collect all player positions that appear
+    all_positions = set()
+    for state in states:
+        all_positions.update(state.players.keys())
+
+    voted_players = {}
+    for pos in all_positions:
+        chips_list = [s.players.get(pos, PlayerState(position=pos)).chips for s in states]
+        voted_chips = majority_vote(chips_list)
+
+        # Get a base PlayerState from the first state that has this position
+        base_player = None
+        for state in states:
+            if pos in state.players:
+                base_player = state.players[pos]
+                break
+
+        if base_player:
+            voted_players[pos] = PlayerState(
+                position=pos,
+                name=base_player.name,
+                chips=voted_chips,
+                cards=base_player.cards,
+                last_action=base_player.last_action,
+                is_active=base_player.is_active,
+                is_dealer=base_player.is_dealer,
+            )
+
+    return GameState(
+        community_cards=[],  # No community cards at start
+        hero_cards=voted_hero_cards,
+        pot=voted_pot,
+        hero_chips=voted_hero_chips,
+        players=voted_players,
+        street=base_state.street,
+        frame_number=base_state.frame_number,
+        timestamp_ms=base_state.timestamp_ms,
+    )
 
 
 @dataclass
@@ -40,6 +145,7 @@ def analyze_video(
     config: AnalysisConfig,
     on_progress: Optional[Callable[[AnalysisProgress], None]] = None,
     on_debug_frame: Optional[Callable[[FrameInfo, GameState, str], None]] = None,
+    initial_frames: int = 3,
 ) -> List[GameState]:
     """
     Analyze a video file and extract game states.
@@ -50,6 +156,7 @@ def analyze_video(
         on_progress: Optional callback for progress updates.
         on_debug_frame: Optional callback when a frame needs debugging.
                        Args: (frame_info, state, reason)
+        initial_frames: Number of frames to pool for initial state (default 3).
 
     Returns:
         List of GameState objects extracted from the video.
@@ -62,6 +169,7 @@ def analyze_video(
     clear_caches()
 
     states = []
+    initial_states = []  # Collect first N frames for majority voting
 
     with VideoFrameExtractor(video_path) as video:
         start_ms = config.start_ms
@@ -85,7 +193,16 @@ def analyze_video(
                 frame_number=frame_info.frame_number,
                 timestamp_ms=frame_info.timestamp_ms,
             )
-            states.append(state)
+
+            # Pool first N frames for majority voting
+            if current_frame < initial_frames:
+                initial_states.append(state)
+                # When we have enough frames, compute consolidated initial state
+                if len(initial_states) == initial_frames:
+                    consolidated = compute_initial_state(initial_states)
+                    states.append(consolidated)
+            else:
+                states.append(state)
 
             # Check if debug callback should be invoked
             if on_debug_frame:
@@ -110,6 +227,11 @@ def analyze_video(
                         ocr_calls=get_ocr_calls(),
                     )
                 )
+
+        # Handle edge case: video has fewer frames than initial_frames
+        if initial_states and not states:
+            consolidated = compute_initial_state(initial_states)
+            states.append(consolidated)
 
     return states
 
