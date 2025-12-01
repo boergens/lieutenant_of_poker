@@ -2,7 +2,7 @@
 Card detection and recognition for Governor of Poker.
 
 Detects playing cards from frame regions using a reference library.
-Unknown cards are identified by Claude Code and added to the library.
+Unmatched images are saved to an 'unmatched' subfolder for manual review.
 """
 
 import os
@@ -161,8 +161,8 @@ class CardDetector:
         """
         Detect a single card from an image region.
 
-        Uses the card library for matching. Unknown cards are identified
-        by Claude Code and added to the library for future matches.
+        Uses the card library for matching. Unmatched images are saved
+        to an 'unmatched' subfolder for manual review.
 
         Args:
             card_image: BGR image of a single card.

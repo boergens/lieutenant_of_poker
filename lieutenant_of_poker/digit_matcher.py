@@ -37,23 +37,6 @@ class DigitMatcher(ImageMatcher[str]):
         """Convert digit to filename base."""
         return value
 
-    def _get_claude_prompt(self, image_path: str) -> str:
-        """Get prompt for Claude to identify a digit."""
-        return (
-            f"Look at this image: {image_path}\n"
-            "This image contains a single digit (0-9) from a video game UI.\n"
-            "What digit is shown? Reply with ONLY the single digit character.\n"
-            "If the image is blank or unreadable, reply: NONE\n"
-            "Reply with ONLY the digit, nothing else."
-        )
-
-    def _parse_claude_response(self, response: str) -> Optional[str]:
-        """Parse Claude's response into a digit."""
-        response = response.strip()
-        if response in "0123456789":
-            return response
-        return None
-
 
 # Singleton matcher instance
 _matcher: Optional[DigitMatcher] = None

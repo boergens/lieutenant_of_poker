@@ -5,11 +5,9 @@ Provides a base class for matching images against a library of known references.
 Used by card_matcher and action_matcher for their specific domains.
 """
 
-import subprocess
-import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Callable, Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar
 
 import cv2
 import numpy as np
@@ -17,27 +15,32 @@ import numpy as np
 # Generic type for the matched value (Rank, Suit, PlayerAction, etc.)
 T = TypeVar("T")
 
-# Global flag that gets set when Claude is invoked
-_claude_was_called: bool = False
+# Global flag that gets set when an unmatched image is saved
+_unmatched_saved: bool = False
 
 
-def claude_was_called() -> bool:
-    """Check if Claude was called since last reset."""
-    return _claude_was_called
+def unmatched_was_saved() -> bool:
+    """Check if an unmatched image was saved since last reset."""
+    return _unmatched_saved
 
 
-def reset_claude_flag() -> None:
-    """Reset the Claude called flag."""
-    global _claude_was_called
-    _claude_was_called = False
+def reset_unmatched_flag() -> None:
+    """Reset the unmatched saved flag."""
+    global _unmatched_saved
+    _unmatched_saved = False
+
+
+# Keep old names as aliases for compatibility
+claude_was_called = unmatched_was_saved
+reset_claude_flag = reset_unmatched_flag
 
 
 class ImageMatcher(ABC, Generic[T]):
     """
     Base class for matching images against a reference library.
 
-    Subclasses define how to parse filenames, identify unknown images via Claude,
-    and convert between enum values and string names.
+    Subclasses define how to parse filenames and convert between enum values
+    and string names. Unmatched images are saved to an 'unmatched' subfolder.
     """
 
     # Override in subclass
@@ -48,7 +51,9 @@ class ImageMatcher(ABC, Generic[T]):
         self.library_dir = library_dir
         self.library_dir.mkdir(parents=True, exist_ok=True)
         self._library: dict[T, list[np.ndarray]] = {}
+        self._unmatched_images: list[np.ndarray] = []
         self._load_library()
+        self._load_unmatched()
 
     def _load_library(self) -> None:
         """Load all reference images from the library directory."""
@@ -75,12 +80,23 @@ class ImageMatcher(ABC, Generic[T]):
         resized = cv2.resize(img, self.IMAGE_SIZE, interpolation=cv2.INTER_AREA)
         return resized.astype(np.float32) / 255.0
 
+    def _load_unmatched(self) -> None:
+        """Load existing unmatched images to avoid saving duplicates."""
+        self._unmatched_images.clear()
+        unmatched_dir = self.library_dir / "unmatched"
+        if not unmatched_dir.exists():
+            return
+        for image_path in unmatched_dir.glob("*.png"):
+            img = cv2.imread(str(image_path))
+            if img is not None:
+                self._unmatched_images.append(self._normalize(img))
+
     def match(self, image: np.ndarray) -> Optional[T]:
         """
         Match an image against the library.
 
         Returns the matched value, or None if no match found.
-        Unknown images are identified via Claude and added to the library.
+        Unmatched images are saved to the 'unmatched' subfolder for manual review.
         """
         if image is None or image.size == 0:
             return None
@@ -99,42 +115,34 @@ class ImageMatcher(ABC, Generic[T]):
         if best_match is not None and best_score < self.MATCH_THRESHOLD:
             return best_match
 
-        # No match - ask Claude
-        result = self._identify_with_claude(image)
-        if result is not None:
-            if result not in self._library:
-                self._library[result] = []
-            self._save_to_library(image, result, len(self._library[result]))
-            self._library[result].append(normalized)
-        return result
+        # No match - save to unmatched folder
+        self._save_unmatched(image)
+        return None
 
-    def _identify_with_claude(self, image: np.ndarray) -> Optional[T]:
-        """Use Claude Code to identify an unknown image."""
-        global _claude_was_called
-        _claude_was_called = True
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            temp_path = f.name
-            cv2.imwrite(temp_path, image)
+    def _save_unmatched(self, image: np.ndarray) -> None:
+        """Save an unmatched image to the 'unmatched' subfolder if not a duplicate."""
+        global _unmatched_saved
+        _unmatched_saved = True
 
-        try:
-            prompt = self._get_claude_prompt(temp_path)
-            claude_path = Path.home() / ".local" / "bin" / "claude"
-            result = subprocess.run(
-                [str(claude_path), "-p", prompt, "--allowedTools", "Read"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+        normalized = self._normalize(image)
 
-            if result.returncode != 0:
-                return None
+        # Check if this matches an existing unmatched image
+        for unmatched_img in self._unmatched_images:
+            if float(np.mean(np.abs(normalized - unmatched_img))) < self.MATCH_THRESHOLD:
+                return  # Already have this one, skip
 
-            return self._parse_claude_response(result.stdout.strip())
+        unmatched_dir = self.library_dir / "unmatched"
+        unmatched_dir.mkdir(parents=True, exist_ok=True)
 
-        except Exception:
-            return None
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
+        # Find next available index
+        existing = list(unmatched_dir.glob("*.png"))
+        next_index = len(existing)
+
+        filepath = unmatched_dir / f"unmatched_{next_index}.png"
+        cv2.imwrite(str(filepath), image)
+
+        # Add to cache to prevent future duplicates
+        self._unmatched_images.append(normalized)
 
     def _save_to_library(self, image: np.ndarray, value: T, variant: int) -> None:
         """Save an image to the library with variant index."""
@@ -158,23 +166,12 @@ class ImageMatcher(ABC, Generic[T]):
         """Convert a value to a filename base (without variant suffix or extension)."""
         pass
 
-    @abstractmethod
-    def _get_claude_prompt(self, image_path: str) -> str:
-        """Get the prompt to send to Claude for identifying an unknown image."""
-        pass
-
-    @abstractmethod
-    def _parse_claude_response(self, response: str) -> Optional[T]:
-        """Parse Claude's response into a value."""
-        pass
-
-
 class ImageMatcherWithNone(ImageMatcher[T]):
     """
     Image matcher that also tracks "no match" images.
 
     Useful for cases like action detection where an empty/no-action image
-    should be recognized and not repeatedly sent to Claude.
+    should be recognized and not repeatedly flagged as unmatched.
     """
 
     def __init__(self, library_dir: Path):
@@ -235,18 +232,9 @@ class ImageMatcherWithNone(ImageMatcher[T]):
         if best_match is not None and best_score < self.MATCH_THRESHOLD:
             return best_match
 
-        # No match - ask Claude
-        result = self._identify_with_claude(image)
-        if result is None:
-            # Claude said no match - save as NONE
-            self._save_none_image(image, len(self._none_images))
-            self._none_images.append(normalized)
-        else:
-            if result not in self._library:
-                self._library[result] = []
-            self._save_to_library(image, result, len(self._library[result]))
-            self._library[result].append(normalized)
-        return result
+        # No match - save to unmatched folder
+        self._save_unmatched(image)
+        return None
 
     def _save_none_image(self, image: np.ndarray, variant: int) -> None:
         """Save a 'no match' image to the library."""
