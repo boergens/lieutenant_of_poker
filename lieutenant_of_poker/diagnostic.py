@@ -80,11 +80,9 @@ class DiagnosticExtractor:
     def __init__(self):
         """Initialize the diagnostic extractor."""
         from .table_regions import detect_table_regions, PlayerPosition
-        from .fast_ocr import get_fast_ocr
 
         self._detect_regions = detect_table_regions
         self._PlayerPosition = PlayerPosition
-        self._fast_ocr = get_fast_ocr()
         self.report: Optional[DiagnosticReport] = None
 
     def extract_with_diagnostics(
@@ -157,31 +155,21 @@ class DiagnosticExtractor:
 
     def _extract_pot(self, frame: np.ndarray, region_detector) -> None:
         """Extract pot with diagnostics."""
+        from .fast_ocr import preprocess_for_ocr
+        from .chip_ocr import extract_pot
+
         step = DiagnosticStep(
             name="Pot Detection",
             description="Extracting pot amount from center of table",
         )
 
-        try:
-            # Get region
-            pot_region = region_detector.extract_pot(frame)
-            step.images.append(("Pot Region", pot_region))
+        pot_region = region_detector.extract_pot(frame)
+        step.images.append(("Pot Region", pot_region))
+        step.images.append(("OCR Input (inverted)", preprocess_for_ocr(pot_region)))
 
-            # Show preprocessed image that tesseract actually sees (no left trim for pot)
-            from .fast_ocr import preprocess_for_ocr
-            preprocessed = preprocess_for_ocr(pot_region, trim_left=False)
-            step.images.append(("OCR Input (inverted)", preprocessed))
-
-            # Use mainline ChipOCR
-            from .chip_ocr import ChipOCR
-            chip_ocr = ChipOCR()
-            amount = chip_ocr.extract_pot(pot_region)
-            step.parsed_result = amount
-            step.success = amount is not None
-
-        except Exception as e:
-            step.error = str(e)
-            step.success = False
+        amount = extract_pot(frame, region_detector)
+        step.parsed_result = amount
+        step.success = amount is not None
 
         self.report.steps.append(step)
 
@@ -393,28 +381,25 @@ class DiagnosticExtractor:
                 player_regions = region_detector.get_player_region(position)
 
                 # Chip detection
+                from .fast_ocr import preprocess_for_ocr
+                from .preprocessing import trim_to_content
+                from .chip_ocr import extract_player_chips
+
                 chip_substep = DiagnosticStep(
                     name="Chip Count",
                     description="Detecting chip count",
                 )
-                try:
-                    chip_region = player_regions.name_chip_box.extract(frame)
-                    chip_substep.images.append(("Chip Region", chip_region))
 
-                    # Show preprocessed image that tesseract actually sees
-                    from .fast_ocr import preprocess_for_ocr
-                    preprocessed = preprocess_for_ocr(chip_region)
-                    chip_substep.images.append(("OCR Input (inverted)", preprocessed))
+                chip_region = region_detector.extract_player_chips(frame, position)
+                chip_substep.images.append(("Chip Region", chip_region))
 
-                    # Use mainline ChipOCR
-                    from .chip_ocr import ChipOCR
-                    chip_ocr = ChipOCR()
-                    amount = chip_ocr.extract_player_chips(chip_region)
-                    chip_substep.parsed_result = amount
-                    chip_substep.success = amount is not None
-                except Exception as e:
-                    chip_substep.error = str(e)
-                    chip_substep.success = False
+                trimmed = trim_to_content(chip_region)
+                chip_substep.images.append(("Trimmed", trimmed))
+                chip_substep.images.append(("OCR Input (inverted)", preprocess_for_ocr(trimmed)))
+
+                amount = extract_player_chips(frame, region_detector, position)
+                chip_substep.parsed_result = amount
+                chip_substep.success = amount is not None
 
                 step.substeps.append(chip_substep)
 

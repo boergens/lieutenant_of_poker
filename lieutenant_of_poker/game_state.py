@@ -19,7 +19,7 @@ from lieutenant_of_poker.table_regions import (
     BASE_HEIGHT,
 )
 from lieutenant_of_poker.card_detector import Card, CardDetector
-from lieutenant_of_poker.chip_ocr import ChipOCR, OCRCache
+from lieutenant_of_poker.chip_ocr import extract_pot, extract_player_chips
 from lieutenant_of_poker.action_detector import (
     PlayerAction,
     DetectedAction,
@@ -131,14 +131,7 @@ class GameStateExtractor:
             scale_frames: If True, scale down frames larger than target resolution.
         """
         self.card_detector = CardDetector()
-        self.chip_ocr = ChipOCR()
         self.scale_frames = scale_frames
-
-        # Per-slot OCR caches (pot + each player position)
-        self._pot_cache = OCRCache(max_size=3)
-        self._chip_caches: Dict[PlayerPosition, OCRCache] = {
-            pos: OCRCache(max_size=3) for pos in PlayerPosition
-        }
 
     def extract(
         self,
@@ -175,83 +168,30 @@ class GameStateExtractor:
             timestamp_ms=timestamp_ms
         )
 
-        # Extract community cards using fixed slots
-        try:
-            card_slots = region_detector.extract_community_card_slots(frame)
-            cards = []
-            for i, slot_img in enumerate(card_slots):
-                card = self.card_detector.detect_card(slot_img, slot_index=i)
-                if card:
-                    cards.append(card)
-            state.community_cards = cards
-        except Exception:
-            pass
+        # Extract community cards
+        card_slots = region_detector.extract_community_card_slots(frame)
+        state.community_cards = [
+            card for i, slot_img in enumerate(card_slots)
+            if (card := self.card_detector.detect_card(slot_img, slot_index=i))
+        ]
 
-        # Extract hero cards from full hero region using calibrated subregions
-        try:
-            from .card_matcher import match_hero_cards
-            hero_region = region_detector.extract_hero_cards(frame)
-            hero_cards = match_hero_cards(hero_region)
-            # Filter out None results
-            state.hero_cards = [c for c in hero_cards if c is not None]
-        except Exception:
-            pass
+        # Extract hero cards
+        from .card_matcher import match_hero_cards
+        hero_region = region_detector.extract_hero_cards(frame)
+        state.hero_cards = [c for c in match_hero_cards(hero_region) if c]
 
-        # Extract pot (with cache)
-        try:
-            pot_region = region_detector.extract_pot(frame)
-            found, cached_pot = self._pot_cache.get(pot_region)
-            if found:
-                state.pot = cached_pot
-            else:
-                state.pot = self.chip_ocr.extract_pot(pot_region)
-                self._pot_cache.put(pot_region, state.pot)
-        except Exception:
-            pass
+        state.pot = extract_pot(frame, region_detector)
 
-        # Extract player states
         for position in PlayerPosition:
-            player_state = self._extract_player_state(
-                frame, region_detector, position
-            )
-            state.players[position] = player_state
+            chips = extract_player_chips(frame, region_detector, position)
+            state.players[position] = PlayerState(position=position, chips=chips)
 
-        # Get hero chips from hero player state
         if PlayerPosition.HERO in state.players:
             state.hero_chips = state.players[PlayerPosition.HERO].chips
 
-        # Determine street
         state.street = state.determine_street()
 
         return state
-
-    def _extract_player_state(
-        self,
-        frame: np.ndarray,
-        region_detector: TableRegionDetector,
-        position: PlayerPosition
-    ) -> PlayerState:
-        """Extract state for a single player."""
-        player_regions = region_detector.get_player_region(position)
-        player_state = PlayerState(position=position)
-
-        # Extract chips (with per-player cache)
-        try:
-            chip_region = player_regions.name_chip_box.extract(frame)
-            cache = self._chip_caches[position]
-            found, cached_chips = cache.get(chip_region)
-            if found:
-                player_state.chips = cached_chips
-            else:
-                player_state.chips = self.chip_ocr.extract_player_chips(chip_region)
-                cache.put(chip_region, player_state.chips)
-        except Exception:
-            pass
-
-        # Note: Actions are now deduced from chip changes in video_analyzer.py
-        # Note: Hero cards are extracted separately via match_hero_cards()
-
-        return player_state
 
 
 def extract_game_state(

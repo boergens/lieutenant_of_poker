@@ -8,9 +8,11 @@ and notifications into a cohesive monitoring system.
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Callable
+from pathlib import Path
+from typing import Optional, Callable, Union
 
 from .screen_capture import ScreenCapture, MacOSScreenCapture
+from .video_recorder import VideoRecorder
 from .live_state_tracker import (
     LiveStateTracker,
     GameEvent,
@@ -96,6 +98,9 @@ class LiveMonitor:
         self._on_state_update: Optional[Callable[[StateUpdate], None]] = None
         self._on_violation: Optional[Callable[[RuleViolation], None]] = None
 
+        # Video recording (uses shared VideoRecorder)
+        self._recorder = VideoRecorder(fps=fps)
+
     def set_state_callback(
         self, callback: Callable[[StateUpdate], None]
     ) -> None:
@@ -107,6 +112,35 @@ class LiveMonitor:
     ) -> None:
         """Set callback for rule violations."""
         self._on_violation = callback
+
+    def start_recording(
+        self,
+        output_path: Union[str, Path],
+        codec: str = "mp4v",
+    ) -> None:
+        """
+        Start recording captured frames to a video file.
+
+        Args:
+            output_path: Path for the output video file.
+            codec: FourCC codec code (default: 'mp4v' for .mp4 files).
+        """
+        self._recorder.codec = codec
+        self._recorder.start(output_path)
+
+    def stop_recording(self) -> Optional[Path]:
+        """
+        Stop recording and finalize the video file.
+
+        Returns:
+            Path to the recorded video file, or None if not recording.
+        """
+        return self._recorder.stop()
+
+    @property
+    def is_recording(self) -> bool:
+        """Check if currently recording."""
+        return self._recorder.is_recording
 
     def start(self) -> None:
         """
@@ -123,6 +157,8 @@ class LiveMonitor:
         """Stop the monitoring loop."""
         self._running = False
         self._stats.end_time = datetime.now()
+        # Clean up video recording if active
+        self.stop_recording()
 
     def _monitor_loop(self) -> None:
         """Main monitoring loop."""
@@ -136,6 +172,9 @@ class LiveMonitor:
             if frame is None:
                 time.sleep(interval)
                 continue
+
+            # Record frame if recording
+            self._recorder.write_frame(frame)
 
             # Process frame
             frame_start = time.time()
@@ -244,42 +283,153 @@ class LiveMonitor:
         return self._running
 
 
-def create_live_monitor(
-    window_title: str = "Governor of Poker",
-    fps: int = 10,
-) -> LiveMonitor:
+@dataclass
+class MonitorConfig:
+    """Configuration for live monitoring."""
+
+    # Capture settings
+    window_title: str = "Governor of Poker"
+    fullscreen: bool = False
+    display_id: int = 0
+    fps: int = 10
+
+    # Rules settings
+    enabled_rules: Optional[list[str]] = None  # None = all rules
+    min_severity: str = "warning"  # info, warning, error, critical
+
+    # Notification settings
+    terminal_output: bool = True
+    audio_alerts: bool = False
+    overlay: bool = False
+    log_file: Optional[Path] = None
+
+    # Recording settings
+    record_to: Optional[Path] = None
+
+
+def create_capture(config: MonitorConfig) -> ScreenCapture:
+    """Create appropriate screen capture based on config."""
+    from .screen_capture import ScreenCaptureKitCapture
+
+    if config.fullscreen:
+        return ScreenCaptureKitCapture(
+            window_title=config.window_title if config.window_title != "Governor of Poker" else None,
+            capture_display=True,
+            display_id=config.display_id,
+        )
+    else:
+        return MacOSScreenCapture(window_title=config.window_title)
+
+
+def create_notifications(config: MonitorConfig) -> NotificationManager:
+    """Create notification manager based on config."""
+    from .notifications import (
+        TerminalNotifier,
+        AudioNotifier,
+        LogNotifier,
+        OverlayNotifier,
+    )
+
+    notifications = NotificationManager()
+
+    severity_map = {
+        "info": Severity.INFO,
+        "warning": Severity.WARNING,
+        "error": Severity.ERROR,
+        "critical": Severity.CRITICAL,
+    }
+    notifications.set_minimum_severity(severity_map.get(config.min_severity, Severity.WARNING))
+
+    if config.terminal_output:
+        term = TerminalNotifier()
+        if term.is_available():
+            notifications.add_channel(term)
+
+    if config.audio_alerts:
+        audio = AudioNotifier()
+        if audio.is_available():
+            notifications.add_channel(audio)
+
+    if config.log_file:
+        log = LogNotifier(config.log_file)
+        if log.is_available():
+            notifications.add_channel(log)
+
+    if config.overlay:
+        overlay = OverlayNotifier()
+        if overlay.is_available():
+            notifications.add_channel(overlay)
+
+    return notifications
+
+
+def create_rules_engine(config: MonitorConfig) -> RulesEngine:
+    """Create rules engine based on config."""
+    from .rules import basic_rules
+
+    rules = RulesEngine()
+    basic_rules.register_all(rules)
+
+    if config.enabled_rules is not None:
+        rules.disable_all()
+        for rule_name in config.enabled_rules:
+            rules.enable_rule(rule_name)
+
+    return rules
+
+
+def create_live_monitor(config: MonitorConfig) -> LiveMonitor:
     """
-    Create a live monitor with default components.
+    Create a live monitor from configuration.
 
     Args:
-        window_title: Title of game window to capture.
-        fps: Target frames per second.
+        config: Monitor configuration.
 
     Returns:
         Configured LiveMonitor instance.
 
     Raises:
         ValueError: If game window cannot be found.
+        RuntimeError: If screen capture fails to initialize.
     """
-    from .rules import basic_rules
-
-    # Create screen capture
-    capture = MacOSScreenCapture(window_title=window_title)
-
-    # Create state tracker
+    capture = create_capture(config)
     tracker = LiveStateTracker()
+    rules = create_rules_engine(config)
+    notifications = create_notifications(config)
 
-    # Create rules engine and register basic rules
-    rules = RulesEngine()
-    basic_rules.register_all(rules)
-
-    # Create notification manager
-    notifications = NotificationManager()
-
-    return LiveMonitor(
+    monitor = LiveMonitor(
         screen_capture=capture,
         state_tracker=tracker,
         rules_engine=rules,
         notification_manager=notifications,
-        fps=fps,
+        fps=config.fps,
     )
+
+    if config.record_to:
+        monitor.start_recording(config.record_to)
+
+    return monitor
+
+
+def list_available_windows() -> list[dict]:
+    """List available windows for capture."""
+    capture = MacOSScreenCapture()
+    return [
+        {
+            "window_id": w.window_id,
+            "title": w.title,
+            "owner": w.owner_name,
+            "width": w.bounds[2],
+            "height": w.bounds[3],
+        }
+        for w in capture.list_windows()
+    ]
+
+
+def list_available_rules() -> list[tuple[str, bool, str]]:
+    """List available rules with (name, enabled, description)."""
+    from .rules import basic_rules
+
+    rules = RulesEngine()
+    basic_rules.register_all(rules)
+    return rules.list_rules()

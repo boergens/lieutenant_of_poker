@@ -29,8 +29,8 @@ from lieutenant_of_poker.card_detector import (
     detect_cards_in_region,
 )
 from lieutenant_of_poker.chip_ocr import (
-    ChipOCR,
-    extract_chip_amount,
+    extract_pot,
+    extract_player_chips,
 )
 from lieutenant_of_poker.action_detector import (
     PlayerAction,
@@ -68,8 +68,8 @@ __all__ = [
     "CardDetector",
     "detect_cards_in_region",
     # Chip OCR
-    "ChipOCR",
-    "extract_chip_amount",
+    "extract_pot",
+    "extract_player_chips",
     # Action types
     "PlayerAction",
     "DetectedAction",
