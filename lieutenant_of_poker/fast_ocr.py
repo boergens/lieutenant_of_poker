@@ -1,153 +1,170 @@
 """
-Fast OCR module using tesserocr for low-latency text recognition.
+Fast OCR module for digit recognition.
 
-Uses tesserocr (C API bindings) instead of pytesseract (subprocess)
-for faster OCR calls by keeping the tesseract engine loaded.
+Uses two approaches:
+- Tesseract for pot detection (works great on larger text)
+- Matched filter convolution for player chips (better for smaller text)
 """
 
-from typing import Optional
 import threading
+from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image
 import tesserocr
+from scipy.signal import convolve2d, find_peaks
+
+# Tesseract API for pot OCR
+_tess_lock = threading.Lock()
+_tess_api = None
+
+# Load digit matched filters (10 templates for digits 0-9)
+_FILTER_PATH = Path(__file__).parent / "digit_filters.npy"
+_digit_filters: np.ndarray | None = None
+
+# OCR debug image saving
+_ocr_debug_dir: Path | None = None
+_ocr_debug_context: dict[str, str] = {}  # source, timestamp
 
 
-class FastOCR:
+def _get_tess_api() -> tesserocr.PyTessBaseAPI:
+    """Get or create the shared tesseract API instance."""
+    global _tess_api
+    if _tess_api is None:
+        _tess_api = tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_LINE)
+        _tess_api.SetVariable("tessedit_char_whitelist", "0123456789,.")
+    return _tess_api
+
+
+def _preprocess_for_tesseract(image: np.ndarray) -> np.ndarray:
+    """Prepare image for tesseract OCR."""
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Invert - tesseract works better with dark text on light background
+    image = 255 - image
+    # Boost contrast
+    image = np.where(image > 200, 255, image).astype(np.uint8)
+    return image
+
+
+def _get_filters() -> np.ndarray:
+    """Load and cache the digit matched filters."""
+    global _digit_filters
+    if _digit_filters is None:
+        _digit_filters = np.load(str(_FILTER_PATH))
+    return _digit_filters
+
+
+def _load_and_normalize_grayscale(image: np.ndarray) -> np.ndarray:
+    """Convert image to normalized grayscale array."""
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    arr = gray.astype(np.float32)
+    max_val = np.max(arr)
+    if max_val > 0:
+        arr /= max_val
+    return arr
+
+
+def _do_conv(image: np.ndarray) -> np.ndarray:
+    """Apply digit filters via convolution."""
+    im = _load_and_normalize_grayscale(image)
+    im = np.pad(im, ((0, 0), (2, 0)))
+
+    filters = _get_filters()
+    ims = []
+    for i in range(10):
+        c = convolve2d(im, filters[::-1, ::-1, i], mode='valid')
+        c = np.max(c, 0)
+        ims.append(c)
+    ims = np.stack(ims, -1)
+    return ims
+
+
+def _get_numbers_matched_filter(image: np.ndarray) -> np.ndarray:
+    """Detect digits in image using matched filter convolution."""
+    c = _do_conv(image)
+    peaks, _ = find_peaks(np.max(c, 1), height=1, distance=10)
+    args = np.argmax(c, 1)
+    return args[peaks]
+
+
+def _get_numbers_tesseract(image: np.ndarray) -> str:
+    """Detect digits using tesseract OCR."""
+    with _tess_lock:
+        _get_tess_api().SetImage(Image.fromarray(_preprocess_for_tesseract(image)))
+        return _get_tess_api().GetUTF8Text().strip()
+
+
+def enable_ocr_debug(directory: Path | str) -> None:
     """
-    Fast OCR using tesserocr with reusable API instance.
+    Enable saving of OCR input images for debugging.
 
-    Thread-safe singleton that maintains a tesserocr API instance
-    for fast repeated OCR calls without subprocess overhead.
+    Args:
+        directory: Directory to save images to.
     """
-
-    _instance: Optional["FastOCR"] = None
-    _lock = threading.Lock()
-
-    def __new__(cls) -> "FastOCR":
-        """Singleton pattern for shared API instance."""
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        """Initialize the OCR API (only once due to singleton)."""
-        if self._initialized:
-            return
-
-        # Create API instance for digit recognition
-        self._api_digits = tesserocr.PyTessBaseAPI(
-            psm=tesserocr.PSM.SINGLE_LINE
-        )
-        self._api_digits.SetVariable("tessedit_char_whitelist", "0123456789,.")
-
-        self._api_general = tesserocr.PyTessBaseAPI(
-            psm=tesserocr.PSM.SINGLE_LINE
-        )
-
-        self._initialized = True
-
-    def ocr_digits(self, image: np.ndarray, trim_left: bool = True) -> str:
-        """
-        OCR optimized for digit recognition (chip amounts, pot).
-
-        Args:
-            image: BGR or grayscale numpy array.
-            trim_left: If True, trim empty columns from left until hitting text.
-
-        Returns:
-            Recognized text string.
-        """
-        pil_image = self._to_pil(image, trim_left=trim_left)
-        with self._lock:
-            self._api_digits.SetImage(pil_image)
-            return self._api_digits.GetUTF8Text().strip()
-
-    def ocr_general(self, image: np.ndarray) -> str:
-        """
-        General OCR for any text.
-
-        Args:
-            image: BGR or grayscale numpy array.
-
-        Returns:
-            Recognized text string.
-        """
-        pil_image = self._to_pil(image)
-        with self._lock:
-            self._api_general.SetImage(pil_image)
-            return self._api_general.GetUTF8Text().strip()
-
-    def _to_pil(self, image: np.ndarray, trim_left: bool = True) -> Image.Image:
-        """Convert numpy array to PIL Image using shared preprocessing."""
-        preprocessed = preprocess_for_ocr(image, trim_left=trim_left)
-        return Image.fromarray(preprocessed)
-
-    def close(self):
-        """Release tesserocr resources."""
-        with self._lock:
-            if hasattr(self, '_api_digits'):
-                self._api_digits.End()
-            if hasattr(self, '_api_general'):
-                self._api_general.End()
-            self._initialized = False
-            FastOCR._instance = None
+    global _ocr_debug_dir, _ocr_debug_context
+    _ocr_debug_dir = Path(directory)
+    _ocr_debug_dir.mkdir(parents=True, exist_ok=True)
+    _ocr_debug_context = {}
 
 
-# Module-level convenience functions
-_fast_ocr: Optional[FastOCR] = None
+def disable_ocr_debug() -> None:
+    """Disable saving of OCR input images."""
+    global _ocr_debug_dir
+    _ocr_debug_dir = None
 
 
-def get_fast_ocr() -> FastOCR:
-    """Get the shared FastOCR instance."""
-    global _fast_ocr
-    if _fast_ocr is None:
-        _fast_ocr = FastOCR()
-    return _fast_ocr
+def set_ocr_debug_context(source: str, timestamp_ms: float) -> None:
+    """Set context for OCR debug filenames (call before processing each frame)."""
+    global _ocr_debug_context
+    _ocr_debug_context = {
+        "source": Path(source).stem,  # filename without extension
+        "timestamp": f"{int(timestamp_ms)}ms",
+    }
 
 
-def ocr_digits(image: np.ndarray, trim_left: bool = True) -> str:
-    """OCR for digits (chip amounts)."""
-    return get_fast_ocr().ocr_digits(image, trim_left=trim_left)
-
-
-def ocr_general(image: np.ndarray) -> str:
-    """General OCR."""
-    return get_fast_ocr().ocr_general(image)
-
-
-def preprocess_for_ocr(image: np.ndarray, trim_left: bool = True) -> np.ndarray:
+def ocr_digits(image: np.ndarray, category: str = "other") -> str:
     """
-    Return the preprocessed image that would be sent to tesseract.
-
-    Useful for diagnostics to see exactly what OCR receives.
+    OCR optimized for digit recognition (chip amounts, pot).
 
     Args:
         image: BGR or grayscale numpy array.
-        trim_left: If True, trim empty columns from left until hitting text.
+        category: Category - "pot" uses tesseract, others use matched filter.
 
     Returns:
-        Preprocessed image as numpy array (grayscale, inverted, contrast-boosted).
+        Recognized text string of digits.
     """
-    # Convert to grayscale if needed
-    if len(image.shape) == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Invert colors - tesseract works better with dark text on light background
-    image = 255 - image
-    # Boost contrast: pull values above 200 to 255
-    image = np.where(image > 200, 255, image).astype(np.uint8)
-    # Trim empty columns from left until we hit text (majority of pixels >= 200)
-    if trim_left:
-        left = 0
-        while left < image.shape[1] - 1:
-            col = image[:, left]
-            if np.sum(col >= 200) > len(col) // 2:
-                break
-            left += 1
-        if left > 0:
-            image = image[:, left:]
-    return image
+    import secrets
+
+    # Use tesseract for pot (works great), matched filter for players
+    if category == "pot":
+        result = _get_numbers_tesseract(image)
+    else:
+        digits = _get_numbers_matched_filter(image)
+        result = "".join(str(d) for d in digits)
+
+    # Save image with OCR result in filename if debug enabled
+    if _ocr_debug_dir is not None:
+        # Create category subdirectory
+        category_dir = _ocr_debug_dir / category
+        category_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build filename: source_timestamp_hash_result.png
+        source = _ocr_debug_context.get("source", "unknown")
+        timestamp = _ocr_debug_context.get("timestamp", "0ms")
+        random_hash = secrets.token_hex(3)  # 6 char hex
+
+        # Sanitize result for filename (remove commas/periods from tesseract output)
+        safe_result = result.replace(",", "").replace(".", "").replace(" ", "")
+        if not safe_result:
+            safe_result = "EMPTY"
+
+        filename = f"{source}_{timestamp}_{random_hash}_{safe_result}.png"
+        cv2.imwrite(str(category_dir / filename), image)
+
+    return result
