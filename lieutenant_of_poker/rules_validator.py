@@ -27,6 +27,7 @@ class ViolationType(Enum):
     POT_DISAPPEARED = auto()
     STREET_REGRESSION = auto()
     CHIPS_INCREASED_WITHOUT_WIN = auto()
+    CHIPS_DECREASED_WITHOUT_POT_INCREASE = auto()
     CHIPS_DISAPPEARED = auto()
     TOTAL_CHIPS_CHANGED = auto()
 

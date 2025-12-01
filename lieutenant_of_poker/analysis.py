@@ -227,7 +227,11 @@ def analyze_video(
     clear_caches()
 
     # Initialize rules validator - no new hand detection (single game)
-    validator = RulesValidator(allow_new_hand=False) if validate_rules else None
+    # Enable chip increase checks to catch OCR errors like 30 → 3660
+    validator = RulesValidator(
+        allow_new_hand=False,
+        check_chip_increases=True,
+    ) if validate_rules else None
 
     states = []
     initial_states = []  # Collect first N frames for majority voting
