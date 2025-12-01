@@ -146,6 +146,8 @@ def analyze_video(
     on_progress: Optional[Callable[[AnalysisProgress], None]] = None,
     on_debug_frame: Optional[Callable[[FrameInfo, GameState, str], None]] = None,
     initial_frames: int = 3,
+    validate_rules: bool = True,
+    on_invalid_state: Optional[Callable[[GameState, "ValidationResult"], None]] = None,
 ) -> List[GameState]:
     """
     Analyze a video file and extract game states.
@@ -157,6 +159,9 @@ def analyze_video(
         on_debug_frame: Optional callback when a frame needs debugging.
                        Args: (frame_info, state, reason)
         initial_frames: Number of frames to pool for initial state (default 3).
+        validate_rules: If True, filter out states with illegal transitions.
+        on_invalid_state: Optional callback when a state is rejected.
+                         Args: (state, validation_result)
 
     Returns:
         List of GameState objects extracted from the video.
@@ -164,9 +169,13 @@ def analyze_video(
     from .chip_ocr import get_ocr_calls, clear_caches
     from .image_matcher import unmatched_was_saved, reset_unmatched_flag
     from .fast_ocr import set_ocr_debug_context
+    from .rules_validator import RulesValidator, ValidationResult
 
     extractor = GameStateExtractor()
     clear_caches()
+
+    # Initialize rules validator if enabled
+    validator = RulesValidator() if validate_rules else None
 
     states = []
     initial_states = []  # Collect first N frames for majority voting
@@ -202,7 +211,17 @@ def analyze_video(
                     consolidated = compute_initial_state(initial_states)
                     states.append(consolidated)
             else:
-                states.append(state)
+                # Validate state transition if enabled
+                if validator and states:
+                    result = validator.validate_transition(states[-1], state)
+                    if not result.is_valid:
+                        # State is invalid - skip it
+                        if on_invalid_state:
+                            on_invalid_state(state, result)
+                    else:
+                        states.append(state)
+                else:
+                    states.append(state)
 
             # Check if debug callback should be invoked
             if on_debug_frame:
