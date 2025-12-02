@@ -230,6 +230,40 @@ def main():
         help="Directory for recorded videos (default: current directory)"
     )
 
+    # split command - split video by brightness detection
+    split_parser = subparsers.add_parser(
+        "split", help="Split video into chunks based on screen on/off detection"
+    )
+    split_parser.add_argument("video", help="Path to video file")
+    split_parser.add_argument(
+        "--output-dir", "-o", type=str, default=None,
+        help="Output directory for chunks (default: same as input video)"
+    )
+    split_parser.add_argument(
+        "--prefix", "-p", type=str, default=None,
+        help="Filename prefix for chunks (default: input filename)"
+    )
+    split_parser.add_argument(
+        "--threshold", "-t", type=float, default=250.0,
+        help="Brightness threshold 0-255 (default: 250)"
+    )
+    split_parser.add_argument(
+        "--consecutive", "-c", type=int, default=3,
+        help="Consecutive frames needed to trigger (default: 3)"
+    )
+    split_parser.add_argument(
+        "--dry-run", "-n", action="store_true",
+        help="Show detected segments without creating files"
+    )
+    split_parser.add_argument(
+        "--min-duration", "-m", type=float, default=1.0,
+        help="Minimum segment duration in seconds (default: 1.0)"
+    )
+    split_parser.add_argument(
+        "--step", "-s", type=int, default=2,
+        help="Process every Nth frame for detection (default: 2, use 1 for all frames)"
+    )
+
     # record command - simple screen recording
     record_parser = subparsers.add_parser(
         "record", help="Record screen to video (simple, no analysis)"
@@ -258,6 +292,10 @@ def main():
         "--auto", "-a", action="store_true",
         help="Auto-detect recording start/stop based on mask brightness"
     )
+    record_parser.add_argument(
+        "--debug", action="store_true",
+        help="Enable debug output with timing statistics"
+    )
 
     args = parser.parse_args()
 
@@ -280,6 +318,8 @@ def main():
             cmd_monitor(args)
         elif args.command == "record":
             cmd_record(args)
+        elif args.command == "split":
+            cmd_split(args)
         elif args.command == "clear-library":
             cmd_clear_library(args)
     except FileNotFoundError as e:
@@ -444,12 +484,12 @@ def cmd_analyze(args):
         print(f"Saved OCR images: {pot_count} pot, {player_count} player in {ocr_dir}/", file=sys.stderr)
 
     # Output results
-    if args.json or args.raw:
+    if args.json:
         results = [game_state_to_dict(s) for s in states]
         output = json.dumps(results, indent=2)
     else:
         from .formatter import format_changes
-        output = format_changes(states)
+        output = format_changes(states, validate=args.raw)
 
     if args.output:
         with open(args.output, "w") as f:
@@ -629,6 +669,26 @@ def cmd_record(args):
         play_sound("Basso")  # Warning sound
         overlay.send_message("⚠️ Dropping Frames", f"{actual_fps:.1f} FPS (target: {target_fps})")
 
+    # Callback for debug stats
+    def on_debug_stats(stats: dict):
+        rec_indicator = "REC" if stats["is_recording"] else "---"
+        fps_pct = stats["fps_ratio"] * 100
+        cap = stats["capture_ms"]
+        det = stats["detect_ms"]
+        wrt = stats["write_ms"]
+        loop = stats["loop_ms"]
+        drift = stats["sleep_drift_ms"]
+
+        print(f"\n[DEBUG {rec_indicator}] FPS: {stats['actual_fps']:.1f}/{stats['target_fps']} ({fps_pct:.0f}%) | "
+              f"frames: {stats['total_frames']} | overruns: {stats['overruns']}", file=sys.stderr)
+        print(f"  capture: {cap['avg']:.1f}ms avg, {cap['max']:.1f}ms max", file=sys.stderr)
+        if det["count"] > 0:
+            print(f"  detect:  {det['avg']:.1f}ms avg, {det['max']:.1f}ms max", file=sys.stderr)
+        if wrt["count"] > 0:
+            print(f"  write:   {wrt['avg']:.1f}ms avg, {wrt['max']:.1f}ms max", file=sys.stderr)
+        print(f"  loop:    {loop['avg']:.1f}ms avg, {loop['max']:.1f}ms max (target: {1000/args.fps:.1f}ms)", file=sys.stderr)
+        print(f"  drift:   {drift['avg']:.1f}ms avg, {drift['max']:.1f}ms max", file=sys.stderr)
+
     # Create recording session
     session = RecordingSession(
         capture=capture,
@@ -638,6 +698,8 @@ def cmd_record(args):
         auto_detect=args.auto,
         on_recording_change=on_recording_change if args.auto else None,
         on_frame_drop=on_frame_drop,
+        debug=getattr(args, 'debug', False),
+        on_debug_stats=on_debug_stats if getattr(args, 'debug', False) else None,
     )
 
     # Set up hotkey for manual toggle
@@ -657,6 +719,8 @@ def cmd_record(args):
             print(f"  Auto-detect: ENABLED (mask loaded)", file=sys.stderr)
         else:
             print(f"  Auto-detect: FAILED (mask.png not found)", file=sys.stderr)
+    if getattr(args, 'debug', False):
+        print(f"  Debug: ENABLED (stats every 5s)", file=sys.stderr)
     print(f"\nPress {args.hotkey} to start/stop recording...", file=sys.stderr)
 
     try:
@@ -675,6 +739,77 @@ def cmd_record(args):
                 print(f"  - {rec}", file=sys.stderr)
         else:
             print("No recordings made.", file=sys.stderr)
+
+
+def cmd_split(args):
+    """Split video into chunks based on brightness detection."""
+    from lieutenant_of_poker.video_splitter import detect_segments, split_video
+
+    video_path = Path(args.video)
+    output_dir = Path(args.output_dir) if args.output_dir else video_path.parent
+    prefix = args.prefix if args.prefix else video_path.stem
+
+    from lieutenant_of_poker.analysis import get_video_info
+    info = get_video_info(args.video)
+    total_frames = info['frame_count']
+
+    print(f"Analyzing {video_path}...", file=sys.stderr)
+    print(f"  Duration: {info['duration_seconds']:.1f}s", file=sys.stderr)
+    print(f"  Threshold: {args.threshold}, Consecutive: {args.consecutive}", file=sys.stderr)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(bar_width=40),
+        MofNCompleteColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        console=None,
+        transient=False,
+        disable=not sys.stderr.isatty(),
+    ) as progress:
+        task = progress.add_task("Scanning frames", total=total_frames)
+
+        def on_progress(current, total):
+            progress.update(task, completed=current)
+
+        segments = detect_segments(
+            video_path,
+            threshold=args.threshold,
+            consecutive_frames=args.consecutive,
+            step=args.step,
+            on_progress=on_progress,
+        )
+
+    # Filter and display
+    min_ms = args.min_duration * 1000
+    filtered = [s for s in segments if s.duration_ms >= min_ms]
+
+    print(f"\nDetected {len(segments)} segments ({len(filtered)} >= {args.min_duration}s):", file=sys.stderr)
+    for i, seg in enumerate(filtered):
+        print(f"  {i+1}. {seg.start_ms/1000:.2f}s - {seg.end_ms/1000:.2f}s ({seg.duration_s:.1f}s)", file=sys.stderr)
+
+    if not filtered:
+        print("\nNo segments found.", file=sys.stderr)
+        return
+
+    if args.dry_run:
+        print("\nDry run - no files created.", file=sys.stderr)
+        return
+
+    print(f"\nSplitting into {len(filtered)} chunks...", file=sys.stderr)
+
+    def on_chunk(num, total, path):
+        print(f"  Creating {path.name}...", file=sys.stderr, end=" ", flush=True)
+
+    result = split_video(video_path, segments, output_dir, prefix, args.min_duration, on_chunk)
+
+    for path in result.created_files:
+        print("OK", file=sys.stderr)
+    for path, error in result.failed_files:
+        print(f"FAILED: {error}", file=sys.stderr)
+
+    print(f"\nCreated {len(result.created_files)} chunk(s) in {output_dir}/", file=sys.stderr)
 
 
 def cmd_monitor(args):

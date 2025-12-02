@@ -2,14 +2,24 @@
 Output formatting for game state analysis.
 """
 
-from typing import List
+from typing import List, Optional
 from .game_state import GameState
 
 
-def format_changes(states: List[GameState]) -> str:
-    """Format states as first frame info + list of changes."""
+def format_changes(states: List[GameState], validate: bool = False) -> str:
+    """Format states as first frame info + list of changes.
+
+    Args:
+        states: List of game states to format.
+        validate: If True, mark changes that would be rejected by the validator.
+    """
     if not states:
         return "No frames analyzed."
+
+    validator = None
+    if validate:
+        from .rules_validator import RulesValidator
+        validator = RulesValidator(allow_new_hand=False, check_chip_increases=True)
 
     lines = []
     first = states[0]
@@ -53,8 +63,19 @@ def format_changes(states: List[GameState]) -> str:
                 changes.append(f"{pos.name}: {prev_chips.chips} → {curr_chips.chips}")
 
         if changes:
-            lines.append(f"[{state.frame_number}] {state.timestamp_ms:.0f}ms: {', '.join(changes)}")
+            # Check if this transition would be rejected
+            rejected = False
+            if validator:
+                result = validator.validate_transition(prev, state)
+                rejected = not result.is_valid
 
-        prev = state
+            prefix = "[X] " if rejected else ""
+            lines.append(f"{prefix}[{state.frame_number}] {state.timestamp_ms:.0f}ms: {', '.join(changes)}")
+
+            # Only update prev for valid transitions
+            if not rejected:
+                prev = state
+        else:
+            prev = state
 
     return '\n'.join(lines)

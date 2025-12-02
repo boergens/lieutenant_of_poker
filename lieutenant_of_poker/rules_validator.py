@@ -331,30 +331,44 @@ class RulesValidator:
         prev: GameState,
         curr: GameState,
     ) -> List[Violation]:
-        """Validate pot can only increase during a hand."""
+        """Validate pot changes are matched by chip changes."""
         violations = []
 
-        # Pot disappeared (went from value to None) - likely OCR failure
-        if prev.pot is not None and curr.pot is None:
+        if curr.pot is None:
             violations.append(Violation(
                 violation_type=ViolationType.POT_DISAPPEARED,
-                message=f"Pot disappeared (was {prev.pot})",
+                message=f"Pot is None",
                 previous_value=str(prev.pot),
                 current_value="None",
             ))
-        elif prev.pot is not None and curr.pot is not None:
-            # Pot decreased significantly (small decreases might be rounding)
-            # Allow pot to reset to 0 or small value for new hand
-            if curr.pot < prev.pot:
-                # Only flag if it's not a reset to blinds (indicating new hand)
-                # Typical blinds are small, so we use a threshold
-                if curr.pot > 0 and curr.pot > prev.pot * 0.1:
-                    violations.append(Violation(
-                        violation_type=ViolationType.POT_DECREASED,
-                        message=f"Pot decreased from {prev.pot} to {curr.pot}",
-                        previous_value=str(prev.pot),
-                        current_value=str(curr.pot),
-                    ))
+            return violations
+
+        if curr.pot == prev.pot:
+            return violations
+
+        # Calculate total chip decrease
+        total_chip_decrease = 0
+        for pos in curr.players:
+            if pos in prev.players:
+                prev_chips = prev.players[pos].chips
+                curr_chips = curr.players[pos].chips
+                if prev_chips is not None and curr_chips is not None and curr_chips < prev_chips:
+                    total_chip_decrease += prev_chips - curr_chips
+
+        if curr.pot < prev.pot:
+            violations.append(Violation(
+                violation_type=ViolationType.POT_DECREASED,
+                message=f"Pot decreased from {prev.pot} to {curr.pot}",
+                previous_value=str(prev.pot),
+                current_value=str(curr.pot),
+            ))
+        elif total_chip_decrease == 0:
+            violations.append(Violation(
+                violation_type=ViolationType.POT_DECREASED,
+                message=f"Pot changed from {prev.pot} to {curr.pot} without chip decrease",
+                previous_value=str(prev.pot),
+                current_value=str(curr.pot),
+            ))
 
         return violations
 
@@ -385,43 +399,42 @@ class RulesValidator:
         prev: GameState,
         curr: GameState,
     ) -> List[Violation]:
-        """Validate chip decreases are matched by pot increases."""
+        """Validate chip changes are matched by pot changes."""
         violations = []
 
         # Calculate pot change
-        pot_increase = 0
+        pot_change = 0
         if prev.pot is not None and curr.pot is not None:
-            pot_increase = curr.pot - prev.pot
+            pot_change = curr.pot - prev.pot
 
-        # Check hero chips
-        if prev.hero_chips is not None and curr.hero_chips is not None:
-            chip_decrease = prev.hero_chips - curr.hero_chips
-            if chip_decrease > 0:
-                # Chips decreased - pot should increase by similar amount
-                if pot_increase < chip_decrease * 0.5:
+        # Collect all player chips (including hero via players dict)
+        for pos in curr.players:
+            if pos not in prev.players:
+                continue
+            prev_chips = prev.players[pos].chips
+            curr_chips = curr.players[pos].chips
+            if prev_chips is None or curr_chips is None:
+                continue
+
+            chip_change = curr_chips - prev_chips
+            if chip_change > 0:
+                # Chips increased - always invalid (we don't track wins)
+                violations.append(Violation(
+                    violation_type=ViolationType.CHIPS_INCREASED_WITHOUT_WIN,
+                    message=f"Player {pos.name} chips increased by {chip_change}",
+                    previous_value=str(prev_chips),
+                    current_value=str(curr_chips),
+                ))
+            elif chip_change < 0:
+                # Chips decreased - pot should increase
+                chip_decrease = -chip_change
+                if pot_change < chip_decrease * 0.5:
                     violations.append(Violation(
                         violation_type=ViolationType.CHIPS_DECREASED_WITHOUT_POT_INCREASE,
-                        message=f"Hero chips decreased by {chip_decrease} but pot only increased by {pot_increase}",
-                        previous_value=str(prev.hero_chips),
-                        current_value=str(curr.hero_chips),
+                        message=f"Player {pos.name} chips decreased by {chip_decrease} but pot only increased by {pot_change}",
+                        previous_value=str(prev_chips),
+                        current_value=str(curr_chips),
                     ))
-
-        # Check opponent chips
-        for pos in curr.players:
-            if pos in prev.players:
-                prev_chips = prev.players[pos].chips
-                curr_chips = curr.players[pos].chips
-                if prev_chips is not None and curr_chips is not None:
-                    chip_decrease = prev_chips - curr_chips
-                    if chip_decrease > 0:
-                        # Chips decreased - pot should increase
-                        if pot_increase < chip_decrease * 0.5:
-                            violations.append(Violation(
-                                violation_type=ViolationType.CHIPS_DECREASED_WITHOUT_POT_INCREASE,
-                                message=f"Player {pos.name} chips decreased by {chip_decrease} but pot only increased by {pot_increase}",
-                                previous_value=str(prev_chips),
-                                current_value=str(curr_chips),
-                            ))
 
         return violations
 
