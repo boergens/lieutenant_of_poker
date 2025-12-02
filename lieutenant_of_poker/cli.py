@@ -165,7 +165,7 @@ def main():
 
     # monitor command
     monitor_parser = subparsers.add_parser(
-        "monitor", help="Live monitor the game with mistake detection"
+        "monitor", help="[BROKEN] Live monitor the game with mistake detection"
     )
     monitor_parser.add_argument(
         "--window", "-w", default="Governor of Poker",
@@ -679,6 +679,8 @@ def cmd_record(args):
 
 def cmd_monitor(args):
     """Live monitor the game with mistake detection."""
+    print("⚠️  WARNING: The monitor command is currently broken and may not work correctly.", file=sys.stderr)
+    print("", file=sys.stderr)
     from datetime import datetime
     from lieutenant_of_poker.screen_capture import check_screen_recording_permission, get_permission_instructions
     from lieutenant_of_poker.live_monitor import (
