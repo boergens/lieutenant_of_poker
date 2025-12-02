@@ -191,6 +191,7 @@ def analyze_video(
     validate_rules: bool = True,
     on_invalid_state: Optional[Callable[[GameState, "ValidationResult"], None]] = None,
     consensus_frames: int = CONSENSUS_FRAMES,
+    raw: bool = False,
 ) -> List[GameState]:
     """
     Analyze a video file and extract game states.
@@ -270,6 +271,20 @@ def analyze_video(
                 frame_number=frame_info.frame_number,
                 timestamp_ms=frame_info.timestamp_ms,
             )
+
+            # Raw mode: skip validation/consensus, but still deduplicate
+            if raw:
+                if not states or not states_equivalent(states[-1], state):
+                    states.append(state)
+                current_frame += 1
+                if on_progress:
+                    on_progress(AnalysisProgress(
+                        current_frame=current_frame,
+                        total_frames=total_frames,
+                        timestamp_ms=frame_info.timestamp_ms,
+                        ocr_calls=get_ocr_calls(),
+                    ))
+                continue
 
             # Pool first N frames for majority voting to establish initial state
             if current_frame < initial_frames:

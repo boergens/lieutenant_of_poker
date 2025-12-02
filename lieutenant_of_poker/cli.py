@@ -89,6 +89,10 @@ def main():
         "--json", "-j", action="store_true", help="Output raw JSON instead of changes"
     )
     analyze_parser.add_argument(
+        "--raw", "-r", action="store_true",
+        help="Output raw per-frame extractions (no filtering/consensus)"
+    )
+    analyze_parser.add_argument(
         "--debug", "-d", action="store_true",
         help="Generate diagnostic report for frames with unmatched images"
     )
@@ -424,6 +428,7 @@ def cmd_analyze(args):
             on_progress=on_progress,
             on_debug_frame=on_debug_frame if args.debug else None,
             on_invalid_state=on_invalid_state if args.verbose else None,
+            raw=args.raw,
         )
 
     print(f"Done! Analyzed {len(states)} state changes.", file=sys.stderr)
@@ -439,7 +444,7 @@ def cmd_analyze(args):
         print(f"Saved OCR images: {pot_count} pot, {player_count} player in {ocr_dir}/", file=sys.stderr)
 
     # Output results
-    if args.json:
+    if args.json or args.raw:
         results = [game_state_to_dict(s) for s in states]
         output = json.dumps(results, indent=2)
     else:
