@@ -86,8 +86,8 @@ def main():
         "--json", "-j", action="store_true", help="Output raw JSON instead of changes"
     )
     analyze_parser.add_argument(
-        "--raw", "-r", action="store_true",
-        help="Output raw per-frame extractions (no filtering/consensus)"
+        "--verbose", "-v", action="store_true",
+        help="Output verbose per-frame extractions (no filtering/consensus)"
     )
 
     # export command
@@ -405,7 +405,7 @@ def cmd_analyze(args):
             args.video,
             config,
             on_progress=on_progress,
-            raw=args.raw,
+            verbose=args.verbose,
         )
 
     print(f"Done! Analyzed {len(states)} state changes.", file=sys.stderr)
@@ -416,7 +416,7 @@ def cmd_analyze(args):
         output = json.dumps(results, indent=2)
     else:
         from .formatter import format_changes
-        output = format_changes(states, validate=args.raw)
+        output = format_changes(states, verbose=args.verbose)
 
     if args.output:
         with open(args.output, "w") as f:

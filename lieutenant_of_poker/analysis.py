@@ -189,7 +189,7 @@ def analyze_video(
     validate_rules: bool = True,
     on_invalid_state: Optional[Callable[[GameState, "ValidationResult"], None]] = None,
     consensus_frames: int = CONSENSUS_FRAMES,
-    raw: bool = False,
+    verbose: bool = False,
 ) -> List[GameState]:
     """
     Analyze a video file and extract game states.
@@ -263,8 +263,8 @@ def analyze_video(
                 timestamp_ms=frame_info.timestamp_ms,
             )
 
-            # Raw mode: skip validation/consensus, but still deduplicate
-            if raw:
+            # Verbose mode: skip validation/consensus, but still deduplicate
+            if verbose:
                 if not states or not states_equivalent(states[-1], state):
                     states.append(state)
                 current_frame += 1

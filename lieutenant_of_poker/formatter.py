@@ -6,18 +6,18 @@ from typing import List, Optional
 from .game_state import GameState
 
 
-def format_changes(states: List[GameState], validate: bool = False) -> str:
+def format_changes(states: List[GameState], verbose: bool = False) -> str:
     """Format states as first frame info + list of changes.
 
     Args:
         states: List of game states to format.
-        validate: If True, mark changes that would be rejected by the validator.
+        verbose: If True, mark changes that would be rejected by the validator.
     """
     if not states:
         return "No frames analyzed."
 
     validator = None
-    if validate:
+    if verbose:
         from .rules_validator import RulesValidator
         validator = RulesValidator(allow_new_hand=False, check_chip_increases=True)
 
