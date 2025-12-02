@@ -15,12 +15,6 @@ source venv/bin/activate
 # Install package in development mode with dev dependencies
 pip install -e ".[dev]"
 
-# Run tests
-pytest
-
-# Run a single test
-pytest tests/test_file.py::test_function_name
-
 # Format code
 black .
 
