@@ -3,7 +3,7 @@ Command line interface for Lieutenant of Poker.
 
 Usage:
     lieutenant record [--fps=<n>] [--display=<n>] [--hotkey=<key>]
-    lieutenant analyze <video> [--interval=<ms>] [--output=<file>]
+    lieutenant analyze <video> [--interval=<ms>]
     lieutenant monitor [--window=<title>] [--fps=<n>] [--fullscreen]
     lieutenant extract-frames <video> [--output-dir=<dir>] [--interval=<ms>]
     lieutenant export <video> [--format=<fmt>] [--output=<file>]
@@ -74,16 +74,10 @@ def main():
         "--interval", "-i", type=int, default=1000, help="Interval between frames in ms (default: 1000)"
     )
     analyze_parser.add_argument(
-        "--output", "-o", default=None, help="Output file for JSON results (default: stdout)"
-    )
-    analyze_parser.add_argument(
         "--start", "-s", type=float, default=0, help="Start timestamp in seconds (default: 0)"
     )
     analyze_parser.add_argument(
         "--end", "-e", type=float, default=None, help="End timestamp in seconds (default: end of video)"
-    )
-    analyze_parser.add_argument(
-        "--json", "-j", action="store_true", help="Output raw JSON instead of changes"
     )
     analyze_parser.add_argument(
         "--verbose", "-v", action="store_true",
@@ -411,19 +405,9 @@ def cmd_analyze(args):
     print(f"Done! Analyzed {len(states)} state changes.", file=sys.stderr)
 
     # Output results
-    if args.json:
-        results = [game_state_to_dict(s) for s in states]
-        output = json.dumps(results, indent=2)
-    else:
-        from .formatter import format_changes
-        output = format_changes(states, verbose=args.verbose)
-
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(output)
-        print(f"Results written to {args.output}", file=sys.stderr)
-    else:
-        print(output)
+    from .formatter import format_changes
+    output = format_changes(states, verbose=args.verbose)
+    print(output)
 
 
 def cmd_export(args):
