@@ -169,7 +169,6 @@ class AnalysisConfig:
     interval_ms: int = 1000
     start_ms: float = 0
     end_ms: Optional[float] = None
-    debug_dir: Optional[Path] = None
 
 
 @dataclass
@@ -186,7 +185,6 @@ def analyze_video(
     video_path: str,
     config: AnalysisConfig,
     on_progress: Optional[Callable[[AnalysisProgress], None]] = None,
-    on_debug_frame: Optional[Callable[[FrameInfo, GameState, str], None]] = None,
     initial_frames: int = 3,
     validate_rules: bool = True,
     on_invalid_state: Optional[Callable[[GameState, "ValidationResult"], None]] = None,
@@ -207,8 +205,6 @@ def analyze_video(
         video_path: Path to the video file.
         config: Analysis configuration.
         on_progress: Optional callback for progress updates.
-        on_debug_frame: Optional callback when a frame needs debugging.
-                       Args: (frame_info, state, reason)
         initial_frames: Number of frames to pool for initial state (default 3).
         validate_rules: If True, filter out states with illegal transitions.
         on_invalid_state: Optional callback when a state is rejected.
@@ -220,7 +216,6 @@ def analyze_video(
         List of GameState objects extracted from the video.
     """
     from .chip_ocr import get_ocr_calls, clear_caches
-    from .image_matcher import unmatched_was_saved, reset_unmatched_flag
     from .fast_ocr import set_ocr_debug_context
     from .rules_validator import RulesValidator, ValidationResult
 
@@ -259,10 +254,6 @@ def analyze_video(
         for frame_info in video.iterate_at_interval(
             config.interval_ms, start_ms, end_ms if config.end_ms else None
         ):
-            # Reset debug flag before processing
-            if on_debug_frame:
-                reset_unmatched_flag()
-
             # Set OCR debug context for this frame
             set_ocr_debug_context(video_path, frame_info.timestamp_ms)
 
@@ -340,14 +331,6 @@ def analyze_video(
                             pending_change_buffer = []
                 else:
                     states.append(state)
-
-            # Check if debug callback should be invoked
-            if on_debug_frame:
-                has_failure = not is_valid_frame(state)
-                if unmatched_was_saved():
-                    on_debug_frame(frame_info, state, "unmatched_saved")
-                elif has_failure:
-                    on_debug_frame(frame_info, state, "detection_failed")
 
             current_frame += 1
 

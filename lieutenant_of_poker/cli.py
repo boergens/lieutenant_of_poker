@@ -89,14 +89,6 @@ def main():
         "--raw", "-r", action="store_true",
         help="Output raw per-frame extractions (no filtering/consensus)"
     )
-    analyze_parser.add_argument(
-        "--debug", "-d", action="store_true",
-        help="Generate diagnostic report for frames with unmatched images"
-    )
-    analyze_parser.add_argument(
-        "--debug-dir", default="debug_frames",
-        help="Directory for debug diagnostic reports (default: debug_frames)"
-    )
 
     # export command
     export_parser = subparsers.add_parser(
@@ -384,27 +376,10 @@ def cmd_analyze(args):
     end_ms = args.end * 1000 if args.end else info['duration_seconds'] * 1000
     total_frames = int((end_ms - start_ms) / args.interval) + 1
 
-    # Setup debug mode
-    debug_dir = None
-    debug_count = 0
-    diagnostic_extractor = None
-    if args.debug:
-        from lieutenant_of_poker.diagnostic import DiagnosticExtractor, generate_html_report
-        from lieutenant_of_poker.fast_ocr import enable_ocr_debug
-        debug_dir = Path(args.debug_dir)
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        diagnostic_extractor = DiagnosticExtractor()
-        # Enable OCR debug image saving
-        ocr_debug_dir = debug_dir / "ocr_images"
-        enable_ocr_debug(ocr_debug_dir)
-        print(f"Debug mode: saving diagnostics to {debug_dir}/", file=sys.stderr)
-        print(f"  OCR images: {ocr_debug_dir}/", file=sys.stderr)
-
     config = AnalysisConfig(
         interval_ms=args.interval,
         start_ms=start_ms,
         end_ms=end_ms if args.end else None,
-        debug_dir=debug_dir,
     )
 
     with Progress(
@@ -426,34 +401,14 @@ def cmd_analyze(args):
         def on_progress(p):
             progress.update(task, completed=p.current_frame, ocr=p.ocr_calls)
 
-        def on_debug_frame(frame_info, state, reason):
-            nonlocal debug_count
-            debug_count += 1
-            report = diagnostic_extractor.extract_with_diagnostics(
-                frame_info.image,
-                frame_number=frame_info.frame_number,
-                timestamp_ms=frame_info.timestamp_ms,
-            )
-            report_path = debug_dir / f"frame_{frame_info.frame_number}_{frame_info.timestamp_ms:.0f}ms_{reason}.html"
-            generate_html_report(report, report_path)
-
         states = analyze_video(
             args.video,
             config,
             on_progress=on_progress,
-            on_debug_frame=on_debug_frame if args.debug else None,
             raw=args.raw,
         )
 
     print(f"Done! Analyzed {len(states)} state changes.", file=sys.stderr)
-    if args.debug:
-        from lieutenant_of_poker.fast_ocr import disable_ocr_debug
-        disable_ocr_debug()
-        ocr_dir = debug_dir / "ocr_images"
-        pot_count = len(list((ocr_dir / "pot").glob("*.png"))) if (ocr_dir / "pot").exists() else 0
-        player_count = len(list((ocr_dir / "player").glob("*.png"))) if (ocr_dir / "player").exists() else 0
-        print(f"Generated {debug_count} debug diagnostic reports in {debug_dir}/", file=sys.stderr)
-        print(f"Saved OCR images: {pot_count} pot, {player_count} player in {ocr_dir}/", file=sys.stderr)
 
     # Output results
     if args.json:
