@@ -67,7 +67,9 @@ class Card:
             Suit.CLUBS: "c",
             Suit.SPADES: "s",
         }
-        return f"{self.rank.value}{suit_chars[self.suit]}"
+        # Use 'T' for ten (standard poker notation)
+        rank_char = "T" if self.rank == Rank.TEN else self.rank.value
+        return f"{rank_char}{suit_chars[self.suit]}"
 
 
 # Mapping of OCR text to ranks

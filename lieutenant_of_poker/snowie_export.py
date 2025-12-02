@@ -111,11 +111,13 @@ def _write_snowie(
         f.write(f"Seat {seat_idx} {name} {chips}\n")
 
     # Blinds (SB is button+1, BB is button+2)
+    bb_name = None
     if len(players) >= 2:
         sb_idx = (button_pos + 1) % len(players)
         bb_idx = (button_pos + 2) % len(players)
+        bb_name = players[bb_idx][1]
         f.write(f"SmallBlind: {players[sb_idx][1]} {small_blind}\n")
-        f.write(f"BigBlind: {players[bb_idx][1]} {big_blind}\n")
+        f.write(f"BigBlind: {bb_name} {big_blind}\n")
 
     # Hero's hole cards
     hero_cards = None
@@ -129,11 +131,24 @@ def _write_snowie(
     # Track street and write actions
     current_street = Street.PREFLOP
     prev_state = initial
+    street_had_action = False  # Track if any betting happened on current street
+    last_aggressor_seat = None  # Track seat index of last player who bet/raised
+    current_bet = big_blind  # Current bet to call (starts at BB for preflop)
 
     for state in states[1:]:
         # Check for street change
         new_street = state.street
         if new_street != current_street and new_street != Street.UNKNOWN:
+            # BB check when preflop ends without a raise above BB
+            if current_street == Street.PREFLOP and current_bet == big_blind and bb_name:
+                f.write(f"Move: {bb_name} call_check 0\n")
+            # If no betting action on previous street (post-flop), emit checks for all players
+            # Post-flop order starts from SB (button+1)
+            elif current_street != Street.PREFLOP and not street_had_action:
+                for i in range(len(players)):
+                    idx = (sb_idx + i) % len(players)
+                    f.write(f"Move: {players[idx][1]} call_check 0\n")
+
             # Write community cards for new street
             if new_street == Street.FLOP and len(state.community_cards) >= 3:
                 cards = state.community_cards[:3]
@@ -144,7 +159,11 @@ def _write_snowie(
             elif new_street == Street.RIVER and len(state.community_cards) >= 5:
                 cards = state.community_cards[:5]
                 f.write(f"RIVER Community Cards:{_format_community_cards(cards)}\n")
+
             current_street = new_street
+            street_had_action = False  # Reset for new street
+            last_aggressor_seat = None
+            current_bet = 0  # Reset bet for new street
 
         # Detect actions from chip changes
         pot_change = (state.pot or 0) - (prev_state.pot or 0)
@@ -159,25 +178,63 @@ def _write_snowie(
                     chip_change = prev_chips - curr_chips
                     if chip_change > 0:
                         player_name = seat_to_name.get(pos, f"Player_{pos.name}")
-                        # Infer action type (simplified: all non-zero are call_check)
-                        f.write(f"Move: {player_name} call_check {chip_change}\n")
+                        # Find this player's seat index
+                        actor_seat = None
+                        for idx, (seat_idx, name, _, p) in enumerate(players):
+                            if p == pos:
+                                actor_seat = seat_idx
+                                break
+
+                        # Post-flop: emit checks for players before this actor (if first bet on street)
+                        if current_street != Street.PREFLOP and not street_had_action:
+                            for i in range(len(players)):
+                                idx = (sb_idx + i) % len(players)
+                                if idx == actor_seat:
+                                    break
+                                f.write(f"Move: {players[idx][1]} call_check 0\n")
+
+                        street_had_action = True
+                        last_aggressor_seat = actor_seat
+
+                        # Determine if call or raise
+                        if chip_change > current_bet:
+                            f.write(f"Move: {player_name} raise_bet {chip_change}\n")
+                            current_bet = chip_change
+                        else:
+                            f.write(f"Move: {player_name} call_check {chip_change}\n")
 
         prev_state = state
 
-    # Winner (hero wins if they have more chips at end than start)
-    hero_final_chips = None
-    hero_initial_chips = None
-    for pos, player in final.players.items():
-        if pos == PlayerPosition.HERO:
-            hero_final_chips = player.chips
-    for pos, player in initial.players.items():
-        if pos == PlayerPosition.HERO:
-            hero_initial_chips = player.chips
+    # Video stops on hero action - emit folds for players after last aggressor, then hero
+    last_aggressor_name = None
+    last_bet_amount = 0
+    if last_aggressor_seat is not None:
+        # Find last aggressor's name and bet amount
+        for seat_idx, name, _, pos in players:
+            if seat_idx == last_aggressor_seat:
+                last_aggressor_name = name
+        # Fold players between last aggressor and hero (in seat order)
+        for seat_idx, name, _, pos in players:
+            if seat_idx > last_aggressor_seat and pos != PlayerPosition.HERO:
+                f.write(f"Move: {name} folds 0\n")
+    f.write(f"Move: {hero_name} folds 0\n")
 
-    if hero_final_chips and hero_initial_chips:
-        winnings = hero_final_chips - hero_initial_chips
-        if winnings > 0:
-            f.write(f"Winner: {hero_name} {winnings:.2f}\n")
+    # Uncalled bet returns to last aggressor, they win the contested pot
+    final_pot = final.pot or 0
+    # Find the last bet amount from chip changes
+    if len(states) >= 2:
+        for pos in states[-1].players:
+            prev_player = states[-2].players.get(pos)
+            curr_player = states[-1].players.get(pos)
+            if prev_player and curr_player:
+                chip_diff = (prev_player.chips or 0) - (curr_player.chips or 0)
+                if chip_diff > 0:
+                    last_bet_amount = chip_diff
+
+    if last_aggressor_name and last_bet_amount > 0:
+        f.write(f"Move: {last_aggressor_name} uncalled_bet {last_bet_amount}\n")
+        winnings = final_pot - last_bet_amount
+        f.write(f"Winner: {last_aggressor_name} {winnings:.2f}\n")
 
     f.write("GameEnd\n")
     f.write("\n")
