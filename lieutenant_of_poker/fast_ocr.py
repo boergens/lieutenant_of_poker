@@ -92,7 +92,7 @@ def _do_conv(image: np.ndarray) -> np.ndarray:
 def _get_numbers_matched_filter(image: np.ndarray) -> np.ndarray:
     """Detect digits in image using matched filter convolution."""
     c = _do_conv(image)
-    peaks, _ = find_peaks(np.max(c, 1), height=1, distance=10)
+    peaks, _ = find_peaks(np.max(c, 1), height=0.99, distance=10)
     args = np.argmax(c, 1)
     return args[peaks]
 
