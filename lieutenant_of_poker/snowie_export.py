@@ -13,6 +13,7 @@ from typing import List, Optional, TextIO
 from .game_state import GameState, Street
 from .table_regions import PlayerPosition
 from .card_detector import Card
+from .game_simulator import simulate_hand_completion
 
 
 @dataclass
@@ -78,16 +79,26 @@ def _write_snowie(
         PlayerPosition.HERO,
     ]
 
-    # Build player info in proper seat order
+    # Build player info in proper seat order (skip bankrupt players with no chips)
     players = []  # List of (seat_index, name, chips, position)
     seat_to_name = {}
-    for i, pos in enumerate(seat_order):
+    orig_to_new_seat = {}  # Map original seat_order index to new sequential index
+    seat_idx = 0  # Sequential seat numbering
+    for orig_idx, pos in enumerate(seat_order):
         if pos in initial.players:
             player = initial.players[pos]
+            chips = player.chips
+            # Skip bankrupt players (None or 0 chips)
+            if not chips or chips <= 0:
+                continue
             name = hero_name if pos == PlayerPosition.HERO else pos.name
-            chips = player.chips or 2000
-            players.append((i, name, chips, pos))
+            players.append((seat_idx, name, chips, pos))
             seat_to_name[pos] = name
+            orig_to_new_seat[orig_idx] = seat_idx
+            seat_idx += 1
+
+    # Adjust button position to new sequential numbering
+    new_button_pos = orig_to_new_seat.get(button_pos, 0)
 
     # Header
     f.write("GameStart\n")
@@ -104,7 +115,7 @@ def _write_snowie(
     f.write("TableName: Governor of Poker\n")
     f.write(f"Max number of players: {len(players)}\n")
     f.write(f"MyPlayerName: {hero_name}\n")
-    f.write(f"DealerPosition: {button_pos}\n")
+    f.write(f"DealerPosition: {new_button_pos}\n")
 
     # Seats
     for seat_idx, name, chips, _pos in players:
@@ -113,8 +124,8 @@ def _write_snowie(
     # Blinds (SB is button+1, BB is button+2)
     bb_name = None
     if len(players) >= 2:
-        sb_idx = (button_pos + 1) % len(players)
-        bb_idx = (button_pos + 2) % len(players)
+        sb_idx = (new_button_pos + 1) % len(players)
+        bb_idx = (new_button_pos + 2) % len(players)
         bb_name = players[bb_idx][1]
         f.write(f"SmallBlind: {players[sb_idx][1]} {small_blind}\n")
         f.write(f"BigBlind: {bb_name} {big_blind}\n")
@@ -134,6 +145,9 @@ def _write_snowie(
     street_had_action = False  # Track if any betting happened on current street
     last_aggressor_seat = None  # Track seat index of last player who bet/raised
     current_bet = big_blind  # Current bet to call (starts at BB for preflop)
+    hero_went_all_in = False  # Track if hero went all-in
+    hero_all_in_amount = 0  # Amount hero bet when going all-in
+    pot_before_hero_allin = 0  # Pot before hero's all-in bet
 
     for state in states[1:]:
         # Check for street change
@@ -203,38 +217,130 @@ def _write_snowie(
                         else:
                             f.write(f"Move: {player_name} call_check {chip_change}\n")
 
+                        # Check if hero went all-in (chips dropped to 0)
+                        if pos == PlayerPosition.HERO and curr_chips == 0:
+                            hero_went_all_in = True
+                            hero_all_in_amount = chip_change
+                            pot_before_hero_allin = prev_state.pot or 0
+
+        # If hero went all-in, stop processing further states
+        if hero_went_all_in:
+            break
+
         prev_state = state
 
-    # Video stops on hero action - emit folds for players after last aggressor, then hero
-    last_aggressor_name = None
-    last_bet_amount = 0
-    if last_aggressor_seat is not None:
-        # Find last aggressor's name and bet amount
+    # Handle ending based on whether hero went all-in
+    if hero_went_all_in:
+        # Hero went all-in: all other active players fold, hero wins
         for seat_idx, name, _, pos in players:
-            if seat_idx == last_aggressor_seat:
-                last_aggressor_name = name
-        # Fold players between last aggressor and hero (in seat order)
-        for seat_idx, name, _, pos in players:
-            if seat_idx > last_aggressor_seat and pos != PlayerPosition.HERO:
+            if pos != PlayerPosition.HERO:
                 f.write(f"Move: {name} folds 0\n")
-    f.write(f"Move: {hero_name} folds 0\n")
+        # Hero's all-in bet is returned as uncalled, hero wins the pot before their all-in
+        if hero_all_in_amount > 0:
+            f.write(f"Move: {hero_name} uncalled_bet {hero_all_in_amount}\n")
+        f.write(f"Winner: {hero_name} {pot_before_hero_allin:.2f}\n")
+    else:
+        # Hero folds - need to simulate rest of hand with showdown
+        f.write(f"Move: {hero_name} folds 0\n")
 
-    # Uncalled bet returns to last aggressor, they win the contested pot
-    final_pot = final.pot or 0
-    # Find the last bet amount from chip changes
-    if len(states) >= 2:
-        for pos in states[-1].players:
-            prev_player = states[-2].players.get(pos)
-            curr_player = states[-1].players.get(pos)
-            if prev_player and curr_player:
-                chip_diff = (prev_player.chips or 0) - (curr_player.chips or 0)
-                if chip_diff > 0:
-                    last_bet_amount = chip_diff
+        # Find last aggressor and handle uncalled bet
+        last_aggressor_name = None
+        last_bet_amount = 0
+        if last_aggressor_seat is not None:
+            for seat_idx, name, _, pos in players:
+                if seat_idx == last_aggressor_seat:
+                    last_aggressor_name = name
 
-    if last_aggressor_name and last_bet_amount > 0:
-        f.write(f"Move: {last_aggressor_name} uncalled_bet {last_bet_amount}\n")
-        winnings = final_pot - last_bet_amount
-        f.write(f"Winner: {last_aggressor_name} {winnings:.2f}\n")
+        final_pot = final.pot or 0
+        if len(states) >= 2:
+            for pos in states[-1].players:
+                prev_player = states[-2].players.get(pos)
+                curr_player = states[-1].players.get(pos)
+                if prev_player and curr_player:
+                    chip_diff = (prev_player.chips or 0) - (curr_player.chips or 0)
+                    if chip_diff > 0:
+                        last_bet_amount = chip_diff
+
+        if last_aggressor_name and last_bet_amount > 0:
+            f.write(f"Move: {last_aggressor_name} uncalled_bet {last_bet_amount}\n")
+            final_pot -= last_bet_amount
+
+        # SB/BB positions
+        sb_idx = (new_button_pos + 1) % len(players)
+        bb_idx = (new_button_pos + 2) % len(players)
+        sb_name = players[sb_idx][1] if len(players) > sb_idx else None
+        bb_name = players[bb_idx][1] if len(players) > bb_idx else None
+
+        # Get active opponents in post-flop action order (starting from SB)
+        active_opponents = []
+        for i in range(len(players)):
+            idx = (sb_idx + i) % len(players)
+            seat_idx, name, _, pos = players[idx]
+            if pos != PlayerPosition.HERO:
+                active_opponents.append((name, seat_idx))
+
+        if current_street == Street.PREFLOP:
+            # Remaining players need to act
+            # Players after hero call, SB completes, BB checks
+            for name, seat_idx in active_opponents:
+                if name == sb_name:
+                    # SB completes (calls remaining to match BB)
+                    f.write(f"Move: {name} call_check {small_blind}\n")
+                    final_pot += small_blind
+                elif name == bb_name:
+                    # BB checks (already posted)
+                    f.write(f"Move: {name} call_check 0\n")
+                else:
+                    # Other players call the BB
+                    f.write(f"Move: {name} call_check {big_blind}\n")
+                    final_pot += big_blind
+        else:
+            # Post-flop: remaining players check
+            for name, seat_idx in active_opponents:
+                f.write(f"Move: {name} call_check 0\n")
+
+        # Get current community cards as strings
+        community_strs = [c.short_name for c in final.community_cards] if final.community_cards else []
+
+        # Get hero cards as strings
+        hero_card_strs = [c.short_name for c in hero_cards] if hero_cards else []
+
+        # Simulate hand completion
+        opponent_names = [name for name, _ in active_opponents]
+        sim = simulate_hand_completion(
+            hero_cards=hero_card_strs,
+            community_cards=community_strs,
+            active_opponents=opponent_names,
+            pot=final_pot,
+        )
+
+        # Output remaining community cards with checks on each street
+        if current_street == Street.PREFLOP or len(community_strs) < 3:
+            f.write(f"FLOP Community Cards:[{' '.join(sim.flop)}]\n")
+            # All players check on flop
+            for name, _ in active_opponents:
+                f.write(f"Move: {name} call_check 0\n")
+
+        if current_street in (Street.PREFLOP, Street.FLOP) or len(community_strs) < 4:
+            turn_board = sim.flop + [sim.turn]
+            f.write(f"TURN Community Cards:[{' '.join(turn_board)}]\n")
+            # All players check on turn
+            for name, _ in active_opponents:
+                f.write(f"Move: {name} call_check 0\n")
+
+        if current_street in (Street.PREFLOP, Street.FLOP, Street.TURN) or len(community_strs) < 5:
+            river_board = sim.flop + [sim.turn, sim.river]
+            f.write(f"RIVER Community Cards:[{' '.join(river_board)}]\n")
+            # All players check on river
+            for name, _ in active_opponents:
+                f.write(f"Move: {name} call_check 0\n")
+
+        # Output showdowns for all opponents
+        for opp_name, opp_cards in sim.opponent_hands.items():
+            f.write(f"Showdown: {opp_name} [{' '.join(opp_cards)}]\n")
+
+        # Output winner
+        f.write(f"Winner: {sim.winner} {final_pot:.2f}\n")
 
     f.write("GameEnd\n")
     f.write("\n")
