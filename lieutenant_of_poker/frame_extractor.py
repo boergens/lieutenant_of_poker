@@ -182,17 +182,18 @@ class VideoFrameExtractor:
         self.seek_to_frame(start_frame)
 
         current = start_frame
+        frames_since_yield = 0
         while current < end_frame:
             frame_info = self.read_frame()
             if frame_info is None:
                 break
 
-            yield frame_info
+            # Only yield every step-th frame (sequential read is faster than seeking)
+            if frames_since_yield == 0:
+                yield frame_info
 
-            # Skip frames if step > 1
-            current += step
-            if step > 1 and current < end_frame:
-                self.seek_to_frame(current)
+            frames_since_yield = (frames_since_yield + 1) % step
+            current += 1
 
     def iterate_at_interval(
         self,

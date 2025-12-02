@@ -82,7 +82,7 @@ class HotkeyListener:
 
 def play_sound(sound_name: str) -> None:
     """
-    Play a system sound (macOS only).
+    Play a system sound (macOS only). Non-blocking.
 
     Args:
         sound_name: Name of sound file in /System/Library/Sounds/
@@ -91,8 +91,9 @@ def play_sound(sound_name: str) -> None:
     try:
         import subprocess
         sound_path = f"/System/Library/Sounds/{sound_name}.aiff"
-        subprocess.run(["afplay", sound_path], check=False,
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Use Popen instead of run to avoid blocking the capture loop
+        subprocess.Popen(["afplay", sound_path],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 

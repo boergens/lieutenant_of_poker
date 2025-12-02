@@ -47,6 +47,7 @@ class BrightnessDetector:
         self.threshold = threshold
         self.consecutive_frames = consecutive_frames
         self._mask: Optional[np.ndarray] = None
+        self._mask_cache: dict[tuple[int, int], np.ndarray] = {}  # Cache resized masks
         self._brightness_history: deque = deque(maxlen=consecutive_frames)
         self._is_bright = False
 
@@ -76,11 +77,16 @@ class BrightnessDetector:
             return None
 
         image = frame.image
+        frame_shape = (image.shape[0], image.shape[1])
 
-        # Resize mask to match frame if needed
-        mask = self._mask
-        if mask.shape[:2] != image.shape[:2]:
-            mask = cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+        # Get cached mask for this frame size, or resize and cache
+        if frame_shape in self._mask_cache:
+            mask = self._mask_cache[frame_shape]
+        elif self._mask.shape[:2] == frame_shape:
+            mask = self._mask
+        else:
+            mask = cv2.resize(self._mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+            self._mask_cache[frame_shape] = mask
 
         # Convert to grayscale if needed
         if len(image.shape) == 3:
@@ -225,6 +231,9 @@ class RecordingSession:
         on_frame_drop: Optional[Callable[[float, float], None]] = None,
         frame_drop_threshold: float = 0.75,
         frame_drop_cooldown: float = 5.0,
+        debug: bool = False,
+        on_debug_stats: Optional[Callable[[dict], None]] = None,
+        debug_interval: float = 5.0,
     ):
         """
         Initialize a recording session.
@@ -242,6 +251,10 @@ class RecordingSession:
                           Args: (actual_fps, target_fps)
             frame_drop_threshold: FPS ratio below which to trigger notification (0.75 = 75%).
             frame_drop_cooldown: Seconds between frame drop notifications.
+            debug: Enable debug timing instrumentation.
+            on_debug_stats: Callback for debug stats output.
+                           Args: (stats_dict)
+            debug_interval: Seconds between debug stats output.
         """
         self.capture = capture
         self.output_dir = Path(output_dir)
@@ -252,6 +265,9 @@ class RecordingSession:
         self.on_frame_drop = on_frame_drop
         self.frame_drop_threshold = frame_drop_threshold
         self.frame_drop_cooldown = frame_drop_cooldown
+        self.debug = debug
+        self.on_debug_stats = on_debug_stats
+        self.debug_interval = debug_interval
 
         self._recorder = VideoRecorder(fps=fps, codec=codec)
         self._running = False
@@ -267,6 +283,16 @@ class RecordingSession:
             self._detector = BrightnessDetector()
             if not self._detector.is_available:
                 self._detector = None
+
+        # Debug timing stats
+        self._debug_capture_times: deque = deque(maxlen=100)
+        self._debug_detect_times: deque = deque(maxlen=100)
+        self._debug_write_times: deque = deque(maxlen=100)
+        self._debug_loop_times: deque = deque(maxlen=100)
+        self._debug_sleep_drifts: deque = deque(maxlen=100)
+        self._debug_last_stats_time: float = 0.0
+        self._debug_overruns: int = 0
+        self._debug_total_frames: int = 0
 
     @property
     def auto_detect_available(self) -> bool:
@@ -330,11 +356,60 @@ class RecordingSession:
             self._recordings.append(path)
         return path
 
+    def _compute_debug_stats(self) -> dict:
+        """Compute debug statistics from collected timing data."""
+        def stats_for_deque(d: deque) -> dict:
+            if not d:
+                return {"avg": 0, "min": 0, "max": 0, "count": 0}
+            values = list(d)
+            return {
+                "avg": sum(values) / len(values),
+                "min": min(values),
+                "max": max(values),
+                "count": len(values),
+            }
+
+        # Calculate actual FPS
+        actual_fps = 0.0
+        if len(self._frame_times) >= 2:
+            frame_times = list(self._frame_times)
+            total_time = frame_times[-1] - frame_times[0]
+            if total_time > 0:
+                actual_fps = (len(frame_times) - 1) / total_time
+
+        return {
+            "actual_fps": actual_fps,
+            "target_fps": self.fps,
+            "fps_ratio": actual_fps / self.fps if self.fps > 0 else 0,
+            "capture_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_capture_times).items()},
+            "detect_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_detect_times).items()},
+            "write_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_write_times).items()},
+            "loop_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_loop_times).items()},
+            "sleep_drift_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_sleep_drifts).items()},
+            "overruns": self._debug_overruns,
+            "total_frames": self._debug_total_frames,
+            "is_recording": self._recorder.is_recording,
+        }
+
+    def _output_debug_stats(self) -> None:
+        """Output debug stats if enabled and interval has passed."""
+        if not self.debug or self.on_debug_stats is None:
+            return
+
+        now = time.time()
+        if now - self._debug_last_stats_time >= self.debug_interval:
+            self._debug_last_stats_time = now
+            stats = self._compute_debug_stats()
+            self.on_debug_stats(stats)
+
     def start(self) -> None:
         """Start the capture loop (blocking)."""
         self._running = True
         self._frame_times.clear()
         self._last_frame_drop_notification = 0.0
+        self._debug_last_stats_time = time.time()
+        self._debug_overruns = 0
+        self._debug_total_frames = 0
         interval = 1.0 / self.fps
 
         while self._running:
@@ -342,12 +417,22 @@ class RecordingSession:
 
             # Track frame time for drop detection
             self._frame_times.append(loop_start)
+            self._debug_total_frames += 1
 
+            # --- Capture timing ---
+            capture_start = time.time()
             frame = self.capture.capture_frame()
+            if self.debug:
+                self._debug_capture_times.append(time.time() - capture_start)
+
             if frame is not None:
-                # Check for auto-detection trigger
+                # --- Detection timing ---
                 if self._detector is not None:
+                    detect_start = time.time()
                     trigger = self._detector.check_frame(frame)
+                    if self.debug:
+                        self._debug_detect_times.append(time.time() - detect_start)
+
                     if trigger is True and not self._recorder.is_recording:
                         path = self._start_recording()
                         if self.on_recording_change:
@@ -357,19 +442,37 @@ class RecordingSession:
                         if self.on_recording_change:
                             self.on_recording_change(False, path)
 
-                # Write frame if recording
+                # --- Write timing ---
                 if self._recorder.is_recording:
+                    write_start = time.time()
                     self._recorder.write_frame(frame)
+                    if self.debug:
+                        self._debug_write_times.append(time.time() - write_start)
 
             # Check for frame drops (only while recording)
             if self._recorder.is_recording:
                 self._check_frame_drops()
 
-            # Sleep to maintain target FPS
+            # --- Loop timing and sleep ---
             elapsed = time.time() - loop_start
+            if self.debug:
+                self._debug_loop_times.append(elapsed)
+
             sleep_time = interval - elapsed
             if sleep_time > 0:
+                sleep_start = time.time()
                 time.sleep(sleep_time)
+                if self.debug:
+                    actual_sleep = time.time() - sleep_start
+                    drift = actual_sleep - sleep_time
+                    self._debug_sleep_drifts.append(drift)
+            else:
+                # Loop overrun - we're behind schedule
+                if self.debug:
+                    self._debug_overruns += 1
+
+            # Output debug stats periodically
+            self._output_debug_stats()
 
     def stop(self) -> None:
         """Stop the capture loop."""
