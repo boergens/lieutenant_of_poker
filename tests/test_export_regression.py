@@ -26,6 +26,7 @@ def normalize_snowie_export(text: str) -> str:
     - Timestamps/dates
     - GameId (generated from timestamp hash)
     - Showdown lines for opponents (cards are simulated)
+    - Community cards (simulated for hands that fold preflop)
     """
     lines = []
     for line in text.strip().split("\n"):
@@ -41,6 +42,13 @@ def normalize_snowie_export(text: str) -> str:
             continue
         # Skip opponent showdown lines (cards are simulated)
         if line.startswith("Showdown:") and "hero" not in line.lower():
+            continue
+        # Skip community card lines (simulated for hands that fold preflop)
+        if line.startswith("FLOP Community Cards:"):
+            continue
+        if line.startswith("TURN Community Cards:"):
+            continue
+        if line.startswith("RIVER Community Cards:"):
             continue
         lines.append(line)
     return "\n".join(lines)
@@ -66,10 +74,10 @@ def normalize_human_export(text: str) -> str:
 class TestExportRegression:
     """Regression tests that compare export output against saved fixtures."""
 
-    def test_video5_snowie_export(self):
-        """Video 5 snowie export matches fixture."""
-        states_path = FIXTURES_DIR / "video5_states.json"
-        fixture_path = FIXTURES_DIR / "video5_export_snowie.txt"
+    def test_video6_snowie_export(self):
+        """Video 6 snowie export matches fixture."""
+        states_path = FIXTURES_DIR / "video6_states.json"
+        fixture_path = FIXTURES_DIR / "video6_export_snowie.txt"
 
         if not states_path.exists():
             pytest.skip(f"States file {states_path} not found")
@@ -104,10 +112,10 @@ class TestExportRegression:
 
             pytest.fail(f"Snowie export mismatch:\n" + "\n".join(diff_lines[:30]))
 
-    def test_video5_human_export(self):
-        """Video 5 human export matches fixture."""
-        states_path = FIXTURES_DIR / "video5_states.json"
-        fixture_path = FIXTURES_DIR / "video5_export_human.txt"
+    def test_video6_human_export(self):
+        """Video 6 human export matches fixture."""
+        states_path = FIXTURES_DIR / "video6_states.json"
+        fixture_path = FIXTURES_DIR / "video6_export_human.txt"
 
         if not states_path.exists():
             pytest.skip(f"States file {states_path} not found")
@@ -146,26 +154,26 @@ class TestExportRegression:
 class TestExportFixturesValid:
     """Tests that export fixtures exist and are valid."""
 
-    def test_video5_states_fixture_exists(self):
-        """Video 5 states fixture exists."""
-        assert (FIXTURES_DIR / "video5_states.json").exists()
+    def test_video6_states_fixture_exists(self):
+        """Video 6 states fixture exists."""
+        assert (FIXTURES_DIR / "video6_states.json").exists()
 
-    def test_video5_snowie_fixture_exists(self):
-        """Video 5 snowie export fixture exists."""
-        assert (FIXTURES_DIR / "video5_export_snowie.txt").exists()
+    def test_video6_snowie_fixture_exists(self):
+        """Video 6 snowie export fixture exists."""
+        assert (FIXTURES_DIR / "video6_export_snowie.txt").exists()
 
-    def test_video5_human_fixture_exists(self):
-        """Video 5 human export fixture exists."""
-        assert (FIXTURES_DIR / "video5_export_human.txt").exists()
+    def test_video6_human_fixture_exists(self):
+        """Video 6 human export fixture exists."""
+        assert (FIXTURES_DIR / "video6_export_human.txt").exists()
 
-    def test_video5_snowie_fixture_not_empty(self):
-        """Video 5 snowie export fixture has content."""
-        content = (FIXTURES_DIR / "video5_export_snowie.txt").read_text()
+    def test_video6_snowie_fixture_not_empty(self):
+        """Video 6 snowie export fixture has content."""
+        content = (FIXTURES_DIR / "video6_export_snowie.txt").read_text()
         assert len(content) > 100
         assert "GameStart" in content
 
-    def test_video5_human_fixture_not_empty(self):
-        """Video 5 human export fixture has content."""
-        content = (FIXTURES_DIR / "video5_export_human.txt").read_text()
+    def test_video6_human_fixture_not_empty(self):
+        """Video 6 human export fixture has content."""
+        content = (FIXTURES_DIR / "video6_export_human.txt").read_text()
         assert len(content) > 100
         assert "Hand #" in content

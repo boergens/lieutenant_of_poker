@@ -1,0 +1,21 @@
+=== Hand #16710665 ===
+Stakes: $40/$80
+Table: Governor of Poker
+
+Players:
+  Seat 1: Seat 0 - $6440 (SB)
+  Seat 2: Seat 1 - $8440 (BB)
+
+Seat 0 posts small blind $40
+Seat 1 posts big blind $80
+
+Hero is dealt: [Ad 8s]
+
+--- PREFLOP ---
+  Seat 0 calls $40
+  Seat 1 raises to $1040
+
+--- RESULT ---
+Hero folded
+Seat 1 gets back uncalled bet of $1040
+Final pot: $160

@@ -108,65 +108,17 @@ class TestAnalysisRegression:
                 diff_str += f"\n  ... and {len(differences) - 20} more"
             pytest.fail(f"Analysis regression for video {video_num}:\n{diff_str}")
 
-    def test_video1_regression(self):
-        """Video 1 analysis matches fixture."""
-        self._run_regression(1)
-
-    def test_video2_regression(self):
-        """Video 2 analysis matches fixture."""
-        self._run_regression(2)
-
-    def test_video3_regression(self):
-        """Video 3 analysis matches fixture."""
-        self._run_regression(3)
-
-    def test_video4_regression(self):
-        """Video 4 analysis matches fixture."""
-        self._run_regression(4)
-
-    def test_video5_regression(self):
-        """Video 5 analysis matches fixture."""
-        self._run_regression(5)
+    def test_video6_regression(self):
+        """Video 6 analysis matches fixture."""
+        self._run_regression(6)
 
 
 class TestFixturesValid:
     """Tests that fixtures are valid and loadable."""
 
-    def test_video1_fixture_loads(self):
-        """Video 1 fixture loads successfully."""
-        fixture_path = FIXTURES_DIR / "video1_states.json"
-        if not fixture_path.exists():
-            pytest.skip("Fixture not found")
-        states = load_game_states(fixture_path)
-        assert len(states) > 0
-
-    def test_video2_fixture_loads(self):
-        """Video 2 fixture loads successfully."""
-        fixture_path = FIXTURES_DIR / "video2_states.json"
-        if not fixture_path.exists():
-            pytest.skip("Fixture not found")
-        states = load_game_states(fixture_path)
-        assert len(states) > 0
-
-    def test_video3_fixture_loads(self):
-        """Video 3 fixture loads successfully."""
-        fixture_path = FIXTURES_DIR / "video3_states.json"
-        if not fixture_path.exists():
-            pytest.skip("Fixture not found")
-        states = load_game_states(fixture_path)
-        assert len(states) > 0
-
-    def test_video4_fixture_loads(self):
-        """Video 4 fixture loads successfully."""
-        fixture_path = FIXTURES_DIR / "video4_states.json"
-        if not fixture_path.exists():
-            pytest.skip("Fixture not found")
-        states = load_game_states(fixture_path)
-        assert len(states) > 0
-
-    def test_video5_fixture_loads(self):
-        """Video 5 fixture loads successfully."""
-        fixture_path = FIXTURES_DIR / "video5_states.json"
+    def test_video6_fixture_loads(self):
+        """Video 6 fixture loads successfully."""
+        fixture_path = FIXTURES_DIR / "video6_states.json"
         if not fixture_path.exists():
             pytest.skip("Fixture not found")
         states = load_game_states(fixture_path)

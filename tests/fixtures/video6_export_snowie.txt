@@ -1,0 +1,40 @@
+GameStart
+PokerClient: ExportFormat
+Date: 02/12/2025
+TimeZone: GMT
+Time: 20:05:23
+GameId:97191054
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 40
+BigBlindStake: 80
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 2
+MyPlayerName: hero
+DealerPosition: 1
+Seat 0 Seat 0 6440
+Seat 1 Seat 1 8440
+SmallBlind: Seat 0 40
+BigBlind: Seat 1 80
+Dealt Cards: [Ad8s]
+Move: Seat 0 call_check 40
+Move: Seat 1 raise_bet 1040
+Move: hero folds 0
+Move: Seat 1 uncalled_bet 1040
+Move: Seat 0 call_check 40
+Move: Seat 1 call_check 0
+FLOP Community Cards:[Qd Js Tc]
+Move: Seat 0 call_check 0
+Move: Seat 1 call_check 0
+TURN Community Cards:[Qd Js Tc 7h]
+Move: Seat 0 call_check 0
+Move: Seat 1 call_check 0
+RIVER Community Cards:[Qd Js Tc 7h 5h]
+Move: Seat 0 call_check 0
+Move: Seat 1 call_check 0
+Showdown: Seat 0 [6c Kd]
+Showdown: Seat 1 [As Jh]
+Winner: Seat 0 160.00
+GameEnd
+
