@@ -383,7 +383,7 @@ def cmd_export(args):
     """Export hand histories."""
     from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
     from lieutenant_of_poker.frame_extractor import get_video_info
-    from lieutenant_of_poker.snowie_export import states_to_snowie
+    from lieutenant_of_poker.snowie_export import export_snowie
 
     info = get_video_info(args.video)
     start_ms = args.start * 1000
