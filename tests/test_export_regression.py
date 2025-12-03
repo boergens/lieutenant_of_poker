@@ -92,6 +92,10 @@ def run_snowie_export_test(video_num: int):
 class TestSnowieExportRegression:
     """Regression tests that compare snowie export output against saved fixtures."""
 
+    def test_video3_snowie_export(self):
+        """Video 3 snowie export matches fixture (all-in call, uncalled bet)."""
+        run_snowie_export_test(3)
+
     def test_video4_snowie_export(self):
         """Video 4 snowie export matches fixture (hero folds to river bet)."""
         run_snowie_export_test(4)
@@ -111,6 +115,10 @@ class TestSnowieExportRegression:
 
 class TestSnowieFixturesExist:
     """Tests that snowie export fixtures exist."""
+
+    def test_video3_fixtures_exist(self):
+        assert (FIXTURES_DIR / "video3_states.json").exists()
+        assert (FIXTURES_DIR / "video3_export_snowie.txt").exists()
 
     def test_video4_fixtures_exist(self):
         assert (FIXTURES_DIR / "video4_states.json").exists()

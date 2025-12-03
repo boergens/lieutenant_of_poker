@@ -4,7 +4,7 @@ import io
 from typing import Dict, List, Optional
 
 from .hand_history import HandHistory, HandReconstructor
-from .game_state import GameState
+from .game_state import GameState, Street
 from .action_detector import PlayerAction
 
 
@@ -58,26 +58,26 @@ class HumanExporter:
 
         # Preflop
         f.write("\n--- PREFLOP ---\n")
-        self._write_actions(f, hand.preflop_actions)
+        self._write_actions(f, hand.actions[Street.PREFLOP])
 
         # Flop
         if hand.flop_cards:
             cards = " ".join(c.short_name for c in hand.flop_cards)
             f.write(f"\n--- FLOP [{cards}] ---\n")
-            self._write_actions(f, hand.flop_actions)
+            self._write_actions(f, hand.actions[Street.FLOP])
 
         # Turn
         if hand.turn_card:
             flop = " ".join(c.short_name for c in hand.flop_cards)
             f.write(f"\n--- TURN [{flop} {hand.turn_card.short_name}] ---\n")
-            self._write_actions(f, hand.turn_actions)
+            self._write_actions(f, hand.actions[Street.TURN])
 
         # River
         if hand.river_card:
             board = " ".join(c.short_name for c in hand.flop_cards)
             board += f" {hand.turn_card.short_name} {hand.river_card.short_name}"
             f.write(f"\n--- RIVER [{board}] ---\n")
-            self._write_actions(f, hand.river_actions)
+            self._write_actions(f, hand.actions[Street.RIVER])
 
         # Ending
         f.write("\n--- RESULT ---\n")

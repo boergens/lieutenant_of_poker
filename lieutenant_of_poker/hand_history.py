@@ -48,10 +48,12 @@ class HandHistory:
     turn_card: Optional[Card] = None
     river_card: Optional[Card] = None
 
-    preflop_actions: List[HandAction] = field(default_factory=list)
-    flop_actions: List[HandAction] = field(default_factory=list)
-    turn_actions: List[HandAction] = field(default_factory=list)
-    river_actions: List[HandAction] = field(default_factory=list)
+    actions: Dict[Street, List[HandAction]] = field(default_factory=lambda: {
+        Street.PREFLOP: [],
+        Street.FLOP: [],
+        Street.TURN: [],
+        Street.RIVER: [],
+    })
 
     pot: int = 0
 
@@ -145,6 +147,9 @@ def reconstruct_hand(
         Street.RIVER: [],
     }
 
+    # Track players who went all-in (can't fold even if contribution < max bet)
+    players_all_in: set = set()
+
     current_street = Street.PREFLOP
     prev_state = states[0]
     current_bet = big_blind
@@ -180,6 +185,10 @@ def reconstruct_hand(
                         if current_street in raw_actions:
                             raw_actions[current_street].append(action)
 
+                        # Track all-in (chips went to 0 after betting)
+                        if curr_p.chips == 0:
+                            players_all_in.add(name)
+
         prev_state = state
 
     # players_active: who's still in the hand (shrinks as players fold)
@@ -197,13 +206,17 @@ def reconstruct_hand(
         contributions: Dict[str, int],
         active: List[str],
         acting_order: List[str],
+        all_in: set,
     ) -> List[str]:
-        """Add fold actions for players who contributed less than max."""
+        """Add fold actions for players who contributed less than max.
+
+        Players who are all-in are skipped (they can't fold).
+        """
         if not contributions:
             return active
         max_contrib = max(contributions.values())
         for name in acting_order:
-            if name in active and contributions.get(name, 0) < max_contrib:
+            if name in active and name not in all_in and contributions.get(name, 0) < max_contrib:
                 actions_list.append(HandAction(name, PlayerAction.FOLD, 0))
                 active = [p for p in active if p != name]
         return active
@@ -213,14 +226,6 @@ def reconstruct_hand(
     bb_name = players[bb_idx]
     raw_actions[Street.PREFLOP].insert(0, HandAction(bb_name, PlayerAction.BET, big_blind))
     raw_actions[Street.PREFLOP].insert(0, HandAction(sb_name, PlayerAction.BET, small_blind))
-
-    # Map streets to their action lists and "reached" checks
-    street_actions = {
-        Street.PREFLOP: hand.preflop_actions,
-        Street.FLOP: hand.flop_actions,
-        Street.TURN: hand.turn_actions,
-        Street.RIVER: hand.river_actions,
-    }
 
     def street_reached(street: Street) -> bool:
         if street == Street.PREFLOP:
@@ -239,7 +244,7 @@ def reconstruct_hand(
         if not street_reached(street) or len(players_active) <= 1:
             break
 
-        actions_list = street_actions[street]
+        actions_list = hand.actions[street]
         next_street = streets[idx + 1] if idx + 1 < len(streets) else None
 
         # First active player from SB position acts first
@@ -275,7 +280,7 @@ def reconstruct_hand(
         # Handle end-of-street logic
         # Always check for folds from unmatched contributions first
         players_active = add_folds_for_street(
-            actions_list, contributions, players_active, players_onthespot
+            actions_list, contributions, players_active, players_onthespot, players_all_in
         )
 
         # Then add checks for check-check scenarios
@@ -291,12 +296,12 @@ def reconstruct_hand(
                     actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
 
     # Clean up preflop: remove the synthetic blind actions we added
-    hand.preflop_actions = hand.preflop_actions[2:]
+    del hand.actions[Street.PREFLOP][:2]
 
     # BB option: if BB limped through (only posted blind, no other action), add check
-    bb_acted = any(a.player_name == bb_name for a in hand.preflop_actions)
+    bb_acted = any(a.player_name == bb_name for a in hand.actions[Street.PREFLOP])
     if not bb_acted and bb_name in players_active and hand.flop_cards:
-        hand.preflop_actions.append(HandAction(bb_name, PlayerAction.CHECK, 0))
+        hand.actions[Street.PREFLOP].append(HandAction(bb_name, PlayerAction.CHECK, 0))
 
     # Determine outcome
     # Hero is always the last player in the list
@@ -305,26 +310,35 @@ def reconstruct_hand(
     hand.opponents_folded = len(players_active) == 1 and hero_player_name in players_active
     hand.hero_folded = hero_player_name not in players_active
 
-    # Convert last raise/bet to UNCALLED_BET when someone folded and set winner
+    # Calculate uncalled bet - the portion of a bet that wasn't called
+    all_actions = sum((hand.actions[s] for s in streets), [])
+
+    last_bet_amount = 0
+    last_bettor = None
+    max_call_amount = 0
+
+    for a in all_actions:
+        if a.action in (PlayerAction.BET, PlayerAction.RAISE):
+            last_bet_amount = a.amount or 0
+            last_bettor = a.player_name
+            max_call_amount = 0
+        elif a.action == PlayerAction.CALL and last_bettor:
+            max_call_amount = max(max_call_amount, a.amount or 0)
+
+    uncalled_amount = 0
+    if last_bettor and last_bet_amount > max_call_amount:
+        uncalled_amount = last_bet_amount - max_call_amount
+        # Add to the last street that has actions
+        for street in reversed(streets):
+            if hand.actions[street]:
+                hand.actions[street].append(
+                    HandAction(last_bettor, PlayerAction.UNCALLED_BET, uncalled_amount)
+                )
+                break
+
+    # Set winner if everyone folded
     if len(players_active) == 1:
         hand.winner = players_active[0]
-        uncalled_amount = 0
-        all_action_lists = [
-            hand.river_actions,
-            hand.turn_actions,
-            hand.flop_actions,
-            hand.preflop_actions,
-        ]
-        for action_list in all_action_lists:
-            for i in range(len(action_list) - 1, -1, -1):
-                a = action_list[i]
-                if a.action in (PlayerAction.BET, PlayerAction.RAISE):
-                    uncalled_amount = a.amount or 0
-                    action_list[i] = HandAction(a.player_name, PlayerAction.UNCALLED_BET, a.amount)
-                    break
-            else:
-                continue
-            break
         hand.payout = hand.pot - uncalled_amount
 
     return hand

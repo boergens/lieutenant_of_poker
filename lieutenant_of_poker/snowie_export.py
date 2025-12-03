@@ -5,7 +5,7 @@ import random
 from typing import Dict, List, Optional, TextIO
 
 from .hand_history import HandHistory, HandAction, HandReconstructor
-from .game_state import GameState
+from .game_state import GameState, Street
 from .action_detector import PlayerAction
 from .game_simulator import simulate_hand_completion, RNG
 
@@ -77,23 +77,23 @@ class SnowieExporter:
             f.write(f"Dealt Cards: [{''.join(c.short_name for c in hand.hero_cards)}]\n")
 
         # Preflop
-        self._write_actions(f, hand.preflop_actions)
+        self._write_actions(f, hand.actions[Street.PREFLOP])
 
         # Post-flop streets
         if hand.flop_cards:
             f.write(f"FLOP Community Cards:[{' '.join(c.short_name for c in hand.flop_cards)}]\n")
-            self._write_actions(f, hand.flop_actions)
+            self._write_actions(f, hand.actions[Street.FLOP])
 
         if hand.turn_card:
             board = [c.short_name for c in hand.flop_cards] + [hand.turn_card.short_name]
             f.write(f"TURN Community Cards:[{' '.join(board)}]\n")
-            self._write_actions(f, hand.turn_actions)
+            self._write_actions(f, hand.actions[Street.TURN])
 
         if hand.river_card:
             board = [c.short_name for c in hand.flop_cards]
             board += [hand.turn_card.short_name, hand.river_card.short_name]
             f.write(f"RIVER Community Cards:[{' '.join(board)}]\n")
-            self._write_actions(f, hand.river_actions)
+            self._write_actions(f, hand.actions[Street.RIVER])
 
         # Ending
         if hand.hero_went_all_in:
@@ -112,8 +112,7 @@ class SnowieExporter:
             elif a.action in (PlayerAction.CHECK, PlayerAction.CALL):
                 f.write(f"Move: {a.player_name} call_check {a.amount or 0}\n")
             elif a.action == PlayerAction.UNCALLED_BET:
-                # Written after fold in _write_opponents_fold
-                f.write(f"Move: {a.player_name} raise_bet {a.amount or 0}\n")
+                f.write(f"uncalled_bet: {a.player_name} {a.amount or 0}\n")
             else:
                 f.write(f"Move: {a.player_name} raise_bet {a.amount or 0}\n")
 
@@ -123,15 +122,7 @@ class SnowieExporter:
         f.write(f"Winner: {hero_name} {hand.pot:.2f}\n")
 
     def _write_fold_winner(self, f: TextIO, hand: HandHistory):
-        """Someone folded - write uncalled bet and winner."""
-        all_actions = (
-            hand.preflop_actions + hand.flop_actions +
-            hand.turn_actions + hand.river_actions
-        )
-        for a in all_actions:
-            if a.action == PlayerAction.UNCALLED_BET:
-                f.write(f"uncalled_bet: {a.player_name} {a.amount or 0}\n")
-                break
+        """Someone folded - write winner (uncalled_bet already written in actions)."""
         f.write(f"Winner: {hand.winner} {hand.payout:.2f}\n")
 
     def _write_showdown(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
