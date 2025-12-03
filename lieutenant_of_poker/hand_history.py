@@ -60,6 +60,7 @@ class HandHistory:
     pot: int = 0
     hero_went_all_in: bool = False
     hero_folded: bool = False
+    reached_showdown: bool = False
     uncalled_bet: int = 0
     uncalled_bet_player: Optional[str] = None
 
@@ -179,17 +180,19 @@ class HandReconstructor:
             active_players.append(hand.players[idx])
 
         # For each post-flop street, if we have cards but no actions, add checks
-        streets = [
-            (hand.flop_cards, hand.flop_actions, hand.turn_card),
-            (hand.turn_card, hand.turn_actions, hand.river_card),
-            (hand.river_card, hand.river_actions, None),
-        ]
+        # Flop/Turn: check if we went to next street
+        # River: check if we reached showdown
+        if hand.flop_cards and not hand.flop_actions and hand.turn_card:
+            for p in active_players:
+                hand.flop_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
 
-        for street_cards, street_actions, next_street in streets:
-            if street_cards and not street_actions and next_street:
-                # Street exists, no actions recorded, and we went to next street = all checked
-                for p in active_players:
-                    street_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
+        if hand.turn_card and not hand.turn_actions and hand.river_card:
+            for p in active_players:
+                hand.turn_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
+
+        if hand.river_card and not hand.river_actions and hand.reached_showdown:
+            for p in active_players:
+                hand.river_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
 
     def _build_players(self, initial: GameState):
         players, orig_to_new, pos_to_player = [], {}, {}
@@ -219,7 +222,7 @@ class HandReconstructor:
         current_street = Street.PREFLOP
         prev_state = states[0]
         current_bet = big_blind
-        last_aggressor, last_bet = None, 0
+        last_aggressor, last_bet, last_bet_street = None, 0, Street.PREFLOP
 
         for state in states[1:]:
             new_street = state.street
@@ -248,7 +251,7 @@ class HandReconstructor:
                             action = HandAction(player.name, action_type, chip_change)
                             self._add_action(hand, current_street, action)
 
-                            last_aggressor, last_bet = player, chip_change
+                            last_aggressor, last_bet, last_bet_street = player, chip_change, current_street
 
                             if player.is_hero and (curr_p.chips or 0) == 0:
                                 hand.hero_went_all_in = True
@@ -257,12 +260,26 @@ class HandReconstructor:
 
             prev_state = state
 
-        hand.hero_folded = True
         hand.pot = states[-1].pot or 0
-        if last_aggressor and last_bet > 0:
-            hand.uncalled_bet = last_bet
-            hand.uncalled_bet_player = last_aggressor.name
-            hand.pot -= last_bet
+
+        # Determine hand ending: showdown vs fold
+        # If we reached the river and there's no uncalled bet on the final street, it's showdown
+        if hand.river_card:
+            # Check if there's an uncalled opponent bet on the river
+            if last_aggressor and not last_aggressor.is_hero and last_bet_street == Street.RIVER:
+                hand.hero_folded = True
+                hand.uncalled_bet = last_bet
+                hand.uncalled_bet_player = last_aggressor.name
+                hand.pot -= last_bet
+            else:
+                hand.reached_showdown = True
+        else:
+            # Hand ended before river - hero folded
+            hand.hero_folded = True
+            if last_aggressor and last_bet > 0 and not last_aggressor.is_hero:
+                hand.uncalled_bet = last_bet
+                hand.uncalled_bet_player = last_aggressor.name
+                hand.pot -= last_bet
 
     def _add_action(self, hand: HandHistory, street: Street, action: HandAction):
         {
