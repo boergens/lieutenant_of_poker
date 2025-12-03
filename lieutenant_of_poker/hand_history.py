@@ -278,6 +278,11 @@ def reconstruct_hand(
             if street != Street.PREFLOP and not raw_actions[street]:
                 for name in players_onthespot:
                     actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
+        elif next_street is None and len(players_active) > 1:
+            # River with showdown - add checks if no actions recorded
+            if not raw_actions[street]:
+                for name in players_onthespot:
+                    actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
         else:
             # Hand ended on this street - check for folds from unmatched contributions
             players_active = add_folds_for_street(
