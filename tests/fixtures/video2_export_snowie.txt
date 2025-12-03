@@ -1,0 +1,28 @@
+GameStart
+PokerClient: ExportFormat
+Date: 03/12/2025
+TimeZone: GMT
+Time: 08:45:33
+GameId:00000000
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 20
+BigBlindStake: 40
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 4
+MyPlayerName: kevin4637565
+DealerPosition: 0
+Seat 0 Nav 780
+Seat 1 Victor 2380
+Seat 2 player699561 2820
+Seat 3 kevin4637565 9020
+SmallBlind: Victor 20
+BigBlind: player699561 40
+Dealt Cards: [8dKd]
+Move: kevin4637565 folds 0
+Move: Nav folds 0
+Move: Victor folds 0
+Winner: player699561 60.00
+GameEnd
+

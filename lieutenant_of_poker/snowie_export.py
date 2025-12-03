@@ -131,8 +131,18 @@ class SnowieExporter:
         f.write(f"Winner: {hand.winner} {hand.payout:.2f}\n")
 
     def _write_showdown(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
-        """Write showdown when hand reaches river with no fold."""
+        """Write showdown when hand reaches showdown with multiple players."""
         from .game_simulator import make_showdown_config
+
+        # Find opponents who folded (excluded from showdown)
+        folded_players = set()
+        for street_actions in hand.actions.values():
+            for a in street_actions:
+                if a.action == PlayerAction.FOLD:
+                    folded_players.add(a.player_name)
+
+        # Active opponents (didn't fold)
+        active_opponents = [p for p in opponents if p.name not in folded_players]
 
         community = []
         if hand.flop_cards:
@@ -144,14 +154,20 @@ class SnowieExporter:
 
         hero_cards = [c.short_name for c in hand.hero_cards] if hand.hero_cards else []
 
-        # Generate showdown config if not provided
+        # Generate showdown config if not provided (only for active opponents)
         showdown = self.showdown
         if not showdown or not showdown.opponent_cards:
-            opponent_names = [p.name for p in opponents]
+            opponent_names = [p.name for p in active_opponents]
             showdown = make_showdown_config("00000000", hero_cards, community, opponent_names)
 
-        # Build all hands for winner determination (hero + opponents from config)
-        all_hands = dict(showdown.opponent_cards)
+        # Filter to only active opponents
+        active_opponent_cards = {
+            name: cards for name, cards in showdown.opponent_cards.items()
+            if name not in folded_players
+        }
+
+        # Build hands for winner determination
+        all_hands = dict(active_opponent_cards)
         if hero_cards:
             all_hands[hero_name] = hero_cards
 
@@ -159,12 +175,12 @@ class SnowieExporter:
         if hand.hero_cards:
             f.write(f"Showdown: {hero_name} [{' '.join(hero_cards)}]\n")
 
-        # Write showdown for opponents
-        for name, cards in showdown.opponent_cards.items():
+        # Write showdown for active opponents only
+        for name, cards in active_opponent_cards.items():
             f.write(f"Showdown: {name} [{' '.join(cards)}]\n")
 
-        # Determine winner (use force_winner if set, otherwise evaluate hands)
-        if showdown.force_winner:
+        # Determine winner
+        if showdown.force_winner and showdown.force_winner not in folded_players:
             winner = showdown.force_winner
         else:
             winner, _ = pick_winner(all_hands, community)

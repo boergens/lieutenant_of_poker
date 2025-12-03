@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "type": "game_states",
+  "states": [
+    {
+      "community_cards": [],
+      "hero_cards": [
+        {
+          "rank": "8",
+          "suit": "diamonds"
+        },
+        {
+          "rank": "K",
+          "suit": "diamonds"
+        }
+      ],
+      "pot": 60,
+      "hero_chips": 9020,
+      "players": {
+        "0": {
+          "position": "0",
+          "name": null,
+          "chips": 780,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "1": {
+          "position": "1",
+          "name": null,
+          "chips": 2360,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "2": {
+          "position": "2",
+          "name": null,
+          "chips": 2780,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "3": {
+          "position": "3",
+          "name": null,
+          "chips": 9020,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        }
+      },
+      "street": "PREFLOP",
+      "frame_number": 0,
+      "timestamp_ms": 0.0,
+      "rejected": false
+    }
+  ]
+}
