@@ -1,12 +1,10 @@
 """Export hand history as a simple chronological action log."""
 
-import random
 from typing import Dict, List, Optional
 
 from .hand_history import HandHistory, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
-from .game_simulator import RNG
 
 
 def export_action_log(
@@ -14,13 +12,9 @@ def export_action_log(
     hero_name: str = "hero",
     button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
-    rng: Optional[RNG] = None,
 ) -> str:
     """Export GameStates as a simple chronological action log."""
-    if rng is None:
-        rng = random
-    hand_id = str(rng.randint(10000000, 99999999))
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos, hand_id=hand_id)
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
     if not hand:
         return "No hand data."
     return ActionLogExporter().export(hand)
@@ -33,16 +27,14 @@ class ActionLogExporter:
         lines = []
 
         # Blinds
-        sb = hand.get_sb_player()
-        bb = hand.get_bb_player()
-        if sb:
-            lines.append(f"{sb.name} posts small blind ${hand.small_blind}")
-        if bb:
-            lines.append(f"{bb.name} posts big blind ${hand.big_blind}")
+        sb = hand.players[hand.sb_seat]
+        bb = hand.players[hand.bb_seat]
+        lines.append(f"{sb.name} posts small blind ${hand.small_blind}")
+        lines.append(f"{bb.name} posts big blind ${hand.big_blind}")
 
         # Hole cards
-        hero = hand.get_hero()
-        if hand.hero_cards and hero:
+        hero = hand.players[-1]
+        if hand.hero_cards:
             cards = " ".join(c.short_name for c in hand.hero_cards)
             lines.append(f"Dealer deals hole cards to {hero.name}: [{cards}]")
 

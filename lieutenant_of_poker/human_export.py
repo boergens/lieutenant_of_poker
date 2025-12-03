@@ -1,13 +1,11 @@
 """Export hand history in human-readable format."""
 
 import io
-import random
 from typing import Dict, List, Optional
 
 from .hand_history import HandHistory, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
-from .game_simulator import RNG
 
 
 def export_human(
@@ -15,58 +13,49 @@ def export_human(
     hero_name: str = "hero",
     button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
-    rng: Optional[RNG] = None,
 ) -> str:
     """Export GameStates to human-readable format. Auto-detects button if not specified."""
-    if rng is None:
-        rng = random
-    hand_id = str(rng.randint(10000000, 99999999))
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos, hand_id=hand_id)
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
     if not hand:
         return "No hand data."
-    return HumanExporter(hero_name).export(hand)
+    return HumanExporter().export(hand)
 
 
 class HumanExporter:
     """Exports HandHistory in human-readable story format."""
-
-    def __init__(self, hero_name: str = "hero"):
-        self.hero_name = hero_name
 
     def export(self, hand: HandHistory) -> str:
         output = io.StringIO()
         f = output
 
         # Header
-        f.write(f"=== Hand #{hand.hand_id} ===\n")
         f.write(f"Stakes: ${hand.small_blind}/${hand.big_blind}\n")
         f.write(f"Table: {hand.table_name}\n\n")
 
         # Players
         f.write("Players:\n")
-        for p in hand.players:
+        for i, p in enumerate(hand.players):
             role = ""
-            if p.seat == hand.button_seat:
+            if i == hand.button_seat:
                 role = " (BTN)"
-            if p.seat == hand.sb_seat:
+            if i == hand.sb_seat:
                 role = " (SB)"
-            if p.seat == hand.bb_seat:
+            if i == hand.bb_seat:
                 role = " (BB)"
-            hero_mark = " *" if p.is_hero else ""
-            f.write(f"  Seat {p.seat + 1}: {p.name} - ${p.chips}{role}{hero_mark}\n")
+            hero_mark = " *" if i == len(hand.players) - 1 else ""
+            f.write(f"  Seat {i + 1}: {p.name} - ${p.chips}{role}{hero_mark}\n")
 
         # Blinds
-        sb = hand.get_sb_player()
-        bb = hand.get_bb_player()
+        sb = hand.players[hand.sb_seat]
+        bb = hand.players[hand.bb_seat]
         f.write(f"\n{sb.name} posts small blind ${hand.small_blind}\n")
         f.write(f"{bb.name} posts big blind ${hand.big_blind}\n")
 
         # Hero cards
-        hero = hand.get_hero()
-        hero_display = hero.name if hero else "Hero"
+        hero = hand.players[-1]
         if hand.hero_cards:
             cards = " ".join(c.short_name for c in hand.hero_cards)
-            f.write(f"\n{hero_display} is dealt: [{cards}]\n")
+            f.write(f"\n{hero.name} is dealt: [{cards}]\n")
 
         # Preflop
         f.write("\n--- PREFLOP ---\n")
@@ -93,6 +82,12 @@ class HumanExporter:
 
         # Ending
         f.write("\n--- RESULT ---\n")
+        if hand.reached_showdown:
+            f.write("Went to showdown\n")
+        elif hand.hero_folded:
+            f.write("Hero folded\n")
+        elif hand.opponents_folded:
+            f.write("Opponents folded\n")
         f.write(f"Final pot: ${hand.pot}\n")
 
         return output.getvalue()

@@ -6,10 +6,9 @@ Shared data structures and reconstruction logic used by all exporters.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from lieutenant_of_poker.game_state import GameState, Street
-from lieutenant_of_poker.table_regions import NUM_PLAYERS, HERO, seat_name
 from lieutenant_of_poker.card_detector import Card
 from lieutenant_of_poker.action_detector import PlayerAction
 
@@ -25,17 +24,14 @@ class HandAction:
 @dataclass
 class PlayerInfo:
     """Information about a player at the start of the hand."""
-    seat: int
     name: str
     chips: int
     position: int  # Original seat index 0-4
-    is_hero: bool = False
 
 
 @dataclass
 class HandHistory:
     """Complete history of a single poker hand."""
-    hand_id: str
     table_name: str = "Governor of Poker"
     timestamp: datetime = field(default_factory=datetime.now)
 
@@ -48,7 +44,7 @@ class HandHistory:
     bb_seat: int = 0
 
     hero_cards: List[Card] = field(default_factory=list)
-    flop_cards: List[Card] = field(default_factory=list)
+    flop_cards: Optional[List[Card]] = None
     turn_card: Optional[Card] = None
     river_card: Optional[Card] = None
 
@@ -58,56 +54,259 @@ class HandHistory:
     river_actions: List[HandAction] = field(default_factory=list)
 
     pot: int = 0
+
+    # Outcome flags
     hero_went_all_in: bool = False
     hero_folded: bool = False
-    opponent_folded: bool = False  # Opponent folded to hero's bet
+    opponents_folded: bool = False
     reached_showdown: bool = False
-    uncalled_bet: int = 0
-    uncalled_bet_player: Optional[str] = None
 
-    def get_sb_player(self) -> Optional[PlayerInfo]:
-        for p in self.players:
-            if p.seat == self.sb_seat:
-                return p
+
+def reconstruct_hand(
+    states: List[GameState],
+    hero_name: str,
+    player_names: Dict[int, str],
+    button_pos: int,
+) -> Optional[HandHistory]:
+    """Reconstruct a HandHistory from a sequence of GameState observations.
+
+    Args:
+        states: List of GameState objects representing the hand progression
+        hero_name: Name of the hero player (must match a value in player_names)
+        player_names: Mapping of seat positions to player names (all active players)
+        button_pos: Button position (index into player list)
+
+    Returns:
+        HandHistory if reconstruction succeeds, None otherwise
+    """
+    if not states:
         return None
 
-    def get_bb_player(self) -> Optional[PlayerInfo]:
-        for p in self.players:
-            if p.seat == self.bb_seat:
-                return p
+    initial, final = states[0], states[-1]
+
+    # Derive blinds from initial pot (assumes SB + BB + antes = pot)
+    initial_pot = initial.pot or 60
+    small_blind = initial_pot // 3
+    big_blind = small_blind * 2
+
+    # players: ordered list of names by seat position
+    players = [player_names[pos] for pos in sorted(player_names.keys())]
+    num_players = len(players)
+    if num_players == 0:
         return None
 
-    def get_hero(self) -> Optional[PlayerInfo]:
-        for p in self.players:
-            if p.is_hero:
-                return p
-        return None
-
-    def get_opponents(self) -> List[PlayerInfo]:
-        """Get non-hero players in post-flop action order (starting from SB)."""
-        opponents = []
-        for i in range(len(self.players)):
-            idx = (self.sb_seat + i) % len(self.players)
-            p = self.players[idx]
-            if not p.is_hero:
-                opponents.append(p)
-        return opponents
-
-
-def _calculate_blind_positions(button_seat: int, num_players: int) -> Tuple[int, int]:
-    """Calculate SB and BB seats. Handles heads-up where button = SB."""
+    # Calculate blind positions first (heads-up: button = SB)
     if num_players == 2:
-        return button_seat, (button_seat + 1) % 2
-    elif num_players >= 3:
-        return (button_seat + 1) % num_players, (button_seat + 2) % num_players
-    return 0, 0
+        sb_idx, bb_idx = button_pos, (button_pos + 1) % 2
+    else:
+        sb_idx = (button_pos + 1) % num_players
+        bb_idx = (button_pos + 2) % num_players
+
+    # Build PlayerInfo list and position mapping
+    # Add blinds back since initial state shows chips AFTER posting
+    player_infos: List[PlayerInfo] = []
+    pos_to_name: Dict[int, str] = {}
+    for i, pos in enumerate(sorted(player_names.keys())):
+        name = player_names[pos]
+        chips = initial.players[pos].chips if pos in initial.players else 0
+        if i == sb_idx:
+            chips += small_blind
+        elif i == bb_idx:
+            chips += big_blind
+        player_infos.append(PlayerInfo(name, chips, pos))
+        pos_to_name[pos] = name
+
+    hand = HandHistory(
+        small_blind=small_blind,
+        big_blind=big_blind,
+        players=player_infos,
+        button_seat=button_pos,
+        sb_seat=sb_idx,
+        bb_seat=bb_idx,
+        pot=final.pot or 0,
+    )
+
+    # Find hero cards from any state that has them
+    for state in states:
+        if state.hero_cards:
+            hand.hero_cards = state.hero_cards
+            break
+
+    # Detect actions from chip changes, organized by street
+    raw_actions: Dict[Street, List[HandAction]] = {
+        Street.PREFLOP: [],
+        Street.FLOP: [],
+        Street.TURN: [],
+        Street.RIVER: [],
+    }
+
+    current_street = Street.PREFLOP
+    prev_state = states[0]
+    current_bet = big_blind
+
+    for state in states[1:]:
+        new_street = state.street
+        if new_street != current_street and new_street != Street.UNKNOWN:
+            if new_street == Street.FLOP and len(state.community_cards) >= 3:
+                hand.flop_cards = state.community_cards[:3]
+            elif new_street == Street.TURN and len(state.community_cards) >= 4:
+                hand.turn_card = state.community_cards[3]
+            elif new_street == Street.RIVER and len(state.community_cards) >= 5:
+                hand.river_card = state.community_cards[4]
+            current_street = new_street
+            current_bet = 0
+
+        pot_change = (state.pot or 0) - (prev_state.pot or 0)
+        if pot_change > 0:
+            for pos in state.players:
+                prev_p, curr_p = prev_state.players.get(pos), state.players.get(pos)
+                if prev_p and curr_p and pos in pos_to_name:
+                    chip_change = (prev_p.chips or 0) - (curr_p.chips or 0)
+                    if chip_change > 0:
+                        name = pos_to_name[pos]
+                        if chip_change > current_bet:
+                            action_type = PlayerAction.BET if current_bet == 0 else PlayerAction.RAISE
+                        else:
+                            action_type = PlayerAction.CALL
+                        if chip_change > current_bet:
+                            current_bet = chip_change
+
+                        action = HandAction(name, action_type, chip_change)
+                        if current_street in raw_actions:
+                            raw_actions[current_street].append(action)
+
+        prev_state = state
+
+    # players_active: who's still in the hand (shrinks as players fold)
+    players_active = list(players)
+
+    def rotate_to_first(lst: List[str], first: str) -> List[str]:
+        """Rotate list so first appears at index 0."""
+        if first not in lst:
+            return lst
+        idx = lst.index(first)
+        return lst[idx:] + lst[:idx]
+
+    # ============================================================
+    # PREFLOP
+    # ============================================================
+    # UTG acts first (player after BB), in heads-up SB acts first
+    utg_idx = (bb_idx + 1) % num_players
+    players_onthespot = rotate_to_first(players_active, players[utg_idx])
+
+    players_acted: List[str] = []
+    for action in raw_actions[Street.PREFLOP]:
+        hand.preflop_actions.append(action)
+        players_acted.append(action.player_name)
+        if action.action == PlayerAction.FOLD:
+            players_active = [p for p in players_active if p != action.player_name]
+
+    # BB option: if BB hasn't acted and we're going to flop, BB checked
+    if hand.flop_cards:
+        bb_name = players[bb_idx]
+        if bb_name not in players_acted and bb_name in players_active:
+            hand.preflop_actions.append(HandAction(bb_name, PlayerAction.CHECK, 0))
+
+    # ============================================================
+    # FLOP
+    # ============================================================
+    if hand.flop_cards and len(players_active) > 1:
+        # SB (or first remaining player) acts first post-flop
+        players_onthespot = rotate_to_first(players_active, players_active[0])
+        for i in range(num_players):
+            candidate = players[(sb_idx + i) % num_players]
+            if candidate in players_active:
+                players_onthespot = rotate_to_first(players_active, candidate)
+                break
+
+        players_acted = []
+        for action in raw_actions[Street.FLOP]:
+            # Add checks for skipped players
+            if action.action == PlayerAction.BET:
+                for name in players_onthespot:
+                    if name == action.player_name:
+                        break
+                    if name not in players_acted:
+                        hand.flop_actions.append(HandAction(name, PlayerAction.CHECK, 0))
+                        players_acted.append(name)
+
+            hand.flop_actions.append(action)
+            players_acted.append(action.player_name)
+            if action.action == PlayerAction.FOLD:
+                players_active = [p for p in players_active if p != action.player_name]
+
+        if not raw_actions[Street.FLOP] and hand.turn_card:
+            # No actions but we got to turn = everyone checked
+            for name in players_onthespot:
+                hand.flop_actions.append(HandAction(name, PlayerAction.CHECK, 0))
+
+    # ============================================================
+    # TURN
+    # ============================================================
+    if hand.turn_card and len(players_active) > 1:
+        # First active player from SB position acts first
+        players_onthespot = list(players_active)
+        for i in range(num_players):
+            candidate = players[(sb_idx + i) % num_players]
+            if candidate in players_active:
+                players_onthespot = rotate_to_first(players_active, candidate)
+                break
+
+        players_acted = []
+        for action in raw_actions[Street.TURN]:
+            if action.action == PlayerAction.BET:
+                for name in players_onthespot:
+                    if name == action.player_name:
+                        break
+                    if name not in players_acted:
+                        hand.turn_actions.append(HandAction(name, PlayerAction.CHECK, 0))
+                        players_acted.append(name)
+
+            hand.turn_actions.append(action)
+            players_acted.append(action.player_name)
+            if action.action == PlayerAction.FOLD:
+                players_active = [p for p in players_active if p != action.player_name]
+
+        if not raw_actions[Street.TURN] and hand.river_card:
+            for name in players_onthespot:
+                hand.turn_actions.append(HandAction(name, PlayerAction.CHECK, 0))
+
+    # ============================================================
+    # RIVER
+    # ============================================================
+    if hand.river_card and len(players_active) > 1:
+        # First active player from SB position acts first
+        players_onthespot = list(players_active)
+        for i in range(num_players):
+            candidate = players[(sb_idx + i) % num_players]
+            if candidate in players_active:
+                players_onthespot = rotate_to_first(players_active, candidate)
+                break
+
+        players_acted = []
+        for action in raw_actions[Street.RIVER]:
+            if action.action == PlayerAction.BET:
+                for name in players_onthespot:
+                    if name == action.player_name:
+                        break
+                    if name not in players_acted:
+                        hand.river_actions.append(HandAction(name, PlayerAction.CHECK, 0))
+                        players_acted.append(name)
+
+            hand.river_actions.append(action)
+            players_acted.append(action.player_name)
+            if action.action == PlayerAction.FOLD:
+                players_active = [p for p in players_active if p != action.player_name]
+
+    # Showdown if multiple players remain after all action
+    hand.reached_showdown = len(players_active) > 1
+
+    return hand
 
 
+# Backwards compatibility alias
 class HandReconstructor:
-    """Reconstructs hand history from GameState observations."""
-
-    # Seat order (seat indices 0-4)
-    SEAT_ORDER = list(range(NUM_PLAYERS))
+    """Deprecated: Use reconstruct_hand() function instead."""
 
     def __init__(
         self,
@@ -121,196 +320,5 @@ class HandReconstructor:
         self,
         states: List[GameState],
         button_pos: Optional[int] = None,
-        hand_id: Optional[str] = None,
     ) -> Optional[HandHistory]:
-        if not states:
-            return None
-
-        initial, final = states[0], states[-1]
-
-        # Auto-detect button position from GameState if not provided
-        if button_pos is None:
-            button_pos = initial.dealer_position if initial.dealer_position is not None else 0
-
-        # Infer blinds from initial pot (SB:BB = 1:2)
-        initial_pot = initial.pot or 60
-        small_blind = initial_pot // 3
-        big_blind = small_blind * 2
-
-        players, pos_to_player, orig_to_new = self._build_players(initial)
-        if not players:
-            return None
-
-        new_button = orig_to_new.get(button_pos, 0)
-        sb_seat, bb_seat = _calculate_blind_positions(new_button, len(players))
-
-        # Use provided hand_id or generate from timestamp
-        if hand_id is None:
-            hand_id = str(abs(hash(str(initial.timestamp_ms))) % 100000000)
-
-        hand = HandHistory(
-            hand_id=hand_id,
-            small_blind=small_blind,
-            big_blind=big_blind,
-            players=players,
-            button_seat=new_button,
-            sb_seat=sb_seat,
-            bb_seat=bb_seat,
-            pot=final.pot or 0,
-        )
-
-        for state in states:
-            if state.hero_cards:
-                hand.hero_cards = state.hero_cards
-                break
-
-        self._process_states(hand, states, pos_to_player, big_blind)
-
-        # Add BB check if missing (BB has option after SB completes, check has no pot change)
-        bb_player = hand.get_bb_player()
-        if bb_player and hand.flop_cards:
-            bb_acted = any(a.player_name == bb_player.name for a in hand.preflop_actions)
-            if not bb_acted:
-                hand.preflop_actions.append(
-                    HandAction(bb_player.name, PlayerAction.CHECK, 0)
-                )
-
-        # Add checks for streets with no actions (all players checked)
-        self._add_missing_checks(hand)
-
-        return hand
-
-    def _add_missing_checks(self, hand: HandHistory):
-        """Add check actions for streets where no actions were recorded."""
-        # Get players in post-flop action order (SB first)
-        active_players = []
-        for i in range(len(hand.players)):
-            idx = (hand.sb_seat + i) % len(hand.players)
-            active_players.append(hand.players[idx])
-
-        # For each post-flop street, if we have cards but no actions, add checks
-        # Flop/Turn: check if we went to next street
-        # River: check if we reached showdown
-        if hand.flop_cards and not hand.flop_actions and hand.turn_card:
-            for p in active_players:
-                hand.flop_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
-
-        if hand.turn_card and not hand.turn_actions and hand.river_card:
-            for p in active_players:
-                hand.turn_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
-
-        if hand.river_card and not hand.river_actions and hand.reached_showdown:
-            for p in active_players:
-                hand.river_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
-
-    def _build_players(self, initial: GameState):
-        players, orig_to_new, pos_to_player = [], {}, {}
-        seat_idx = 0
-
-        for orig_idx, pos in enumerate(self.SEAT_ORDER):
-            if pos in initial.players:
-                chips = initial.players[pos].chips
-                if not chips or chips <= 0:
-                    continue
-
-                if pos == HERO:
-                    name = self.hero_name
-                elif pos in self.player_names:
-                    name = self.player_names[pos]
-                else:
-                    name = seat_name(pos)
-                player = PlayerInfo(seat_idx, name, chips, pos, pos == HERO)
-                players.append(player)
-                pos_to_player[pos] = player
-                orig_to_new[orig_idx] = seat_idx
-                seat_idx += 1
-
-        return players, pos_to_player, orig_to_new
-
-    def _process_states(self, hand: HandHistory, states: List[GameState], pos_to_player: dict, big_blind: int):
-        current_street = Street.PREFLOP
-        prev_state = states[0]
-        current_bet = big_blind
-        last_aggressor, last_bet, last_bet_street = None, 0, Street.PREFLOP
-
-        for state in states[1:]:
-            new_street = state.street
-            if new_street != current_street and new_street != Street.UNKNOWN:
-                if new_street == Street.FLOP and len(state.community_cards) >= 3:
-                    hand.flop_cards = state.community_cards[:3]
-                elif new_street == Street.TURN and len(state.community_cards) >= 4:
-                    hand.turn_card = state.community_cards[3]
-                elif new_street == Street.RIVER and len(state.community_cards) >= 5:
-                    hand.river_card = state.community_cards[4]
-                current_street = new_street
-                current_bet = 0
-
-            pot_change = (state.pot or 0) - (prev_state.pot or 0)
-            if pot_change > 0:
-                for pos in state.players:
-                    prev_p, curr_p = prev_state.players.get(pos), state.players.get(pos)
-                    if prev_p and curr_p and pos in pos_to_player:
-                        chip_change = (prev_p.chips or 0) - (curr_p.chips or 0)
-                        if chip_change > 0:
-                            player = pos_to_player[pos]
-                            if chip_change > current_bet:
-                                # First aggressive action on street is a BET, subsequent is RAISE
-                                action_type = PlayerAction.BET if current_bet == 0 else PlayerAction.RAISE
-                            else:
-                                action_type = PlayerAction.CALL
-                            if chip_change > current_bet:
-                                current_bet = chip_change
-
-                            action = HandAction(player.name, action_type, chip_change)
-                            self._add_action(hand, current_street, action)
-
-                            if action_type in (PlayerAction.RAISE, PlayerAction.BET):
-                                last_aggressor, last_bet, last_bet_street = player, chip_change, current_street
-                            else:
-                                # A call matches the bet, so there's no uncalled bet
-                                last_aggressor, last_bet = None, 0
-
-                            if player.is_hero and (curr_p.chips or 0) == 0:
-                                hand.hero_went_all_in = True
-                                hand.pot = prev_state.pot or 0
-                                return
-
-            prev_state = state
-
-        hand.pot = states[-1].pot or 0
-
-        # Determine hand ending: showdown vs fold
-        # If we reached the river and there's no uncalled bet on the final street, it's showdown
-        if hand.river_card:
-            # Check if there's an uncalled opponent bet on the river
-            if last_aggressor and not last_aggressor.is_hero and last_bet_street == Street.RIVER:
-                hand.hero_folded = True
-                hand.uncalled_bet = last_bet
-                hand.uncalled_bet_player = last_aggressor.name
-                hand.pot -= last_bet
-            else:
-                hand.reached_showdown = True
-        else:
-            # Hand ended before river - someone folded
-            # Hero is always the last player in the list
-            hero = hand.players[-1] if hand.players else None
-            if last_aggressor and last_bet > 0:
-                hand.uncalled_bet = last_bet
-                hand.uncalled_bet_player = last_aggressor.name
-                hand.pot -= last_bet
-                if hero and last_aggressor.name == hero.name:
-                    # Hero's bet was uncalled - opponent folded - hero wins
-                    hand.opponent_folded = True
-                else:
-                    # Opponent's bet was uncalled - hero folded
-                    hand.hero_folded = True
-            else:
-                hand.hero_folded = True
-
-    def _add_action(self, hand: HandHistory, street: Street, action: HandAction):
-        {
-            Street.PREFLOP: hand.preflop_actions,
-            Street.FLOP: hand.flop_actions,
-            Street.TURN: hand.turn_actions,
-            Street.RIVER: hand.river_actions,
-        }.get(street, []).append(action)
+        return reconstruct_hand(states, self.hero_name, self.player_names, button_pos)

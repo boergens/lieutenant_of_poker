@@ -4,7 +4,7 @@ import io
 import random
 from typing import Dict, List, Optional
 
-from .hand_history import HandHistory, HandAction, HandReconstructor, PlayerInfo
+from .hand_history import HandHistory, HandAction, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
 from .game_simulator import RNG
@@ -20,11 +20,11 @@ def export_pokerstars(
     """Export GameStates to PokerStars format."""
     if rng is None:
         rng = random
-    hand_id = str(rng.randint(10000000, 99999999))
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos, hand_id=hand_id)
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
-    return PokerStarsExporter(hero_name).export(hand)
+    hand_id = str(rng.randint(10000000, 99999999))
+    return PokerStarsExporter(hero_name).export(hand, hand_id)
 
 
 class PokerStarsExporter:
@@ -33,24 +33,25 @@ class PokerStarsExporter:
     def __init__(self, hero_name: str = "hero"):
         self.hero_name = hero_name
 
-    def export(self, hand: HandHistory) -> str:
+    def export(self, hand: HandHistory, hand_id: str) -> str:
         output = io.StringIO()
         f = output
 
+        sb = hand.players[hand.sb_seat]
+        bb = hand.players[hand.bb_seat]
+
         # Header
-        f.write(f"PokerStars Hand #{hand.hand_id}: Hold'em No Limit ")
+        f.write(f"PokerStars Hand #{hand_id}: Hold'em No Limit ")
         f.write(f"(${hand.small_blind}/${hand.big_blind})\n")
         f.write(f"Table '{hand.table_name}' 6-max Seat #{hand.button_seat + 1} is the button\n")
 
         # Players
-        for p in hand.players:
-            f.write(f"Seat {p.seat + 1}: {p.name} (${p.chips} in chips)\n")
+        for i, p in enumerate(hand.players):
+            f.write(f"Seat {i + 1}: {p.name} (${p.chips} in chips)\n")
 
         # Blinds
-        sb, bb = hand.get_sb_player(), hand.get_bb_player()
-        if sb and bb:
-            f.write(f"{sb.name}: posts small blind ${hand.small_blind}\n")
-            f.write(f"{bb.name}: posts big blind ${hand.big_blind}\n")
+        f.write(f"{sb.name}: posts small blind ${hand.small_blind}\n")
+        f.write(f"{bb.name}: posts big blind ${hand.big_blind}\n")
 
         # Hole cards
         f.write("*** HOLE CARDS ***\n")

@@ -20,12 +20,11 @@ def export_snowie(
     """Export GameStates to Snowie format. Auto-detects button if not specified."""
     if rng is None:
         rng = random
-    # Generate hand_id from rng
-    hand_id = str(rng.randint(10000000, 99999999))
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos, hand_id=hand_id)
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
-    return SnowieExporter(hero_name, rng).export(hand)
+    hand_id = str(rng.randint(10000000, 99999999))
+    return SnowieExporter(hero_name, rng).export(hand, hand_id)
 
 
 class SnowieExporter:
@@ -35,15 +34,18 @@ class SnowieExporter:
         self.hero_name = hero_name
         self.rng = rng
 
-    def export(self, hand: HandHistory) -> str:
+    def export(self, hand: HandHistory, hand_id: str) -> str:
         output = io.StringIO()
-        self._write(output, hand)
+        self._write(output, hand, hand_id)
         return output.getvalue()
 
-    def _write(self, f: TextIO, hand: HandHistory):
+    def _write(self, f: TextIO, hand: HandHistory, hand_id: str):
         # Hero is always the last player in the list
-        hero = hand.players[-1] if hand.players else None
-        hero_name = hero.name if hero else self.hero_name
+        hero = hand.players[-1]
+        hero_name = hero.name
+        opponents = hand.players[:-1]
+        sb = hand.players[hand.sb_seat]
+        bb = hand.players[hand.bb_seat]
 
         # Header
         f.write("GameStart\n")
@@ -51,7 +53,7 @@ class SnowieExporter:
         f.write(f"Date: {hand.timestamp.strftime('%d/%m/%Y')}\n")
         f.write("TimeZone: GMT\n")
         f.write(f"Time: {hand.timestamp.strftime('%H:%M:%S')}\n")
-        f.write(f"GameId:{hand.hand_id}\n")
+        f.write(f"GameId:{hand_id}\n")
         f.write("GameType:NoLimit\n")
         f.write("GameCurrency: $\n")
         f.write(f"SmallBlindStake: {hand.small_blind}\n")
@@ -67,13 +69,11 @@ class SnowieExporter:
             dealer_pos = hand.button_seat
         f.write(f"DealerPosition: {dealer_pos}\n")
 
-        for p in hand.players:
-            f.write(f"Seat {p.seat} {p.name} {p.chips}\n")
+        for i, p in enumerate(hand.players):
+            f.write(f"Seat {i} {p.name} {p.chips}\n")
 
-        sb, bb = hand.get_sb_player(), hand.get_bb_player()
-        if sb and bb:
-            f.write(f"SmallBlind: {sb.name} {hand.small_blind}\n")
-            f.write(f"BigBlind: {bb.name} {hand.big_blind}\n")
+        f.write(f"SmallBlind: {sb.name} {hand.small_blind}\n")
+        f.write(f"BigBlind: {bb.name} {hand.big_blind}\n")
 
         if hand.hero_cards:
             f.write(f"Dealt Cards: [{''.join(c.short_name for c in hand.hero_cards)}]\n")
@@ -99,13 +99,13 @@ class SnowieExporter:
 
         # Ending
         if hand.hero_went_all_in:
-            self._write_hero_all_in(f, hand)
-        elif hand.opponent_folded:
-            self._write_opponent_folds(f, hand)
+            self._write_hero_all_in(f, hand, hero_name, opponents)
+        elif hand.opponents_folded:
+            self._write_opponents_fold(f, hand, hero_name, opponents)
         elif hand.hero_folded:
-            self._write_hero_fold(f, hand)
+            self._write_hero_fold(f, hand, hero_name, opponents, sb, bb)
         elif hand.reached_showdown:
-            self._write_showdown(f, hand)
+            self._write_showdown(f, hand, hero_name, opponents)
 
         f.write("GameEnd\n\n")
 
@@ -118,45 +118,19 @@ class SnowieExporter:
             else:
                 f.write(f"Move: {a.player_name} raise_bet {a.amount or 0}\n")
 
-    def _write_hero_all_in(self, f: TextIO, hand: HandHistory):
-        # Hero is the last player in the list
-        hero = hand.players[-1] if hand.players else None
-        hero_name = hero.name if hero else self.hero_name
-
-        for p in hand.players:
-            if p != hero:
-                f.write(f"Move: {p.name} folds 0\n")
-
-        # Return uncalled bet to hero
-        if hand.uncalled_bet > 0:
-            f.write(f"Move: {hero_name} uncalled_bet {hand.uncalled_bet}\n")
-
+    def _write_hero_all_in(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
+        for p in opponents:
+            f.write(f"Move: {p.name} folds 0\n")
         f.write(f"Winner: {hero_name} {hand.pot:.2f}\n")
 
-    def _write_opponent_folds(self, f: TextIO, hand: HandHistory):
-        """Opponent folded to hero's bet - hero wins."""
-        # Hero is the last player in the list
-        hero = hand.players[-1] if hand.players else None
-        hero_name = hero.name if hero else self.hero_name
-
-        for p in hand.players:
-            if p != hero:
-                f.write(f"Move: {p.name} folds 0\n")
-
-        # Return uncalled bet to hero
-        if hand.uncalled_bet > 0:
-            f.write(f"Move: {hero_name} uncalled_bet {hand.uncalled_bet}\n")
-
+    def _write_opponents_fold(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
+        """Opponents folded to hero's bet - hero wins."""
+        for p in opponents:
+            f.write(f"Move: {p.name} folds 0\n")
         f.write(f"Winner: {hero_name} {hand.pot:.2f}\n")
 
-    def _write_hero_fold(self, f: TextIO, hand: HandHistory):
-        f.write(f"Move: {self.hero_name} folds 0\n")
-
-        if hand.uncalled_bet_player and hand.uncalled_bet > 0:
-            f.write(f"Move: {hand.uncalled_bet_player} uncalled_bet {hand.uncalled_bet}\n")
-
-        opponents = hand.get_opponents()
-        sb, bb = hand.get_sb_player(), hand.get_bb_player()
+    def _write_hero_fold(self, f: TextIO, hand: HandHistory, hero_name: str, opponents, sb, bb):
+        f.write(f"Move: {hero_name} folds 0\n")
 
         has_flop = bool(hand.flop_cards)
         has_turn = hand.turn_card is not None
@@ -173,9 +147,9 @@ class SnowieExporter:
         # Simulate remaining preflop
         if not has_flop:
             for p in opponents:
-                if sb and p.name == sb.name:
+                if p.name == sb.name:
                     f.write(f"Move: {p.name} call_check {hand.small_blind}\n")
-                elif bb and p.name == bb.name:
+                elif p.name == bb.name:
                     f.write(f"Move: {p.name} call_check 0\n")
                 else:
                     f.write(f"Move: {p.name} call_check {hand.big_blind}\n")
@@ -203,10 +177,8 @@ class SnowieExporter:
 
         f.write(f"Winner: {sim.winner} {hand.pot:.2f}\n")
 
-    def _write_showdown(self, f: TextIO, hand: HandHistory):
+    def _write_showdown(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
         """Write showdown when hand reaches river with no fold."""
-        opponents = hand.get_opponents()
-
         community = []
         if hand.flop_cards:
             community = [c.short_name for c in hand.flop_cards]
@@ -220,7 +192,7 @@ class SnowieExporter:
 
         # Write showdown for hero
         if hand.hero_cards:
-            f.write(f"Showdown: {self.hero_name} [{''.join(hero_cards)}]\n")
+            f.write(f"Showdown: {hero_name} [{' '.join(hero_cards)}]\n")
 
         # Write showdown for opponents (simulated cards)
         for name, cards in sim.opponent_hands.items():

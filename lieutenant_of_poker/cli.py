@@ -24,6 +24,7 @@ from lieutenant_of_poker import __version__
 from lieutenant_of_poker.snowie_export import export_snowie
 from lieutenant_of_poker.pokerstars_export import export_pokerstars
 from lieutenant_of_poker.human_export import export_human
+from lieutenant_of_poker.action_log_export import export_action_log
 
 
 def main():
@@ -78,8 +79,8 @@ def main():
     )
     export_parser.add_argument("video", help="Path to video file")
     export_parser.add_argument(
-        "--format", "-f", default="snowie", choices=["pokerstars", "snowie", "human"],
-        help="Output format (default: snowie)"
+        "--format", "-f", default="actions", choices=["pokerstars", "snowie", "human", "actions"],
+        help="Output format (default: actions)"
     )
     export_parser.add_argument(
         "--start", "-s", type=float, default=0, help="Start timestamp in seconds (default: 0)"
@@ -427,6 +428,8 @@ def cmd_export(args):
         output = export_snowie(states, button_pos=button_pos, player_names=player_names)
     elif args.format == "human":
         output = export_human(states, button_pos=button_pos, player_names=player_names)
+    elif args.format == "actions":
+        output = export_action_log(states, button_pos=button_pos, player_names=player_names)
     else:  # pokerstars
         output = export_pokerstars(states, button_pos=button_pos, player_names=player_names)
         if not output:
