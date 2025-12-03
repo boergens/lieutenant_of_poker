@@ -22,11 +22,10 @@ Dealt Cards: [AhKc]
 Move: Victor call_check 40
 Move: player699561 call_check 20
 Move: kevin4637565 raise_bet 8980
-Move: player699561 call_check 2740
 Move: Victor folds 0
+Move: player699561 call_check 2740
 uncalled_bet: kevin4637565 6240
 Showdown: kevin4637565 [Ah Kc]
-Showdown: Victor [9s 2s]
 Showdown: player699561 [Ks Qd]
 Winner: player699561 11840.00
 GameEnd

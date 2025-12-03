@@ -135,8 +135,8 @@ def reconstruct_hand(
         s: [] for s in Street if s != Street.UNKNOWN
     }
 
-    # Track players who went all-in (can't fold even if contribution < max bet)
-    players_all_in: set = set()
+    # Track which actions result in all-in (player's chips went to 0)
+    all_in_actions: set = set()
 
     current_street = Street.PREFLOP
     prev_state = states[0]
@@ -175,45 +175,19 @@ def reconstruct_hand(
 
                         # Track all-in (chips went to 0 after betting)
                         if curr_p.chips == 0:
-                            players_all_in.add(name)
+                            all_in_actions.add(id(action))
 
         prev_state = state
 
-    # players_active: who's still in the hand (shrinks as players fold)
-    players_active = list(players)
-
-    def rotate_to_first(lst: List[str], first: str) -> List[str]:
-        """Rotate list so first appears at index 0."""
-        if first not in lst:
-            return lst
-        idx = lst.index(first)
-        return lst[idx:] + lst[:idx]
-
-    def add_folds_for_street(
-        actions_list: List[HandAction],
-        contributions: Dict[str, int],
-        active: List[str],
-        acting_order: List[str],
-        all_in: set,
-    ) -> List[str]:
-        """Add fold actions for players who contributed less than max.
-
-        Players who are all-in are skipped (they can't fold).
-        """
-        if not contributions:
-            return active
-        max_contrib = max(contributions.values())
-        for name in acting_order:
-            if name in active and name not in all_in and contributions.get(name, 0) < max_contrib:
-                actions_list.append(HandAction(name, PlayerAction.FOLD, 0))
-                active = [p for p in active if p != name]
-        return active
-
-    # Add blind posts as actions at start of preflop
+    # Add blind posts as explicit actions at start of preflop
+    # This allows preflop to be treated uniformly with other streets
     sb_name = players[sb_idx]
     bb_name = players[bb_idx]
     raw_actions[Street.PREFLOP].insert(0, HandAction(bb_name, PlayerAction.BET, big_blind))
     raw_actions[Street.PREFLOP].insert(0, HandAction(sb_name, PlayerAction.BET, small_blind))
+
+    # players_in_hand: who hasn't folded (may include all-in players)
+    players_in_hand = list(players)
 
     def street_reached(street: Street) -> bool:
         if street == Street.PREFLOP:
@@ -228,75 +202,107 @@ def reconstruct_hand(
 
     streets = [Street.PREFLOP, Street.FLOP, Street.TURN, Street.RIVER]
 
-    for idx, street in enumerate(streets):
-        if not street_reached(street) or len(players_active) <= 1:
+    # Cumulative set of players who are all-in (added as we process actions)
+    players_all_in: set = set()
+
+    for street in streets:
+        if not street_reached(street) or len(players_in_hand) <= 1:
             break
 
         actions_list = hand.actions[street]
-        next_street = streets[idx + 1] if idx + 1 < len(streets) else None
+        street_actions = raw_actions[street]
 
-        # First active player from SB position acts first
-        for i in range(len(players)):
-            candidate = players[(sb_idx + i) % len(players)]
-            if candidate in players_active:
-                players_onthespot = rotate_to_first(players_active, candidate)
+        # Contributions this street (starts empty, built from actions)
+        contributions: Dict[str, int] = {}
+        current_bet = 0
+
+        # First player to act (SB for all streets - preflop has blind posts first)
+        first_to_act_idx = sb_idx
+
+        # Current position in the rotation (index into players list)
+        current_pos = first_to_act_idx
+
+        def get_next_active_player(start_pos: int, in_hand: List[str], all_in: set) -> tuple[int, str] | None:
+            """Find next player who can act, starting from start_pos."""
+            for i in range(len(players)):
+                pos = (start_pos + i) % len(players)
+                name = players[pos]
+                if name in in_hand and name not in all_in:
+                    return pos, name
+            return None
+
+        # Process each raw action in order
+        for action in street_actions:
+            if len(players_in_hand) <= 1:
                 break
 
-        contributions: Dict[str, int] = {}
-        players_acted: List[str] = []
+            actor = action.player_name
 
-        for action in raw_actions[street]:
-            # Post-flop: add checks for skipped players before a bet
-            if action.action == PlayerAction.BET:
-                for name in players_onthespot:
-                    if name == action.player_name:
-                        break
-                    if name not in players_acted:
+            # Walk from current position to actor, inferring checks/folds
+            while True:
+                result = get_next_active_player(current_pos, players_in_hand, players_all_in)
+                if result is None:
+                    break
+                pos, name = result
+
+                if name == actor:
+                    # Found the actor - record their action
+                    actions_list.append(action)
+                    if action.amount:
+                        contributions[name] = contributions.get(name, 0) + action.amount
+                        if contributions[name] > current_bet:
+                            current_bet = contributions[name]
+                    # Mark as all-in if this action put them all-in
+                    if id(action) in all_in_actions:
+                        players_all_in.add(name)
+                    current_pos = (pos + 1) % len(players)
+                    break
+                else:
+                    # This player acted before the actor - infer check or fold
+                    to_call = current_bet - contributions.get(name, 0)
+                    if to_call > 0:
+                        actions_list.append(HandAction(name, PlayerAction.FOLD, 0))
+                        players_in_hand = [p for p in players_in_hand if p != name]
+                    else:
                         actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
-                        players_acted.append(name)
+                    current_pos = (pos + 1) % len(players)
 
-            actions_list.append(action)
-            players_acted.append(action.player_name)
-
-            if action.action == PlayerAction.FOLD:
-                players_active = [p for p in players_active if p != action.player_name]
-            elif action.amount:
-                contributions[action.player_name] = (
-                    contributions.get(action.player_name, 0) + action.amount
-                )
-
-        # Handle end-of-street logic
-        # Always check for folds from unmatched contributions first
-        players_active = add_folds_for_street(
-            actions_list, contributions, players_active, players_onthespot, players_all_in
-        )
-
-        # Then add checks for check-check scenarios
-        if next_street and street_reached(next_street):
-            # Street completed normally - add checks if no actions recorded
-            if street != Street.PREFLOP and not raw_actions[street]:
-                for name in players_onthespot:
-                    actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
-        elif next_street is None and len(players_active) > 1:
-            # River with showdown - add checks if no actions recorded
-            if not raw_actions[street]:
-                for name in players_onthespot:
+        # After all raw actions, close out remaining players
+        # - Players who owe chips must fold
+        # - Players who don't owe (and haven't acted) must check
+        if len(players_in_hand) > 1:
+            for i in range(len(players)):
+                pos = (current_pos + i) % len(players)
+                name = players[pos]
+                if name not in players_in_hand or name in players_all_in:
+                    continue
+                to_call = current_bet - contributions.get(name, 0)
+                if to_call > 0:
+                    actions_list.append(HandAction(name, PlayerAction.FOLD, 0))
+                    players_in_hand = [p for p in players_in_hand if p != name]
+                elif name not in contributions:
+                    # Player hasn't acted yet and doesn't owe anything - they check
                     actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
 
-    # Clean up preflop: remove the synthetic blind actions we added
-    del hand.actions[Street.PREFLOP][:2]
-
-    # BB option: if BB limped through (only posted blind, no other action), add check
-    bb_acted = any(a.player_name == bb_name for a in hand.actions[Street.PREFLOP])
-    if not bb_acted and bb_name in players_active and hand.flop_cards:
+    # BB option: if action limped to BB preflop, BB gets option to check/raise
+    # Count BB's voluntary actions (exclude the forced blind post which is first 2 actions)
+    bb_in_hand = bb_name in players_in_hand
+    bb_voluntary_actions = [
+        a for a in hand.actions[Street.PREFLOP][2:]  # Skip SB and BB blind posts
+        if a.player_name == bb_name
+    ]
+    if bb_in_hand and not bb_voluntary_actions and hand.flop_cards:
         hand.actions[Street.PREFLOP].append(HandAction(bb_name, PlayerAction.CHECK, 0))
+
+    # Remove the synthetic blind posts from preflop actions
+    del hand.actions[Street.PREFLOP][:2]
 
     # Determine outcome
     # Hero is always the last player in the list
     hero_player_name = players[-1]
-    hand.reached_showdown = len(players_active) > 1
-    hand.opponents_folded = len(players_active) == 1 and hero_player_name in players_active
-    hand.hero_folded = hero_player_name not in players_active
+    hand.reached_showdown = len(players_in_hand) > 1
+    hand.opponents_folded = len(players_in_hand) == 1 and hero_player_name in players_in_hand
+    hand.hero_folded = hero_player_name not in players_in_hand
 
     # Calculate uncalled bet - the portion of a bet that wasn't called
     all_actions = sum((hand.actions[s] for s in streets), [])
@@ -325,8 +331,8 @@ def reconstruct_hand(
                 break
 
     # Set winner if everyone folded
-    if len(players_active) == 1:
-        hand.winner = players_active[0]
+    if len(players_in_hand) == 1:
+        hand.winner = players_in_hand[0]
         hand.payout = hand.pot - uncalled_amount
 
     return hand
