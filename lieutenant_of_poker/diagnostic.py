@@ -124,6 +124,7 @@ class DiagnosticExtractor:
         self._extract_hero_cards(scaled_frame, region_detector)
         self._extract_players(scaled_frame, region_detector)
         self._extract_player_names(scaled_frame)
+        self._extract_dealer_button(scaled_frame, region_detector)
 
         return self.report
 
@@ -451,6 +452,49 @@ class DiagnosticExtractor:
             step.parsed_result = {self._seat_name(k): v for k, v in names.items() if v}
             step.description += f" - Detected {detected_count}/5 names"
             step.success = True  # Step succeeds even with partial detection
+
+        except Exception as e:
+            step.error = str(e)
+            step.success = False
+
+        self.report.steps.append(step)
+
+    def _extract_dealer_button(self, frame: np.ndarray, region_detector) -> None:
+        """Extract dealer button position with diagnostics."""
+        from .dealer_detector import detect_dealer_button, detect_dealer_position
+
+        step = DiagnosticStep(
+            name="Dealer Button Detection",
+            description="Detecting dealer button position using template matching",
+        )
+
+        try:
+            # Get the search region
+            search_region = region_detector.dealer_button_search_region
+            search_img = search_region.extract(frame)
+            step.images.append(("Search Region", search_img))
+
+            # Detect button position
+            button_pos = detect_dealer_button(frame, region_detector)
+            if button_pos is not None:
+                # Draw marker on search region
+                marked = search_img.copy()
+                rel_x = button_pos[0] - search_region.x
+                rel_y = button_pos[1] - search_region.y
+                cv2.circle(marked, (rel_x, rel_y), 20, (0, 255, 0), 2)
+                cv2.circle(marked, (rel_x, rel_y), 3, (0, 255, 0), -1)
+                step.images.append(("Detected Location", marked))
+
+                # Determine which player
+                dealer_seat = detect_dealer_position(frame, region_detector)
+                if dealer_seat is not None:
+                    step.parsed_result = f"Button at {self._seat_name(dealer_seat)} (pixel: {button_pos})"
+                else:
+                    step.parsed_result = f"Button found at {button_pos} but no player match"
+                step.success = True
+            else:
+                step.parsed_result = "(not detected)"
+                step.success = False
 
         except Exception as e:
             step.error = str(e)

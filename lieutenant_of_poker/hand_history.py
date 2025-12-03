@@ -116,11 +116,15 @@ class HandReconstructor:
         self.hero_name = hero_name
         self.player_names = player_names or {}
 
-    def reconstruct(self, states: List[GameState], button_pos: int = 0) -> Optional[HandHistory]:
+    def reconstruct(self, states: List[GameState], button_pos: Optional[int] = None) -> Optional[HandHistory]:
         if not states:
             return None
 
         initial, final = states[0], states[-1]
+
+        # Auto-detect button position from GameState if not provided
+        if button_pos is None:
+            button_pos = initial.dealer_position if initial.dealer_position is not None else 0
 
         # Infer blinds from initial pot (SB:BB = 1:2)
         initial_pot = initial.pot or 60

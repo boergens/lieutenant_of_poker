@@ -12,10 +12,10 @@ from .game_simulator import simulate_hand_completion
 def export_snowie(
     states: List[GameState],
     hero_name: str = "hero",
-    button_pos: int = 0,
+    button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
 ) -> str:
-    """Export GameStates to Snowie format."""
+    """Export GameStates to Snowie format. Auto-detects button if not specified."""
     hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
     if not hand:
         return ""

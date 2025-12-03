@@ -17,17 +17,8 @@
       "pot": 60,
       "hero_chips": 9020,
       "players": {
-        "HERO": {
-          "position": "HERO",
-          "name": null,
-          "chips": 9020,
-          "cards": [],
-          "last_action": null,
-          "is_active": true,
-          "is_dealer": false
-        },
-        "SEAT_1": {
-          "position": "SEAT_1",
+        "0": {
+          "position": "0",
           "name": null,
           "chips": 780,
           "cards": [],
@@ -35,8 +26,8 @@
           "is_active": true,
           "is_dealer": false
         },
-        "SEAT_3": {
-          "position": "SEAT_3",
+        "1": {
+          "position": "1",
           "name": null,
           "chips": 2360,
           "cards": [],
@@ -44,8 +35,8 @@
           "is_active": true,
           "is_dealer": false
         },
-        "SEAT_4": {
-          "position": "SEAT_4",
+        "2": {
+          "position": "2",
           "name": null,
           "chips": 2780,
           "cards": [],
@@ -53,10 +44,10 @@
           "is_active": true,
           "is_dealer": false
         },
-        "SEAT_2": {
-          "position": "SEAT_2",
+        "3": {
+          "position": "3",
           "name": null,
-          "chips": null,
+          "chips": 9020,
           "cards": [],
           "last_action": null,
           "is_active": true,

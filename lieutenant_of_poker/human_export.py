@@ -11,10 +11,10 @@ from .action_detector import PlayerAction
 def export_human(
     states: List[GameState],
     hero_name: str = "hero",
-    button_pos: int = 0,
+    button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
 ) -> str:
-    """Export GameStates to human-readable format."""
+    """Export GameStates to human-readable format. Auto-detects button if not specified."""
     hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
     if not hand:
         return "No hand data."
