@@ -1,4 +1,5 @@
 Victor posts small blind $40
 kevin4637565 posts big blind $80
+Dealer deals hole cards to kevin4637565: [Ad 8s]
 Victor calls $40
 kevin4637565 raises to $1040

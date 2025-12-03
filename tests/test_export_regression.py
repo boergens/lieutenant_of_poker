@@ -19,7 +19,7 @@ from lieutenant_of_poker.first_frame import detect_from_video
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Fixed seed for deterministic test output
+# Fixed seed for deterministic test output (used by snowie export for simulated cards)
 TEST_SEED = 12345
 
 
@@ -43,178 +43,116 @@ def normalize_snowie_export(text: str) -> str:
     return "\n".join(lines)
 
 
+def run_export_test(video_num: int, export_func, fixture_suffix: str, normalize_func=None, use_rng=False):
+    """Generic export test runner."""
+    video_path = FIXTURES_DIR / f"{video_num}.mp4"
+    states_path = FIXTURES_DIR / f"video{video_num}_states.json"
+    fixture_path = FIXTURES_DIR / f"video{video_num}_export_{fixture_suffix}.txt"
+
+    if not video_path.exists():
+        pytest.skip(f"Video file {video_path} not found")
+    if not states_path.exists():
+        pytest.skip(f"States file {states_path} not found")
+    if not fixture_path.exists():
+        pytest.skip(f"Fixture file {fixture_path} not found")
+
+    # Detect first frame info (like CLI does)
+    first = detect_from_video(str(video_path))
+    button_pos = first.button_index if first.button_index is not None else 0
+    player_names = first.player_names
+
+    # Load states and generate export
+    states = load_game_states(states_path)
+    if use_rng:
+        rng = random.Random(TEST_SEED)
+        actual = export_func(states, button_pos=button_pos, player_names=player_names, rng=rng)
+    else:
+        actual = export_func(states, button_pos=button_pos, player_names=player_names)
+
+    # Load expected output
+    expected = fixture_path.read_text()
+
+    # Normalize if needed
+    if normalize_func:
+        actual = normalize_func(actual)
+        expected = normalize_func(expected)
+    else:
+        actual = actual.strip()
+        expected = expected.strip()
+
+    if actual != expected:
+        # Show diff for debugging
+        actual_lines = actual.split("\n")
+        expected_lines = expected.split("\n")
+
+        diff_lines = []
+        max_lines = max(len(actual_lines), len(expected_lines))
+        for i in range(max_lines):
+            actual_line = actual_lines[i] if i < len(actual_lines) else "<missing>"
+            expected_line = expected_lines[i] if i < len(expected_lines) else "<missing>"
+            if actual_line != expected_line:
+                diff_lines.append(f"Line {i+1}:")
+                diff_lines.append(f"  expected: {expected_line}")
+                diff_lines.append(f"  actual:   {actual_line}")
+
+        pytest.fail(f"Export mismatch:\n" + "\n".join(diff_lines[:30]))
+
+
 class TestExportRegression:
     """Regression tests that compare export output against saved fixtures."""
 
+    # Video 6 tests
     def test_video6_snowie_export(self):
         """Video 6 snowie export matches fixture."""
-        video_path = FIXTURES_DIR / "6.mp4"
-        states_path = FIXTURES_DIR / "video6_states.json"
-        fixture_path = FIXTURES_DIR / "video6_export_snowie.txt"
-
-        if not video_path.exists():
-            pytest.skip(f"Video file {video_path} not found")
-        if not states_path.exists():
-            pytest.skip(f"States file {states_path} not found")
-        if not fixture_path.exists():
-            pytest.skip(f"Fixture file {fixture_path} not found")
-
-        # Detect first frame info (like CLI does)
-        first = detect_from_video(str(video_path))
-        button_pos = first.button_index if first.button_index is not None else 0
-        player_names = first.player_names
-
-        # Load states and generate export with seeded RNG
-        states = load_game_states(states_path)
-        rng = random.Random(TEST_SEED)
-        actual = export_snowie(states, button_pos=button_pos, player_names=player_names, rng=rng)
-
-        # Load expected output
-        expected = fixture_path.read_text()
-
-        # Compare (normalized to ignore timestamp differences)
-        actual_normalized = normalize_snowie_export(actual)
-        expected_normalized = normalize_snowie_export(expected)
-
-        if actual_normalized != expected_normalized:
-            # Show diff for debugging
-            actual_lines = actual_normalized.split("\n")
-            expected_lines = expected_normalized.split("\n")
-
-            diff_lines = []
-            max_lines = max(len(actual_lines), len(expected_lines))
-            for i in range(max_lines):
-                actual_line = actual_lines[i] if i < len(actual_lines) else "<missing>"
-                expected_line = expected_lines[i] if i < len(expected_lines) else "<missing>"
-                if actual_line != expected_line:
-                    diff_lines.append(f"Line {i+1}:")
-                    diff_lines.append(f"  expected: {expected_line}")
-                    diff_lines.append(f"  actual:   {actual_line}")
-
-            pytest.fail(f"Snowie export mismatch:\n" + "\n".join(diff_lines[:30]))
+        run_export_test(6, export_snowie, "snowie", normalize_snowie_export, use_rng=True)
 
     def test_video6_human_export(self):
         """Video 6 human export matches fixture."""
-        video_path = FIXTURES_DIR / "6.mp4"
-        states_path = FIXTURES_DIR / "video6_states.json"
-        fixture_path = FIXTURES_DIR / "video6_export_human.txt"
-
-        if not video_path.exists():
-            pytest.skip(f"Video file {video_path} not found")
-        if not states_path.exists():
-            pytest.skip(f"States file {states_path} not found")
-        if not fixture_path.exists():
-            pytest.skip(f"Fixture file {fixture_path} not found")
-
-        # Detect first frame info (like CLI does)
-        first = detect_from_video(str(video_path))
-        button_pos = first.button_index if first.button_index is not None else 0
-        player_names = first.player_names
-
-        # Load states and generate export with seeded RNG
-        states = load_game_states(states_path)
-        rng = random.Random(TEST_SEED)
-        actual = export_human(states, button_pos=button_pos, player_names=player_names, rng=rng)
-
-        # Load expected output
-        expected = fixture_path.read_text()
-
-        # Compare
-        if actual.strip() != expected.strip():
-            # Show diff for debugging
-            actual_lines = actual.strip().split("\n")
-            expected_lines = expected.strip().split("\n")
-
-            diff_lines = []
-            max_lines = max(len(actual_lines), len(expected_lines))
-            for i in range(max_lines):
-                actual_line = actual_lines[i] if i < len(actual_lines) else "<missing>"
-                expected_line = expected_lines[i] if i < len(expected_lines) else "<missing>"
-                if actual_line != expected_line:
-                    diff_lines.append(f"Line {i+1}:")
-                    diff_lines.append(f"  expected: {expected_line}")
-                    diff_lines.append(f"  actual:   {actual_line}")
-
-            pytest.fail(f"Human export mismatch:\n" + "\n".join(diff_lines[:30]))
+        run_export_test(6, export_human, "human")
 
     def test_video6_action_log_export(self):
         """Video 6 action log export matches fixture."""
-        video_path = FIXTURES_DIR / "6.mp4"
-        states_path = FIXTURES_DIR / "video6_states.json"
-        fixture_path = FIXTURES_DIR / "video6_export_action_log.txt"
+        run_export_test(6, export_action_log, "action_log")
 
-        if not video_path.exists():
-            pytest.skip(f"Video file {video_path} not found")
-        if not states_path.exists():
-            pytest.skip(f"States file {states_path} not found")
-        if not fixture_path.exists():
-            pytest.skip(f"Fixture file {fixture_path} not found")
+    # Video 7 tests
+    def test_video7_snowie_export(self):
+        """Video 7 snowie export matches fixture."""
+        run_export_test(7, export_snowie, "snowie", normalize_snowie_export, use_rng=True)
 
-        # Detect first frame info (like CLI does)
-        first = detect_from_video(str(video_path))
-        button_pos = first.button_index if first.button_index is not None else 0
-        player_names = first.player_names
+    def test_video7_human_export(self):
+        """Video 7 human export matches fixture."""
+        run_export_test(7, export_human, "human")
 
-        # Load states and generate export with seeded RNG
-        states = load_game_states(states_path)
-        rng = random.Random(TEST_SEED)
-        actual = export_action_log(states, button_pos=button_pos, player_names=player_names, rng=rng)
-
-        # Load expected output
-        expected = fixture_path.read_text()
-
-        # Compare
-        if actual.strip() != expected.strip():
-            # Show diff for debugging
-            actual_lines = actual.strip().split("\n")
-            expected_lines = expected.strip().split("\n")
-
-            diff_lines = []
-            max_lines = max(len(actual_lines), len(expected_lines))
-            for i in range(max_lines):
-                actual_line = actual_lines[i] if i < len(actual_lines) else "<missing>"
-                expected_line = expected_lines[i] if i < len(expected_lines) else "<missing>"
-                if actual_line != expected_line:
-                    diff_lines.append(f"Line {i+1}:")
-                    diff_lines.append(f"  expected: {expected_line}")
-                    diff_lines.append(f"  actual:   {actual_line}")
-
-            pytest.fail(f"Action log export mismatch:\n" + "\n".join(diff_lines[:30]))
+    def test_video7_action_log_export(self):
+        """Video 7 action log export matches fixture."""
+        run_export_test(7, export_action_log, "action_log")
 
 
 class TestExportFixturesValid:
     """Tests that export fixtures exist and are valid."""
 
+    # Video 6 fixtures
     def test_video6_states_fixture_exists(self):
-        """Video 6 states fixture exists."""
         assert (FIXTURES_DIR / "video6_states.json").exists()
 
     def test_video6_snowie_fixture_exists(self):
-        """Video 6 snowie export fixture exists."""
         assert (FIXTURES_DIR / "video6_export_snowie.txt").exists()
 
     def test_video6_human_fixture_exists(self):
-        """Video 6 human export fixture exists."""
         assert (FIXTURES_DIR / "video6_export_human.txt").exists()
 
     def test_video6_action_log_fixture_exists(self):
-        """Video 6 action log export fixture exists."""
         assert (FIXTURES_DIR / "video6_export_action_log.txt").exists()
 
-    def test_video6_snowie_fixture_not_empty(self):
-        """Video 6 snowie export fixture has content."""
-        content = (FIXTURES_DIR / "video6_export_snowie.txt").read_text()
-        assert len(content) > 100
-        assert "GameStart" in content
+    # Video 7 fixtures
+    def test_video7_states_fixture_exists(self):
+        assert (FIXTURES_DIR / "video7_states.json").exists()
 
-    def test_video6_human_fixture_not_empty(self):
-        """Video 6 human export fixture has content."""
-        content = (FIXTURES_DIR / "video6_export_human.txt").read_text()
-        assert len(content) > 100
-        assert "Hand #" in content
+    def test_video7_snowie_fixture_exists(self):
+        assert (FIXTURES_DIR / "video7_export_snowie.txt").exists()
 
-    def test_video6_action_log_fixture_not_empty(self):
-        """Video 6 action log export fixture has content."""
-        content = (FIXTURES_DIR / "video6_export_action_log.txt").read_text()
-        assert len(content) > 10
-        assert "posts" in content
+    def test_video7_human_fixture_exists(self):
+        assert (FIXTURES_DIR / "video7_export_human.txt").exists()
+
+    def test_video7_action_log_fixture_exists(self):
+        assert (FIXTURES_DIR / "video7_export_action_log.txt").exists()

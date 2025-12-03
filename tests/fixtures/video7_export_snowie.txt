@@ -1,0 +1,37 @@
+GameStart
+PokerClient: ExportFormat
+Date: 02/12/2025
+TimeZone: GMT
+Time: 22:22:02
+GameId:65917772
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 40
+BigBlindStake: 80
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 2
+MyPlayerName: kevin4637565
+DealerPosition: 0
+Seat 0 Victor 6400
+Seat 1 kevin4637565 8600
+SmallBlind: kevin4637565 40
+BigBlind: Victor 80
+Dealt Cards: [QcJh]
+Move: kevin4637565 raise_bet 1640
+Move: Victor call_check 1600
+FLOP Community Cards:[4c 6h 9d]
+Move: kevin4637565 raise_bet 400
+Move: Victor call_check 400
+TURN Community Cards:[4c 6h 9d 3s]
+Move: kevin4637565 call_check 0
+Move: Victor call_check 0
+RIVER Community Cards:[4c 6h 9d 3s Qh]
+Move: kevin4637565 call_check 0
+Move: Victor raise_bet 4320
+Move: kevin4637565 call_check 4320
+Showdown: kevin4637565 [Qc Jh]
+Showdown: Victor [5c 6d]
+Winner: Victor 12800.00
+GameEnd
+

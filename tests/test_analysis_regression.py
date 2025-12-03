@@ -112,6 +112,10 @@ class TestAnalysisRegression:
         """Video 6 analysis matches fixture."""
         self._run_regression(6)
 
+    def test_video7_regression(self):
+        """Video 7 analysis matches fixture."""
+        self._run_regression(7)
+
 
 class TestFixturesValid:
     """Tests that fixtures are valid and loadable."""
@@ -119,6 +123,14 @@ class TestFixturesValid:
     def test_video6_fixture_loads(self):
         """Video 6 fixture loads successfully."""
         fixture_path = FIXTURES_DIR / "video6_states.json"
+        if not fixture_path.exists():
+            pytest.skip("Fixture not found")
+        states = load_game_states(fixture_path)
+        assert len(states) > 0
+
+    def test_video7_fixture_loads(self):
+        """Video 7 fixture loads successfully."""
+        fixture_path = FIXTURES_DIR / "video7_states.json"
         if not fixture_path.exists():
             pytest.skip("Fixture not found")
         states = load_game_states(fixture_path)

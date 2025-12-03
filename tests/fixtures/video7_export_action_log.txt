@@ -1,0 +1,15 @@
+kevin4637565 posts small blind $40
+Victor posts big blind $80
+Dealer deals hole cards to kevin4637565: [Qc Jh]
+kevin4637565 raises to $1640
+Victor calls $1600
+Dealer reveals flop: 4c 6h 9d
+kevin4637565 bets $400
+Victor calls $400
+Dealer reveals turn: 3s
+kevin4637565 checks
+Victor checks
+Dealer reveals river: Qh
+kevin4637565 checks
+Victor bets $4320
+kevin4637565 calls $4320
