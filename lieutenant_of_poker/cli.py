@@ -163,6 +163,24 @@ def main():
         help="Process every Nth frame for detection (default: 2, use 1 for all frames)"
     )
 
+    # batch-export command
+    batch_parser = subparsers.add_parser(
+        "batch-export", help="Export hand histories from all videos in a folder"
+    )
+    batch_parser.add_argument("folder", help="Path to folder containing video files")
+    batch_parser.add_argument(
+        "--format", "-f", default="snowie", choices=["pokerstars", "snowie", "human", "actions"],
+        help="Output format (default: snowie)"
+    )
+    batch_parser.add_argument(
+        "--output-dir", "-o", default=None,
+        help="Output directory for text files (default: same as input folder)"
+    )
+    batch_parser.add_argument(
+        "--extension", "-e", default=".txt",
+        help="Output file extension (default: .txt)"
+    )
+
     # record command - simple screen recording
     record_parser = subparsers.add_parser(
         "record", help="Record screen to video (simple, no analysis)"
@@ -217,6 +235,8 @@ def main():
             cmd_record(args)
         elif args.command == "split":
             cmd_split(args)
+        elif args.command == "batch-export":
+            cmd_batch_export(args)
         elif args.command == "clear-library":
             cmd_clear_library(args)
     except FileNotFoundError as e:
@@ -367,6 +387,18 @@ def cmd_export(args):
             return
 
     print(output)
+
+
+def cmd_batch_export(args):
+    """Export hand histories from all videos in a folder."""
+    from .batch_export import batch_export
+    folder = Path(args.folder)
+    if not folder.is_dir():
+        print(f"Error: {folder} is not a directory", file=sys.stderr)
+        sys.exit(1)
+    output_dir = Path(args.output_dir) if args.output_dir else folder
+    output_dir.mkdir(parents=True, exist_ok=True)
+    batch_export(folder, output_dir, args.format, args.extension)
 
 
 def cmd_info(args):
