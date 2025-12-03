@@ -1,4 +1,4 @@
-=== Hand #16710665 ===
+=== Hand #15095173 ===
 Stakes: $40/$80
 Table: Governor of Poker
 
@@ -16,6 +16,6 @@ Hero is dealt: [Ad 8s]
   Seat 1 raises to $1040
 
 --- RESULT ---
-Hero folded
+Opponent folded
 Seat 1 gets back uncalled bet of $1040
 Final pot: $160
