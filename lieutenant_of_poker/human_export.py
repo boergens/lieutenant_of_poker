@@ -62,9 +62,11 @@ class HumanExporter:
         f.write(f"{bb.name} posts big blind ${hand.big_blind}\n")
 
         # Hero cards
+        hero = hand.get_hero()
+        hero_display = hero.name if hero else "Hero"
         if hand.hero_cards:
             cards = " ".join(c.short_name for c in hand.hero_cards)
-            f.write(f"\nHero is dealt: [{cards}]\n")
+            f.write(f"\n{hero_display} is dealt: [{cards}]\n")
 
         # Preflop
         f.write("\n--- PREFLOP ---\n")
@@ -91,19 +93,6 @@ class HumanExporter:
 
         # Ending
         f.write("\n--- RESULT ---\n")
-        if hand.hero_went_all_in:
-            f.write("Hero went all-in\n")
-        elif hand.opponent_folded:
-            f.write("Opponent folded\n")
-            if hand.uncalled_bet_player and hand.uncalled_bet > 0:
-                f.write(f"{hand.uncalled_bet_player} gets back uncalled bet of ${hand.uncalled_bet}\n")
-        elif hand.hero_folded:
-            f.write("Hero folded\n")
-            if hand.uncalled_bet_player and hand.uncalled_bet > 0:
-                f.write(f"{hand.uncalled_bet_player} gets back uncalled bet of ${hand.uncalled_bet}\n")
-        elif hand.reached_showdown:
-            f.write("Hand reached showdown\n")
-
         f.write(f"Final pot: ${hand.pot}\n")
 
         return output.getvalue()

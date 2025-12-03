@@ -1,16 +1,14 @@
 """
-Serialization utilities for GameState and HandHistory.
+Serialization utilities for GameState.
 
 Enables saving/loading game state data to JSON for testing and debugging.
 """
 
 import json
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 
 from lieutenant_of_poker.game_state import GameState, PlayerState, Street
-from lieutenant_of_poker.hand_history import HandHistory, HandAction, PlayerInfo
 from lieutenant_of_poker.card_detector import Card, Rank, Suit
 from lieutenant_of_poker.action_detector import PlayerAction, DetectedAction
 from lieutenant_of_poker.table_regions import HERO
@@ -135,110 +133,6 @@ def game_state_from_dict(d: Dict[str, Any]) -> GameState:
     )
 
 
-# --- HandAction Serialization ---
-
-def hand_action_to_dict(action: HandAction) -> Dict[str, Any]:
-    """Convert a HandAction to a dictionary."""
-    return {
-        "player_name": action.player_name,
-        "action": action.action.name,
-        "amount": action.amount,
-    }
-
-
-def hand_action_from_dict(d: Dict[str, Any]) -> HandAction:
-    """Convert a dictionary to a HandAction."""
-    return HandAction(
-        player_name=d["player_name"],
-        action=PlayerAction[d["action"]],
-        amount=d.get("amount"),
-    )
-
-
-# --- PlayerInfo Serialization ---
-
-def player_info_to_dict(info: PlayerInfo) -> Dict[str, Any]:
-    """Convert a PlayerInfo to a dictionary."""
-    return {
-        "seat": info.seat,
-        "name": info.name,
-        "chips": info.chips,
-        "position": str(info.position),
-        "is_hero": info.is_hero,
-    }
-
-
-def player_info_from_dict(d: Dict[str, Any]) -> PlayerInfo:
-    """Convert a dictionary to a PlayerInfo."""
-    return PlayerInfo(
-        seat=d["seat"],
-        name=d["name"],
-        chips=d["chips"],
-        position=_position_from_str(d["position"]),
-        is_hero=d.get("is_hero", False),
-    )
-
-
-# --- HandHistory Serialization ---
-
-def hand_history_to_dict(hand: HandHistory) -> Dict[str, Any]:
-    """Convert a HandHistory to a dictionary."""
-    return {
-        "hand_id": hand.hand_id,
-        "table_name": hand.table_name,
-        "timestamp": hand.timestamp.isoformat(),
-        "small_blind": hand.small_blind,
-        "big_blind": hand.big_blind,
-        "players": [player_info_to_dict(p) for p in hand.players],
-        "button_seat": hand.button_seat,
-        "sb_seat": hand.sb_seat,
-        "bb_seat": hand.bb_seat,
-        "hero_cards": [card_to_dict(c) for c in hand.hero_cards],
-        "flop_cards": [card_to_dict(c) for c in hand.flop_cards],
-        "turn_card": card_to_dict(hand.turn_card) if hand.turn_card else None,
-        "river_card": card_to_dict(hand.river_card) if hand.river_card else None,
-        "preflop_actions": [hand_action_to_dict(a) for a in hand.preflop_actions],
-        "flop_actions": [hand_action_to_dict(a) for a in hand.flop_actions],
-        "turn_actions": [hand_action_to_dict(a) for a in hand.turn_actions],
-        "river_actions": [hand_action_to_dict(a) for a in hand.river_actions],
-        "pot": hand.pot,
-        "hero_went_all_in": hand.hero_went_all_in,
-        "hero_folded": hand.hero_folded,
-        "reached_showdown": hand.reached_showdown,
-        "uncalled_bet": hand.uncalled_bet,
-        "uncalled_bet_player": hand.uncalled_bet_player,
-    }
-
-
-def hand_history_from_dict(d: Dict[str, Any]) -> HandHistory:
-    """Convert a dictionary to a HandHistory."""
-    return HandHistory(
-        hand_id=d["hand_id"],
-        table_name=d.get("table_name", "Governor of Poker"),
-        timestamp=datetime.fromisoformat(d["timestamp"]) if d.get("timestamp") else datetime.now(),
-        small_blind=d.get("small_blind", 10),
-        big_blind=d.get("big_blind", 20),
-        players=[player_info_from_dict(p) for p in d.get("players", [])],
-        button_seat=d.get("button_seat", 0),
-        sb_seat=d.get("sb_seat", 0),
-        bb_seat=d.get("bb_seat", 0),
-        hero_cards=[card_from_dict(c) for c in d.get("hero_cards", [])],
-        flop_cards=[card_from_dict(c) for c in d.get("flop_cards", [])],
-        turn_card=card_from_dict(d["turn_card"]) if d.get("turn_card") else None,
-        river_card=card_from_dict(d["river_card"]) if d.get("river_card") else None,
-        preflop_actions=[hand_action_from_dict(a) for a in d.get("preflop_actions", [])],
-        flop_actions=[hand_action_from_dict(a) for a in d.get("flop_actions", [])],
-        turn_actions=[hand_action_from_dict(a) for a in d.get("turn_actions", [])],
-        river_actions=[hand_action_from_dict(a) for a in d.get("river_actions", [])],
-        pot=d.get("pot", 0),
-        hero_went_all_in=d.get("hero_went_all_in", False),
-        hero_folded=d.get("hero_folded", False),
-        reached_showdown=d.get("reached_showdown", False),
-        uncalled_bet=d.get("uncalled_bet", 0),
-        uncalled_bet_player=d.get("uncalled_bet_player"),
-    )
-
-
 # --- File I/O ---
 
 def save_game_states(states: List[GameState], path: Union[str, Path]) -> None:
@@ -275,39 +169,3 @@ def load_game_states(path: Union[str, Path]) -> List[GameState]:
         raise ValueError(f"Invalid file type: expected 'game_states', got '{data.get('type')}'")
 
     return [game_state_from_dict(s) for s in data.get("states", [])]
-
-
-def save_hand_history(hand: HandHistory, path: Union[str, Path]) -> None:
-    """
-    Save a HandHistory object to a JSON file.
-
-    Args:
-        hand: HandHistory object to save.
-        path: Output file path.
-    """
-    data = {
-        "version": 1,
-        "type": "hand_history",
-        "hand": hand_history_to_dict(hand),
-    }
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-def load_hand_history(path: Union[str, Path]) -> HandHistory:
-    """
-    Load a HandHistory object from a JSON file.
-
-    Args:
-        path: Input file path.
-
-    Returns:
-        HandHistory object.
-    """
-    with open(path) as f:
-        data = json.load(f)
-
-    if data.get("type") != "hand_history":
-        raise ValueError(f"Invalid file type: expected 'hand_history', got '{data.get('type')}'")
-
-    return hand_history_from_dict(data["hand"])

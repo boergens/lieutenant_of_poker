@@ -16,6 +16,4 @@ Hero is dealt: [Ad 8s]
   kevin4637565 raises to $1040
 
 --- RESULT ---
-Opponent folded
-kevin4637565 gets back uncalled bet of $1040
 Final pot: $160

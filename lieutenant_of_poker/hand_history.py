@@ -253,7 +253,11 @@ class HandReconstructor:
                         chip_change = (prev_p.chips or 0) - (curr_p.chips or 0)
                         if chip_change > 0:
                             player = pos_to_player[pos]
-                            action_type = PlayerAction.RAISE if chip_change > current_bet else PlayerAction.CALL
+                            if chip_change > current_bet:
+                                # First aggressive action on street is a BET, subsequent is RAISE
+                                action_type = PlayerAction.BET if current_bet == 0 else PlayerAction.RAISE
+                            else:
+                                action_type = PlayerAction.CALL
                             if chip_change > current_bet:
                                 current_bet = chip_change
 
