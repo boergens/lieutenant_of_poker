@@ -368,9 +368,9 @@ def cmd_analyze(args):
         from lieutenant_of_poker.name_detector import detect_player_names
         print("Detecting player names...", file=sys.stderr)
         with VideoFrameExtractor(args.video) as extractor:
-            frame = extractor.get_frame_at_ms(start_ms)
-            if frame is not None:
-                player_names = detect_player_names(frame)
+            frame_info = extractor.get_frame_at_timestamp(start_ms)
+            if frame_info is not None:
+                player_names = detect_player_names(frame_info.image)
                 detected = {k.name: v for k, v in player_names.items() if v}
                 if detected:
                     print(f"  Detected: {detected}", file=sys.stderr)
@@ -424,9 +424,9 @@ def cmd_export(args):
         from lieutenant_of_poker.name_detector import detect_player_names
         print("Detecting player names...", file=sys.stderr)
         with VideoFrameExtractor(args.video) as extractor:
-            frame = extractor.get_frame_at_ms(start_ms)
-            if frame is not None:
-                player_names = detect_player_names(frame)
+            frame_info = extractor.get_frame_at_timestamp(start_ms)
+            if frame_info is not None:
+                player_names = detect_player_names(frame_info.image)
                 detected = {k.name: v for k, v in player_names.items() if v}
                 if detected:
                     print(f"  Detected: {detected}", file=sys.stderr)
@@ -482,9 +482,9 @@ def cmd_info(args):
         from lieutenant_of_poker.name_detector import detect_player_names
         print("  Players:")
         with VideoFrameExtractor(args.video) as extractor:
-            frame = extractor.get_frame_at_ms(0)
-            if frame is not None:
-                names = detect_player_names(frame)
+            frame_info = extractor.get_frame_at_timestamp(0)
+            if frame_info is not None:
+                names = detect_player_names(frame_info.image)
                 for pos, name in names.items():
                     display = name if name else "(not detected)"
                     print(f"    {pos.name}: {display}")
