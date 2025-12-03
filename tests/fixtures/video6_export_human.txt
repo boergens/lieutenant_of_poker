@@ -1,3 +1,4 @@
+
 Stakes: $40/$80
 Table: Governor of Poker
 
@@ -12,9 +13,10 @@ kevin4637565 is dealt: [Ad 8s]
 
 --- PREFLOP ---
   Victor calls $40
-  kevin4637565 raises to $1040
+  kevin4637565 unknown action
   Victor folds
 
 --- RESULT ---
 Opponents folded
 Final pot: $1200
+

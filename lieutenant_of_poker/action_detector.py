@@ -18,6 +18,7 @@ class PlayerAction(Enum):
     RAISE = auto()
     BET = auto()
     ALL_IN = auto()
+    UNCALLED_BET = auto()
     UNKNOWN = auto()
 
 

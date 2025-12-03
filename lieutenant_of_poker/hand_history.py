@@ -61,6 +61,10 @@ class HandHistory:
     opponents_folded: bool = False
     reached_showdown: bool = False
 
+    # Winner info
+    winner: Optional[str] = None
+    payout: int = 0
+
 
 def reconstruct_hand(
     states: List[GameState],
@@ -293,6 +297,28 @@ def reconstruct_hand(
     hero_player_name = players[-1]
     hand.reached_showdown = len(players_active) > 1
     hand.opponents_folded = len(players_active) == 1 and hero_player_name in players_active
+
+    # Convert last raise/bet to UNCALLED_BET when opponents folded and set winner
+    if hand.opponents_folded:
+        hand.winner = hero_player_name
+        uncalled_amount = 0
+        all_action_lists = [
+            hand.river_actions,
+            hand.turn_actions,
+            hand.flop_actions,
+            hand.preflop_actions,
+        ]
+        for action_list in all_action_lists:
+            for i in range(len(action_list) - 1, -1, -1):
+                a = action_list[i]
+                if a.action in (PlayerAction.BET, PlayerAction.RAISE):
+                    uncalled_amount = a.amount or 0
+                    action_list[i] = HandAction(a.player_name, PlayerAction.UNCALLED_BET, a.amount)
+                    break
+            else:
+                continue
+            break
+        hand.payout = hand.pot - uncalled_amount
 
     return hand
 
