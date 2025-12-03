@@ -1,0 +1,40 @@
+GameStart
+PokerClient: ExportFormat
+Date: 03/12/2025
+TimeZone: GMT
+Time: 11:24:51
+GameId:81589721
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 20
+BigBlindStake: 40
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 3
+MyPlayerName: kevin4637565
+DealerPosition: 1
+Seat 0 Risa 9100
+Seat 1 player202010 2980
+Seat 2 kevin4637565 2920
+SmallBlind: kevin4637565 20
+BigBlind: Risa 40
+Dealt Cards: [8h9s]
+Move: player202010 call_check 40
+Move: kevin4637565 call_check 20
+Move: Risa call_check 0
+FLOP Community Cards:[Ks 4h Tc]
+Move: kevin4637565 call_check 0
+Move: Risa call_check 0
+Move: player202010 call_check 0
+TURN Community Cards:[Ks 4h Tc 8c]
+Move: kevin4637565 raise_bet 120
+Move: Risa folds 0
+Move: player202010 call_check 120
+RIVER Community Cards:[Ks 4h Tc 8c 5h]
+Move: kevin4637565 call_check 0
+Move: player202010 raise_bet 360
+Move: kevin4637565 folds 0
+uncalled_bet: player202010 360
+Winner: player202010 360.00
+GameEnd
+

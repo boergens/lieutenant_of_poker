@@ -1,12 +1,16 @@
 """
 Regression tests for hand history export.
 
-These tests use saved game states with first-frame detection from the video
-to test the snowie export pipeline. This ensures the same behavior as the CLI.
+Tests auto-discover fixtures in tests/fixtures/ directory.
+Each fixture consists of:
+  - {n}.mp4 - video file
+  - video{n}_states.json - saved game states
+  - video{n}_export_snowie.txt - expected snowie output
+  - video{n}_config.json (optional) - showdown config for deterministic output
 """
 
+import json
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
@@ -18,163 +22,82 @@ from lieutenant_of_poker.game_simulator import ShowdownConfig
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Showdown configs extracted from fixture files (deterministic, no RNG)
-# force_winner is used for legacy fixtures where opponent cards don't match poker evaluation
-SHOWDOWN_CONFIGS = {
-    1: (ShowdownConfig(
-        opponent_cards={"Nav": ["Ah", "6d"], "Luvdeniseouly": ["7c", "9c"]},
-        # Nav has two pair (aces and sixes), beats hero's pair of aces
-    ), "00000000"),
-    2: (ShowdownConfig(
-        opponent_cards={},  # No showdown - fold winner
-    ), "00000000"),
-    3: (ShowdownConfig(
-        opponent_cards={"player699561": ["Ks", "Qd"]},  # Victor folded
-        force_winner="player699561",
-    ), "65917772"),
-    4: (ShowdownConfig(
-        opponent_cards={},  # No showdown - fold winner
-    ), "65917772"),
-    5: (ShowdownConfig(
-        opponent_cards={"Victor": ["5d", "6s"]},
-    ), "65917772"),
-    6: (ShowdownConfig(
-        opponent_cards={},  # No showdown - fold winner
-    ), "65917772"),
-    7: (ShowdownConfig(
-        opponent_cards={"Victor": ["5c", "6d"]},
-        force_winner="Victor",
-    ), "65917772"),
-}
+
+def discover_fixtures():
+    """Find all fixture numbers that have complete test files."""
+    fixtures = []
+    for video in sorted(FIXTURES_DIR.glob("*.mp4")):
+        if not video.stem.isdigit():
+            continue
+        num = int(video.stem)
+        states = FIXTURES_DIR / f"video{num}_states.json"
+        snowie = FIXTURES_DIR / f"video{num}_export_snowie.txt"
+        if states.exists() and snowie.exists():
+            fixtures.append(num)
+    return fixtures
+
+
+def load_showdown_config(num: int):
+    """Load showdown config from JSON file if it exists."""
+    config_path = FIXTURES_DIR / f"video{num}_config.json"
+    if not config_path.exists():
+        return None, None
+
+    data = json.loads(config_path.read_text())
+    showdown = ShowdownConfig(
+        opponent_cards=data.get("opponent_cards", {}),
+        force_winner=data.get("force_winner"),
+    )
+    hand_id = data.get("hand_id")
+    return showdown, hand_id
 
 
 def normalize_snowie_export(text: str) -> str:
-    """
-    Normalize snowie export text for comparison.
-
-    Removes/normalizes lines that change between runs:
-    - Timestamps/dates
-    """
+    """Normalize snowie export text for comparison (remove timestamps)."""
     lines = []
     for line in text.strip().split("\n"):
-        # Skip lines that contain timestamps or dates
-        if line.startswith("Date:"):
-            continue
-        if line.startswith("Time:"):
-            continue
-        if line.startswith("TimeZone:"):
+        if line.startswith(("Date:", "Time:", "TimeZone:")):
             continue
         lines.append(line)
     return "\n".join(lines)
 
 
-def run_snowie_export_test(video_num: int):
-    """Run snowie export test for a given video number."""
-    video_path = FIXTURES_DIR / f"{video_num}.mp4"
-    states_path = FIXTURES_DIR / f"video{video_num}_states.json"
-    fixture_path = FIXTURES_DIR / f"video{video_num}_export_snowie.txt"
+FIXTURE_NUMS = discover_fixtures()
 
-    if not video_path.exists():
-        pytest.skip(f"Video file {video_path} not found")
-    if not states_path.exists():
-        pytest.skip(f"States file {states_path} not found")
-    if not fixture_path.exists():
-        pytest.skip(f"Fixture file {fixture_path} not found")
 
-    # Detect first frame info (like CLI does)
+@pytest.mark.parametrize("num", FIXTURE_NUMS)
+def test_snowie_export(num):
+    """Test snowie export matches saved fixture."""
+    video_path = FIXTURES_DIR / f"{num}.mp4"
+    states_path = FIXTURES_DIR / f"video{num}_states.json"
+    fixture_path = FIXTURES_DIR / f"video{num}_export_snowie.txt"
+
+    # Detect first frame info
     first = detect_from_video(str(video_path))
     button_pos = first.button_index if first.button_index is not None else 0
     player_names = first.player_names
 
-    # Load states and generate export with deterministic showdown config
+    # Load states and config
     states = load_game_states(states_path)
-    showdown, hand_id = SHOWDOWN_CONFIGS.get(video_num, (None, None))
-    actual = export_snowie(states, button_pos=button_pos, player_names=player_names, showdown=showdown, hand_id=hand_id)
+    showdown, hand_id = load_showdown_config(num)
 
-    # Load expected output
+    # Generate and compare
+    actual = export_snowie(states, button_pos=button_pos, player_names=player_names,
+                           showdown=showdown, hand_id=hand_id)
     expected = fixture_path.read_text()
 
-    # Normalize both
     actual = normalize_snowie_export(actual)
     expected = normalize_snowie_export(expected)
 
     if actual != expected:
-        # Show diff for debugging
         actual_lines = actual.split("\n")
         expected_lines = expected.split("\n")
-
         diff_lines = []
-        max_lines = max(len(actual_lines), len(expected_lines))
-        for i in range(max_lines):
-            actual_line = actual_lines[i] if i < len(actual_lines) else "<missing>"
-            expected_line = expected_lines[i] if i < len(expected_lines) else "<missing>"
-            if actual_line != expected_line:
+        for i in range(max(len(actual_lines), len(expected_lines))):
+            a = actual_lines[i] if i < len(actual_lines) else "<missing>"
+            e = expected_lines[i] if i < len(expected_lines) else "<missing>"
+            if a != e:
                 diff_lines.append(f"Line {i+1}:")
-                diff_lines.append(f"  expected: {expected_line}")
-                diff_lines.append(f"  actual:   {actual_line}")
-
+                diff_lines.append(f"  expected: {e}")
+                diff_lines.append(f"  actual:   {a}")
         pytest.fail(f"Export mismatch:\n" + "\n".join(diff_lines[:30]))
-
-
-class TestSnowieExportRegression:
-    """Regression tests that compare snowie export output against saved fixtures."""
-
-    def test_video1_snowie_export(self):
-        """Video 1 snowie export matches fixture (5-way all-in preflop, showdown on turn)."""
-        run_snowie_export_test(1)
-
-    def test_video2_snowie_export(self):
-        """Video 2 snowie export matches fixture (simple preflop folds)."""
-        run_snowie_export_test(2)
-
-    def test_video3_snowie_export(self):
-        """Video 3 snowie export matches fixture (all-in call, uncalled bet)."""
-        run_snowie_export_test(3)
-
-    def test_video4_snowie_export(self):
-        """Video 4 snowie export matches fixture (hero folds to river bet)."""
-        run_snowie_export_test(4)
-
-    def test_video5_snowie_export(self):
-        """Video 5 snowie export matches fixture."""
-        run_snowie_export_test(5)
-
-    def test_video6_snowie_export(self):
-        """Video 6 snowie export matches fixture."""
-        run_snowie_export_test(6)
-
-    def test_video7_snowie_export(self):
-        """Video 7 snowie export matches fixture."""
-        run_snowie_export_test(7)
-
-
-class TestSnowieFixturesExist:
-    """Tests that snowie export fixtures exist."""
-
-    def test_video1_fixtures_exist(self):
-        assert (FIXTURES_DIR / "video1_states.json").exists()
-        assert (FIXTURES_DIR / "video1_export_snowie.txt").exists()
-
-    def test_video2_fixtures_exist(self):
-        assert (FIXTURES_DIR / "video2_states.json").exists()
-        assert (FIXTURES_DIR / "video2_export_snowie.txt").exists()
-
-    def test_video3_fixtures_exist(self):
-        assert (FIXTURES_DIR / "video3_states.json").exists()
-        assert (FIXTURES_DIR / "video3_export_snowie.txt").exists()
-
-    def test_video4_fixtures_exist(self):
-        assert (FIXTURES_DIR / "video4_states.json").exists()
-        assert (FIXTURES_DIR / "video4_export_snowie.txt").exists()
-
-    def test_video5_fixtures_exist(self):
-        assert (FIXTURES_DIR / "video5_states.json").exists()
-        assert (FIXTURES_DIR / "video5_export_snowie.txt").exists()
-
-    def test_video6_fixtures_exist(self):
-        assert (FIXTURES_DIR / "video6_states.json").exists()
-        assert (FIXTURES_DIR / "video6_export_snowie.txt").exists()
-
-    def test_video7_fixtures_exist(self):
-        assert (FIXTURES_DIR / "video7_states.json").exists()
-        assert (FIXTURES_DIR / "video7_export_snowie.txt").exists()

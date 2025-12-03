@@ -292,12 +292,12 @@ def reconstruct_hand(
 
     # BB option: if action limped to BB preflop, BB gets option to check/raise
     # Count BB's voluntary actions (exclude the forced blind post which is first 2 actions)
-    bb_in_hand = bb_name in players_in_hand
     bb_voluntary_actions = [
         a for a in hand.actions[Street.PREFLOP][2:]  # Skip SB and BB blind posts
         if a.player_name == bb_name
     ]
-    if bb_in_hand and not bb_voluntary_actions and hand.flop_cards:
+    bb_folded_preflop = any(a.action == PlayerAction.FOLD for a in bb_voluntary_actions)
+    if not bb_folded_preflop and not bb_voluntary_actions and hand.flop_cards:
         hand.actions[Street.PREFLOP].append(HandAction(bb_name, PlayerAction.CHECK, 0))
 
     # Calculate uncalled bet BEFORE removing synthetic blinds
