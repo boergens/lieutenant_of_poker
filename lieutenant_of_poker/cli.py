@@ -23,6 +23,7 @@ from lieutenant_of_poker.progress import create_progress
 from lieutenant_of_poker import __version__
 from lieutenant_of_poker.snowie_export import export_snowie
 from lieutenant_of_poker.pokerstars_export import export_pokerstars
+from lieutenant_of_poker.human_export import export_human
 
 
 def main():
@@ -81,7 +82,7 @@ def main():
     )
     export_parser.add_argument("video", help="Path to video file")
     export_parser.add_argument(
-        "--format", "-f", default="snowie", choices=["pokerstars", "snowie"],
+        "--format", "-f", default="snowie", choices=["pokerstars", "snowie", "human"],
         help="Output format (default: snowie)"
     )
     export_parser.add_argument(
@@ -453,6 +454,8 @@ def cmd_export(args):
     # Export based on format
     if args.format == "snowie":
         output = export_snowie(states, button_pos=args.button, player_names=player_names)
+    elif args.format == "human":
+        output = export_human(states, button_pos=args.button, player_names=player_names)
     else:  # pokerstars
         output = export_pokerstars(states, button_pos=args.button, player_names=player_names)
         if not output:
