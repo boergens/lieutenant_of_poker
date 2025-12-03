@@ -276,6 +276,10 @@ class TableRegionDetector:
         """Extract the chip count region for a player (position 0-4)."""
         return self._player_regions[position].name_chip_box.extract(frame)
 
+    def get_player_chip_region(self, position: int) -> Region:
+        """Get the chip region for a player (position 0-4)."""
+        return self._player_regions[position].name_chip_box
+
     def draw_regions(self, frame: np.ndarray, include_players: bool = True) -> np.ndarray:
         """
         Draw all regions on a frame for debugging/visualization.

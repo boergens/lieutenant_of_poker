@@ -11,6 +11,7 @@ from typing import Optional, Callable, List, TypeVar
 
 from .frame_extractor import VideoFrameExtractor
 from .game_state import GameStateExtractor, GameState, PlayerState
+from .first_frame import FirstFrameInfo, ActivePlayer, detect_first_frame_majority
 
 T = TypeVar("T")
 
@@ -217,7 +218,9 @@ def analyze_video(
 
     states = []
     initial_states = []  # Collect first N frames for majority voting
+    initial_images = []  # Collect frame images for first_frame detection
     pending_change_buffer = []  # Buffer for valid frames proposing a state change
+    players: Optional[List[ActivePlayer]] = None  # Set after first_frame detection
 
     with VideoFrameExtractor(video_path) as video:
         start_ms = config.start_ms
@@ -234,21 +237,37 @@ def analyze_video(
             # Set OCR debug context for this frame
             set_ocr_debug_context(video_path, frame_info.timestamp_ms)
 
-            state = extractor.extract(
-                frame_info.image,
-                frame_number=frame_info.frame_number,
-                timestamp_ms=frame_info.timestamp_ms,
-            )
-
-
-            # Pool first N frames for majority voting to establish initial state
+            # Pool first N frames for first_frame detection and initial state
             if current_frame < initial_frames:
-                initial_states.append(state)
-                # When we have enough frames, compute consolidated initial state
-                if len(initial_states) == initial_frames:
+                initial_images.append(frame_info.image)
+
+                # When we have enough frames, detect active players and compute initial state
+                if len(initial_images) == initial_frames:
+                    # Detect active players from initial frames
+                    first_frame_info = detect_first_frame_majority(initial_images)
+                    players = first_frame_info.players
+
+                    # Now extract states with players known
+                    for i, img in enumerate(initial_images):
+                        state = extractor.extract(
+                            img,
+                            frame_number=start_frame + i,
+                            timestamp_ms=start_ms + i * (1000 / video.fps),
+                            players=players,
+                        )
+                        initial_states.append(state)
+
                     consolidated = compute_initial_state(initial_states)
                     states.append(consolidated)
             else:
+                # Extract state for this frame with players
+                state = extractor.extract(
+                    frame_info.image,
+                    frame_number=frame_info.frame_number,
+                    timestamp_ms=frame_info.timestamp_ms,
+                    players=players,
+                )
+
                 # First check: frame must have all values (no None in critical fields)
                 if not is_complete_frame(state):
                     # Invalid frame - discard completely, reset pending buffer
@@ -317,7 +336,23 @@ def analyze_video(
                 )
 
         # Handle edge case: video has fewer frames than initial_frames
-        if initial_states and not states:
+        if initial_images and not states:
+            # Detect active players from what we have
+            first_frame_info = detect_first_frame_majority(
+                initial_images, min_valid_frames=min(3, len(initial_images))
+            )
+            players = first_frame_info.players
+
+            # Extract states with players
+            for i, img in enumerate(initial_images):
+                state = extractor.extract(
+                    img,
+                    frame_number=start_frame + i,
+                    timestamp_ms=start_ms + i * (1000 / video.fps),
+                    players=players,
+                )
+                initial_states.append(state)
+
             consolidated = compute_initial_state(initial_states)
             states.append(consolidated)
 

@@ -172,3 +172,25 @@ def extract_player_chips(
     result = _ocr_region(chip_region, category="player")
     cache.put(chip_region, result)
     return result
+
+
+def ocr_chip_region(chip_region: np.ndarray, player_index: int) -> Optional[int]:
+    """
+    OCR a chip region image directly.
+
+    Args:
+        chip_region: BGR image of the chip/money display area.
+        player_index: Player index for caching (0..n-1).
+
+    Returns:
+        Chip count as integer, or None if not detected.
+    """
+    cache = _get_player_cache(player_index)
+
+    found, cached = cache.get(chip_region)
+    if found:
+        return cached
+
+    result = _ocr_region(chip_region, category="player")
+    cache.put(chip_region, result)
+    return result

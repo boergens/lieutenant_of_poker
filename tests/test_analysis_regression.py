@@ -15,7 +15,7 @@ from lieutenant_of_poker.serialization import load_game_states, game_state_to_di
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-VIDEOS_DIR = Path(__file__).parent.parent  # Videos are in project root
+VIDEOS_DIR = FIXTURES_DIR  # Videos are stored alongside fixtures
 
 
 def states_match(actual_states, expected_states, tolerance_ms=100):
@@ -67,7 +67,7 @@ def states_match(actual_states, expected_states, tolerance_ms=100):
                 expected_chips = expected.players[pos].chips
                 if actual_chips != expected_chips:
                     differences.append(
-                        f"State {i}: {pos.name} chips {actual_chips} != {expected_chips}"
+                        f"State {i}: Player {pos} chips {actual_chips} != {expected_chips}"
                     )
 
     return len(differences) == 0, differences
@@ -124,9 +124,9 @@ class TestAnalysisRegression:
         """Video 4 analysis matches fixture."""
         self._run_regression(4)
 
-    def test_video6_regression(self):
-        """Video 6 analysis matches fixture."""
-        self._run_regression(6)
+    def test_video5_regression(self):
+        """Video 5 analysis matches fixture."""
+        self._run_regression(5)
 
 
 class TestFixturesValid:
@@ -164,9 +164,9 @@ class TestFixturesValid:
         states = load_game_states(fixture_path)
         assert len(states) > 0
 
-    def test_video6_fixture_loads(self):
-        """Video 6 fixture loads successfully."""
-        fixture_path = FIXTURES_DIR / "video6_states.json"
+    def test_video5_fixture_loads(self):
+        """Video 5 fixture loads successfully."""
+        fixture_path = FIXTURES_DIR / "video5_states.json"
         if not fixture_path.exists():
             pytest.skip("Fixture not found")
         states = load_game_states(fixture_path)

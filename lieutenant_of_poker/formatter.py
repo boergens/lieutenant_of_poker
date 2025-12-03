@@ -4,25 +4,33 @@ Output formatting for game state analysis.
 
 from typing import Dict, List, Optional
 from .game_state import GameState
-from .table_regions import seat_name
 
 
 def format_changes(
     states: List[GameState],
     verbose: bool = False,
     player_names: Optional[Dict[int, str]] = None,
+    num_players: Optional[int] = None,
 ) -> str:
     """Format states as first frame info + list of changes.
 
     Args:
         states: List of game states to format.
         verbose: If True, show [X] prefix on rejected states.
-        player_names: Optional mapping of seat indices to detected player names.
+        player_names: Optional mapping of player index to detected player name.
+        num_players: Number of players (hero is always last). If None, inferred from states.
     """
+    # Infer number of players from first state if not provided
+    if num_players is None and states:
+        num_players = len(states[0].players)
+    hero_index = num_players - 1 if num_players else None
+
     def get_name(pos: int) -> str:
         if player_names and pos in player_names and player_names[pos]:
             return player_names[pos]
-        return seat_name(pos)
+        if hero_index is not None and pos == hero_index:
+            return "Hero"
+        return f"Player {pos}"
     if not states:
         return "No frames analyzed."
 
