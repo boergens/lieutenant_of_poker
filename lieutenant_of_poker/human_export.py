@@ -1,11 +1,13 @@
 """Export hand history in human-readable format."""
 
 import io
+import random
 from typing import Dict, List, Optional
 
 from .hand_history import HandHistory, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
+from .game_simulator import RNG
 
 
 def export_human(
@@ -13,9 +15,13 @@ def export_human(
     hero_name: str = "hero",
     button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
+    rng: Optional[RNG] = None,
 ) -> str:
     """Export GameStates to human-readable format. Auto-detects button if not specified."""
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
+    if rng is None:
+        rng = random
+    hand_id = str(rng.randint(10000000, 99999999))
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos, hand_id=hand_id)
     if not hand:
         return "No hand data."
     return HumanExporter(hero_name).export(hand)

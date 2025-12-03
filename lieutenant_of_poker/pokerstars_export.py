@@ -1,11 +1,13 @@
 """Export hand history to PokerStars format."""
 
 import io
+import random
 from typing import Dict, List, Optional
 
 from .hand_history import HandHistory, HandAction, HandReconstructor, PlayerInfo
 from .game_state import GameState
 from .action_detector import PlayerAction
+from .game_simulator import RNG
 
 
 def export_pokerstars(
@@ -13,9 +15,13 @@ def export_pokerstars(
     hero_name: str = "hero",
     button_pos: int = 0,
     player_names: Optional[Dict[int, str]] = None,
+    rng: Optional[RNG] = None,
 ) -> str:
     """Export GameStates to PokerStars format."""
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
+    if rng is None:
+        rng = random
+    hand_id = str(rng.randint(10000000, 99999999))
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos, hand_id=hand_id)
     if not hand:
         return ""
     return PokerStarsExporter(hero_name).export(hand)

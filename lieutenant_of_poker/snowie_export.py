@@ -1,12 +1,13 @@
 """Export hand history to PokerSnowie format."""
 
 import io
+import random
 from typing import Dict, List, Optional, TextIO
 
 from .hand_history import HandHistory, HandAction, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
-from .game_simulator import simulate_hand_completion
+from .game_simulator import simulate_hand_completion, RNG
 
 
 def export_snowie(
@@ -14,19 +15,25 @@ def export_snowie(
     hero_name: str = "hero",
     button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
+    rng: Optional[RNG] = None,
 ) -> str:
     """Export GameStates to Snowie format. Auto-detects button if not specified."""
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
+    if rng is None:
+        rng = random
+    # Generate hand_id from rng
+    hand_id = str(rng.randint(10000000, 99999999))
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos, hand_id=hand_id)
     if not hand:
         return ""
-    return SnowieExporter(hero_name).export(hand)
+    return SnowieExporter(hero_name, rng).export(hand)
 
 
 class SnowieExporter:
     """Exports HandHistory to Snowie/Freezeout format."""
 
-    def __init__(self, hero_name: str = "hero"):
+    def __init__(self, hero_name: str = "hero", rng: RNG = random):
         self.hero_name = hero_name
+        self.rng = rng
 
     def export(self, hand: HandHistory) -> str:
         output = io.StringIO()
@@ -174,7 +181,7 @@ class SnowieExporter:
                     f.write(f"Move: {p.name} call_check {hand.big_blind}\n")
 
         hero_cards = [c.short_name for c in hand.hero_cards] if hand.hero_cards else []
-        sim = simulate_hand_completion(hero_cards, community, [p.name for p in opponents], hand.pot)
+        sim = simulate_hand_completion(hero_cards, community, [p.name for p in opponents], hand.pot, self.rng)
 
         if not has_flop:
             f.write(f"FLOP Community Cards:[{' '.join(sim.flop)}]\n")
@@ -209,7 +216,7 @@ class SnowieExporter:
             community.append(hand.river_card.short_name)
 
         hero_cards = [c.short_name for c in hand.hero_cards] if hand.hero_cards else []
-        sim = simulate_hand_completion(hero_cards, community, [p.name for p in opponents], hand.pot)
+        sim = simulate_hand_completion(hero_cards, community, [p.name for p in opponents], hand.pot, self.rng)
 
         # Write showdown for hero
         if hand.hero_cards:

@@ -11,7 +11,10 @@ to produce valid output for analysis tools. This includes:
 
 import random
 from dataclasses import dataclass
-from typing import List, Set, Tuple, Optional
+from typing import List, Set, Tuple, Optional, Union
+
+# Type alias for RNG - either the random module or a Random instance
+RNG = Union[random.Random, type(random)]
 
 # All 52 cards in the deck
 RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
@@ -48,6 +51,7 @@ def get_used_cards(
 def deal_remaining_community(
     current_community: List[str],
     used_cards: Set[str],
+    rng: RNG = random,
 ) -> Tuple[List[str], str, str, Set[str]]:
     """
     Deal remaining community cards to complete through river.
@@ -56,7 +60,7 @@ def deal_remaining_community(
         (flop, turn, river, updated_used_cards)
     """
     available = [c for c in FULL_DECK if c not in used_cards]
-    random.shuffle(available)
+    rng.shuffle(available)
 
     flop = list(current_community[:3]) if len(current_community) >= 3 else []
     turn = current_community[3] if len(current_community) >= 4 else ""
@@ -88,6 +92,7 @@ def deal_remaining_community(
 def deal_opponent_hands(
     opponent_names: List[str],
     used_cards: Set[str],
+    rng: RNG = random,
 ) -> Tuple[dict, Set[str]]:
     """
     Deal hole cards to all opponents.
@@ -96,7 +101,7 @@ def deal_opponent_hands(
         (opponent_hands dict, updated_used_cards)
     """
     available = [c for c in FULL_DECK if c not in used_cards]
-    random.shuffle(available)
+    rng.shuffle(available)
 
     opponent_hands = {}
     idx = 0
@@ -158,6 +163,7 @@ def simulate_hand_completion(
     community_cards: List[str],
     active_opponents: List[str],
     pot: int,
+    rng: RNG = random,
 ) -> SimulatedHand:
     """
     Simulate the completion of a hand after hero folds.
@@ -167,6 +173,7 @@ def simulate_hand_completion(
         community_cards: Current community cards (may be incomplete)
         active_opponents: List of opponent names still in the hand
         pot: Current pot size
+        rng: Random number generator (default: random module)
 
     Returns:
         SimulatedHand with all simulated data
@@ -176,12 +183,12 @@ def simulate_hand_completion(
 
     # Deal remaining community cards
     flop, turn, river, used_cards = deal_remaining_community(
-        community_cards, used_cards
+        community_cards, used_cards, rng
     )
 
     # Deal opponent hands
     opponent_hands, used_cards = deal_opponent_hands(
-        active_opponents, used_cards
+        active_opponents, used_cards, rng
     )
 
     # Pick a winner

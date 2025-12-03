@@ -5,6 +5,7 @@ These tests use saved game states with first-frame detection from the video
 to test the export pipeline. This ensures the same behavior as the CLI.
 """
 
+import random
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,9 @@ from lieutenant_of_poker.first_frame import detect_from_video
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
+# Fixed seed for deterministic test output
+TEST_SEED = 12345
+
 
 def normalize_snowie_export(text: str) -> str:
     """
@@ -24,9 +28,6 @@ def normalize_snowie_export(text: str) -> str:
 
     Removes/normalizes lines that change between runs:
     - Timestamps/dates
-    - GameId (generated from timestamp hash)
-    - Showdown lines for opponents (cards are simulated)
-    - Community cards (simulated for hands that fold preflop)
     """
     lines = []
     for line in text.strip().split("\n"):
@@ -37,19 +38,6 @@ def normalize_snowie_export(text: str) -> str:
             continue
         if line.startswith("TimeZone:"):
             continue
-        # Skip GameId (generated from timestamp hash)
-        if line.startswith("GameId:"):
-            continue
-        # Skip opponent showdown lines (cards are simulated)
-        if line.startswith("Showdown:") and "hero" not in line.lower():
-            continue
-        # Skip community card lines (simulated for hands that fold preflop)
-        if line.startswith("FLOP Community Cards:"):
-            continue
-        if line.startswith("TURN Community Cards:"):
-            continue
-        if line.startswith("RIVER Community Cards:"):
-            continue
         lines.append(line)
     return "\n".join(lines)
 
@@ -58,17 +46,9 @@ def normalize_human_export(text: str) -> str:
     """
     Normalize human export text for comparison.
 
-    Removes/normalizes lines that change between runs:
-    - Hand ID (generated from timestamp hash)
+    No normalization needed when using seeded RNG.
     """
-    lines = []
-    for line in text.strip().split("\n"):
-        # Normalize Hand ID line
-        if line.startswith("=== Hand #"):
-            lines.append("=== Hand #XXXXX ===")
-            continue
-        lines.append(line)
-    return "\n".join(lines)
+    return text.strip()
 
 
 class TestExportRegression:
@@ -92,9 +72,10 @@ class TestExportRegression:
         button_pos = first.button_index if first.button_index is not None else 0
         player_names = first.player_names
 
-        # Load states and generate export
+        # Load states and generate export with seeded RNG
         states = load_game_states(states_path)
-        actual = export_snowie(states, button_pos=button_pos, player_names=player_names)
+        rng = random.Random(TEST_SEED)
+        actual = export_snowie(states, button_pos=button_pos, player_names=player_names, rng=rng)
 
         # Load expected output
         expected = fixture_path.read_text()
@@ -138,14 +119,15 @@ class TestExportRegression:
         button_pos = first.button_index if first.button_index is not None else 0
         player_names = first.player_names
 
-        # Load states and generate export
+        # Load states and generate export with seeded RNG
         states = load_game_states(states_path)
-        actual = export_human(states, button_pos=button_pos, player_names=player_names)
+        rng = random.Random(TEST_SEED)
+        actual = export_human(states, button_pos=button_pos, player_names=player_names, rng=rng)
 
         # Load expected output
         expected = fixture_path.read_text()
 
-        # Compare (normalized to ignore hand ID differences)
+        # Compare
         actual_normalized = normalize_human_export(actual)
         expected_normalized = normalize_human_export(expected)
 

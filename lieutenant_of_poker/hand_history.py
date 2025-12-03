@@ -117,7 +117,12 @@ class HandReconstructor:
         self.hero_name = hero_name
         self.player_names = player_names or {}
 
-    def reconstruct(self, states: List[GameState], button_pos: Optional[int] = None) -> Optional[HandHistory]:
+    def reconstruct(
+        self,
+        states: List[GameState],
+        button_pos: Optional[int] = None,
+        hand_id: Optional[str] = None,
+    ) -> Optional[HandHistory]:
         if not states:
             return None
 
@@ -139,8 +144,12 @@ class HandReconstructor:
         new_button = orig_to_new.get(button_pos, 0)
         sb_seat, bb_seat = _calculate_blind_positions(new_button, len(players))
 
+        # Use provided hand_id or generate from timestamp
+        if hand_id is None:
+            hand_id = str(abs(hash(str(initial.timestamp_ms))) % 100000000)
+
         hand = HandHistory(
-            hand_id=str(abs(hash(str(initial.timestamp_ms))) % 100000000),
+            hand_id=hand_id,
             small_blind=small_blind,
             big_blind=big_blind,
             players=players,
@@ -251,7 +260,11 @@ class HandReconstructor:
                             action = HandAction(player.name, action_type, chip_change)
                             self._add_action(hand, current_street, action)
 
-                            last_aggressor, last_bet, last_bet_street = player, chip_change, current_street
+                            if action_type in (PlayerAction.RAISE, PlayerAction.BET):
+                                last_aggressor, last_bet, last_bet_street = player, chip_change, current_street
+                            else:
+                                # A call matches the bet, so there's no uncalled bet
+                                last_aggressor, last_bet = None, 0
 
                             if player.is_hero and (curr_p.chips or 0) == 0:
                                 hand.hero_went_all_in = True
