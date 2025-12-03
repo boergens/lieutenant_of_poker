@@ -3,9 +3,9 @@ Command line interface for Lieutenant of Poker.
 
 Usage:
     lieutenant record [--fps=<n>] [--display=<n>] [--hotkey=<key>]
-    lieutenant analyze <video> [--interval=<ms>]
+    lieutenant analyze <video>
     lieutenant monitor [--window=<title>] [--fps=<n>] [--fullscreen]
-    lieutenant extract-frames <video> [--output-dir=<dir>] [--interval=<ms>]
+    lieutenant extract-frames <video> [--output-dir=<dir>]
     lieutenant export <video> [--format=<fmt>] [--output=<file>]
     lieutenant info <video>
     lieutenant --help
@@ -39,14 +39,11 @@ def main():
 
     # extract-frames command
     extract_parser = subparsers.add_parser(
-        "extract-frames", help="Extract frames from a video file"
+        "extract-frames", help="Extract all frames from a video file"
     )
     extract_parser.add_argument("video", help="Path to video file")
     extract_parser.add_argument(
         "--output-dir", "-o", default="frames", help="Output directory (default: frames)"
-    )
-    extract_parser.add_argument(
-        "--interval", "-i", type=int, default=1000, help="Interval between frames in ms (default: 1000)"
     )
     extract_parser.add_argument(
         "--format", "-f", default="jpg", choices=["jpg", "png"], help="Output format (default: jpg)"
@@ -60,12 +57,9 @@ def main():
 
     # analyze command
     analyze_parser = subparsers.add_parser(
-        "analyze", help="Analyze video and extract game states"
+        "analyze", help="Analyze video and extract game states (every frame)"
     )
     analyze_parser.add_argument("video", help="Path to video file")
-    analyze_parser.add_argument(
-        "--interval", "-i", type=int, default=1000, help="Interval between frames in ms (default: 1000)"
-    )
     analyze_parser.add_argument(
         "--start", "-s", type=float, default=0, help="Start timestamp in seconds (default: 0)"
     )
@@ -79,7 +73,7 @@ def main():
 
     # export command
     export_parser = subparsers.add_parser(
-        "export", help="Export hand histories from video"
+        "export", help="Export hand histories from video (analyzes every frame)"
     )
     export_parser.add_argument("video", help="Path to video file")
     export_parser.add_argument(
@@ -88,9 +82,6 @@ def main():
     )
     export_parser.add_argument(
         "--output", "-o", default=None, help="Output file (default: stdout)"
-    )
-    export_parser.add_argument(
-        "--interval", "-i", type=int, default=100, help="Analysis interval in ms (default: 100)"
     )
     export_parser.add_argument(
         "--start", "-s", type=float, default=0, help="Start timestamp in seconds (default: 0)"
@@ -307,7 +298,7 @@ def main():
 
 
 def cmd_extract_frames(args):
-    """Extract frames from video."""
+    """Extract all frames from video."""
     from lieutenant_of_poker.frame_extractor import extract_frames, get_video_info
 
     output_dir = Path(args.output_dir)
@@ -315,12 +306,16 @@ def cmd_extract_frames(args):
 
     start_ms = args.start * 1000
     end_ms = args.end * 1000 if args.end else info['duration_seconds'] * 1000
-    total_frames = int((end_ms - start_ms) / args.interval) + 1
 
-    print(f"Extracting frames from {args.video}", file=sys.stderr)
+    # Calculate total frames based on video fps
+    start_frame = int(start_ms * info['fps'] / 1000)
+    end_frame = int(end_ms * info['fps'] / 1000) if args.end else info['frame_count']
+    total_frames = end_frame - start_frame
+
+    print(f"Extracting all frames from {args.video}", file=sys.stderr)
     print(f"  Duration: {info['duration_seconds']:.1f}s", file=sys.stderr)
-    print(f"  Interval: {args.interval}ms", file=sys.stderr)
-    print(f"  Expected frames: {total_frames}", file=sys.stderr)
+    print(f"  FPS: {info['fps']:.1f}", file=sys.stderr)
+    print(f"  Total frames: {total_frames:,}", file=sys.stderr)
     print(f"  Output: {output_dir}/", file=sys.stderr)
 
     with create_progress() as progress:
@@ -332,28 +327,30 @@ def cmd_extract_frames(args):
         count = extract_frames(
             args.video,
             output_dir,
-            interval_ms=args.interval,
             format=args.format,
             start_ms=start_ms,
             end_ms=end_ms if args.end else None,
             on_progress=on_progress,
         )
 
-    print(f"Done! Extracted {count} frames to {output_dir}/", file=sys.stderr)
+    print(f"Done! Extracted {count:,} frames to {output_dir}/", file=sys.stderr)
 
 
 def cmd_analyze(args):
-    """Analyze video and output game states."""
+    """Analyze video and output game states (every frame)."""
     from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
     from lieutenant_of_poker.frame_extractor import get_video_info
 
     info = get_video_info(args.video)
     start_ms = args.start * 1000
     end_ms = args.end * 1000 if args.end else info['duration_seconds'] * 1000
-    total_frames = int((end_ms - start_ms) / args.interval) + 1
+
+    # Calculate total frames based on video fps
+    start_frame = int(start_ms * info['fps'] / 1000)
+    end_frame = int(end_ms * info['fps'] / 1000) if args.end else info['frame_count']
+    total_frames = end_frame - start_frame
 
     config = AnalysisConfig(
-        interval_ms=args.interval,
         start_ms=start_ms,
         end_ms=end_ms if args.end else None,
     )
@@ -380,7 +377,7 @@ def cmd_analyze(args):
 
 
 def cmd_export(args):
-    """Export hand histories."""
+    """Export hand histories (analyzes every frame)."""
     from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
     from lieutenant_of_poker.frame_extractor import get_video_info
     from lieutenant_of_poker.snowie_export import export_snowie
@@ -388,10 +385,13 @@ def cmd_export(args):
     info = get_video_info(args.video)
     start_ms = args.start * 1000
     end_ms = args.end * 1000 if args.end else info['duration_seconds'] * 1000
-    total_frames = int((end_ms - start_ms) / args.interval) + 1
+
+    # Calculate total frames based on video fps
+    start_frame = int(start_ms * info['fps'] / 1000)
+    end_frame = int(end_ms * info['fps'] / 1000) if args.end else info['frame_count']
+    total_frames = end_frame - start_frame
 
     config = AnalysisConfig(
-        interval_ms=args.interval,
         start_ms=start_ms,
         end_ms=end_ms if args.end else None,
     )

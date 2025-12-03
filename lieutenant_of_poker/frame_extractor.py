@@ -1,7 +1,7 @@
 """
 Frame extraction utilities for video analysis.
 
-Provides tools to load video files and extract frames at configurable intervals.
+Provides tools to load video files and extract frames.
 """
 
 from dataclasses import dataclass
@@ -195,35 +195,6 @@ class VideoFrameExtractor:
             frames_since_yield = (frames_since_yield + 1) % step
             current += 1
 
-    def iterate_at_interval(
-        self,
-        interval_ms: float,
-        start_ms: float = 0,
-        end_ms: Optional[float] = None
-    ) -> Iterator[FrameInfo]:
-        """
-        Iterate through frames at a fixed time interval.
-
-        Args:
-            interval_ms: Time interval between frames in milliseconds.
-            start_ms: Start timestamp in milliseconds (default: 0).
-            end_ms: End timestamp in milliseconds (default: end of video).
-
-        Yields:
-            FrameInfo for each frame at the specified intervals.
-        """
-        if end_ms is None:
-            end_ms = self.duration_seconds * 1000
-
-        current_ms = start_ms
-        while current_ms < end_ms:
-            frame_info = self.get_frame_at_timestamp(current_ms)
-            if frame_info is None:
-                break
-
-            yield frame_info
-            current_ms += interval_ms
-
     def close(self) -> None:
         """Release video capture resources."""
         if self._cap is not None:
@@ -282,19 +253,17 @@ def extract_frame_to_file(
 def extract_frames(
     video_path: str,
     output_dir: Path,
-    interval_ms: int = 1000,
     format: str = "jpg",
     start_ms: float = 0,
     end_ms: Optional[float] = None,
     on_progress: Optional[Callable[[int, int], None]] = None,
 ) -> int:
     """
-    Extract frames from a video file to disk.
+    Extract all frames from a video file to disk.
 
     Args:
         video_path: Path to the video file.
         output_dir: Directory to save frames.
-        interval_ms: Interval between frames in milliseconds.
         format: Output format ('jpg' or 'png').
         start_ms: Start timestamp in milliseconds.
         end_ms: End timestamp in milliseconds (None = end of video).
@@ -307,12 +276,12 @@ def extract_frames(
     count = 0
 
     with VideoFrameExtractor(video_path) as video:
-        actual_end_ms = end_ms if end_ms else video.duration_seconds * 1000
-        total_frames = int((actual_end_ms - start_ms) / interval_ms) + 1
+        # Calculate frame range from timestamps
+        start_frame = int(start_ms * video.fps / 1000)
+        end_frame = int(end_ms * video.fps / 1000) if end_ms else video.frame_count
+        total_frames = end_frame - start_frame
 
-        for frame_info in video.iterate_at_interval(
-            interval_ms, start_ms, actual_end_ms if end_ms else None
-        ):
+        for frame_info in video.iterate_frames(start_frame, end_frame):
             timestamp_s = frame_info.timestamp_ms / 1000
             filename = f"frame_{timestamp_s:.2f}s.{format}"
             filepath = output_dir / filename

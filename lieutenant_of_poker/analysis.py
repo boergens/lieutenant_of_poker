@@ -163,7 +163,6 @@ def compute_initial_state(states: List[GameState]) -> GameState:
 class AnalysisConfig:
     """Configuration for video analysis."""
 
-    interval_ms: int = 1000
     start_ms: float = 0
     end_ms: Optional[float] = None
 
@@ -224,12 +223,14 @@ def analyze_video(
         start_ms = config.start_ms
         end_ms = config.end_ms if config.end_ms else video.duration_seconds * 1000
 
-        total_frames = int((end_ms - start_ms) / config.interval_ms) + 1
+        # Calculate frame range from timestamps
+        start_frame = int(start_ms * video.fps / 1000)
+        end_frame = int(end_ms * video.fps / 1000) if end_ms else video.frame_count
+
+        total_frames = end_frame - start_frame
         current_frame = 0
 
-        for frame_info in video.iterate_at_interval(
-            config.interval_ms, start_ms, end_ms if config.end_ms else None
-        ):
+        for frame_info in video.iterate_frames(start_frame, end_frame):
             # Set OCR debug context for this frame
             set_ocr_debug_context(video_path, frame_info.timestamp_ms)
 
