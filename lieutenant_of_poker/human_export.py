@@ -1,7 +1,7 @@
 """Export hand history in human-readable format."""
 
 import io
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from .hand_history import HandHistory, HandReconstructor
 from .game_state import GameState, Street
@@ -11,7 +11,7 @@ from .action_detector import PlayerAction
 def export_human(
     states: List[GameState],
     button_pos: Optional[int] = None,
-    player_names: Optional[Dict[int, str]] = None,
+    player_names: Optional[List[str]] = None,
 ) -> str:
     """Export GameStates to human-readable format. Auto-detects button if not specified."""
     hand = HandReconstructor(player_names).reconstruct(states, button_pos)

@@ -1,6 +1,6 @@
 """Export hand history as a simple chronological action log."""
 
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from .hand_history import HandHistory, HandReconstructor
 from .game_state import GameState, Street
@@ -10,7 +10,7 @@ from .action_detector import PlayerAction
 def export_action_log(
     states: List[GameState],
     button_pos: Optional[int] = None,
-    player_names: Optional[Dict[int, str]] = None,
+    player_names: Optional[List[str]] = None,
 ) -> str:
     """Export GameStates as a simple chronological action log."""
     hand = HandReconstructor(player_names).reconstruct(states, button_pos)

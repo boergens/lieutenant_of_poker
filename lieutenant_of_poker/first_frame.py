@@ -47,9 +47,9 @@ class FirstFrameInfo:
         return len(self.players) - 1 if self.players else None
 
     @property
-    def player_names(self) -> Dict[int, Optional[str]]:
-        """Dict of player index -> name."""
-        return {i: p.name for i, p in enumerate(self.players)}
+    def player_names(self) -> List[str]:
+        """Ordered list of player names."""
+        return [p.name or f"Player{i}" for i, p in enumerate(self.players)]
 
     def __str__(self) -> str:
         """Format first frame info for display."""
