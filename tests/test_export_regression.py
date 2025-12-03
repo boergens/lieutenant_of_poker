@@ -5,20 +5,45 @@ These tests use saved game states with first-frame detection from the video
 to test the snowie export pipeline. This ensures the same behavior as the CLI.
 """
 
-import random
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
 from lieutenant_of_poker.serialization import load_game_states
 from lieutenant_of_poker.snowie_export import export_snowie
 from lieutenant_of_poker.first_frame import detect_from_video
+from lieutenant_of_poker.game_simulator import ShowdownConfig
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Fixed seed for deterministic test output (used by snowie export for simulated cards)
-TEST_SEED = 12345
+# Showdown configs extracted from fixture files (deterministic, no RNG)
+# force_winner is used for legacy fixtures where opponent cards don't match poker evaluation
+SHOWDOWN_CONFIGS = {
+    3: ShowdownConfig(
+        hand_id="65917772",
+        opponent_cards={"Victor": ["9s", "2s"], "player699561": ["Ks", "Qd"]},
+        force_winner="player699561",
+    ),
+    4: ShowdownConfig(
+        hand_id="65917772",
+        opponent_cards={},  # No showdown - fold winner
+    ),
+    5: ShowdownConfig(
+        hand_id="65917772",
+        opponent_cards={"Victor": ["5d", "6s"]},
+    ),
+    6: ShowdownConfig(
+        hand_id="65917772",
+        opponent_cards={},  # No showdown - fold winner
+    ),
+    7: ShowdownConfig(
+        hand_id="65917772",
+        opponent_cards={"Victor": ["5c", "6d"]},
+        force_winner="Victor",
+    ),
+}
 
 
 def normalize_snowie_export(text: str) -> str:
@@ -59,10 +84,10 @@ def run_snowie_export_test(video_num: int):
     button_pos = first.button_index if first.button_index is not None else 0
     player_names = first.player_names
 
-    # Load states and generate export
+    # Load states and generate export with deterministic showdown config
     states = load_game_states(states_path)
-    rng = random.Random(TEST_SEED)
-    actual = export_snowie(states, button_pos=button_pos, player_names=player_names, rng=rng)
+    showdown = SHOWDOWN_CONFIGS.get(video_num)
+    actual = export_snowie(states, button_pos=button_pos, player_names=player_names, showdown=showdown)
 
     # Load expected output
     expected = fixture_path.read_text()

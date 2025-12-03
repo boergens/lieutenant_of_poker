@@ -1,36 +1,41 @@
 """Export hand history to PokerSnowie format."""
 
 import io
-import random
-from typing import Dict, List, Optional, TextIO
+from typing import List, Optional, TextIO
 
 from .hand_history import HandHistory, HandAction, HandReconstructor
 from .game_state import GameState, Street
 from .action_detector import PlayerAction
-from .game_simulator import simulate_hand_completion, RNG
+from .game_simulator import ShowdownConfig, pick_winner
 
 
 def export_snowie(
     states: List[GameState],
     button_pos: Optional[int] = None,
-    player_names: Optional[Dict[int, str]] = None,
-    rng: Optional[RNG] = None,
+    player_names: Optional[List[str]] = None,
+    showdown: Optional[ShowdownConfig] = None,
 ) -> str:
-    """Export GameStates to Snowie format. Auto-detects button if not specified."""
-    if rng is None:
-        rng = random
+    """Export GameStates to Snowie format.
+
+    Args:
+        states: Game states to export
+        button_pos: Button position (auto-detected if not specified)
+        player_names: List of player names
+        showdown: Showdown configuration with hand_id and opponent cards.
+                  Required for hands that reach showdown.
+    """
     hand = HandReconstructor(player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
-    hand_id = str(rng.randint(10000000, 99999999))
-    return SnowieExporter(rng).export(hand, hand_id)
+    hand_id = showdown.hand_id if showdown else "00000000"
+    return SnowieExporter(showdown).export(hand, hand_id)
 
 
 class SnowieExporter:
     """Exports HandHistory to Snowie/Freezeout format."""
 
-    def __init__(self, rng: RNG = random):
-        self.rng = rng
+    def __init__(self, showdown: Optional[ShowdownConfig] = None):
+        self.showdown = showdown
 
     def export(self, hand: HandHistory, hand_id: str) -> str:
         output = io.StringIO()
@@ -127,6 +132,8 @@ class SnowieExporter:
 
     def _write_showdown(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
         """Write showdown when hand reaches river with no fold."""
+        from .game_simulator import make_showdown_config
+
         community = []
         if hand.flop_cards:
             community = [c.short_name for c in hand.flop_cards]
@@ -136,14 +143,29 @@ class SnowieExporter:
             community.append(hand.river_card.short_name)
 
         hero_cards = [c.short_name for c in hand.hero_cards] if hand.hero_cards else []
-        sim = simulate_hand_completion(hero_cards, community, [p.name for p in opponents], hand.pot, self.rng)
+
+        # Generate showdown config if not provided
+        showdown = self.showdown
+        if not showdown or not showdown.opponent_cards:
+            opponent_names = [p.name for p in opponents]
+            showdown = make_showdown_config("00000000", hero_cards, community, opponent_names)
+
+        # Build all hands for winner determination (hero + opponents from config)
+        all_hands = dict(showdown.opponent_cards)
+        if hero_cards:
+            all_hands[hero_name] = hero_cards
 
         # Write showdown for hero
         if hand.hero_cards:
             f.write(f"Showdown: {hero_name} [{' '.join(hero_cards)}]\n")
 
-        # Write showdown for opponents (simulated cards)
-        for name, cards in sim.opponent_hands.items():
+        # Write showdown for opponents
+        for name, cards in showdown.opponent_cards.items():
             f.write(f"Showdown: {name} [{' '.join(cards)}]\n")
 
-        f.write(f"Winner: {sim.winner} {hand.pot:.2f}\n")
+        # Determine winner (use force_winner if set, otherwise evaluate hands)
+        if showdown.force_winner:
+            winner = showdown.force_winner
+        else:
+            winner, _ = pick_winner(all_hands, community)
+        f.write(f"Winner: {winner} {hand.pot:.2f}\n")

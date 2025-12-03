@@ -33,6 +33,18 @@ class SimulatedHand:
     winning_hand: List[str]  # winner's hole cards
 
 
+@dataclass
+class ShowdownConfig:
+    """Configuration for deterministic showdown output.
+
+    Used by export functions to produce deterministic output without RNG.
+    Winner is determined by evaluating the hands unless force_winner is set.
+    """
+    hand_id: str  # Game/hand ID for export header
+    opponent_cards: dict  # player_name -> [card1, card2]
+    force_winner: Optional[str] = None  # Override winner (for legacy fixtures)
+
+
 def get_used_cards(
     hero_cards: List[str],
     community_cards: List[str],
@@ -117,45 +129,115 @@ def deal_opponent_hands(
     return opponent_hands, used_cards
 
 
-def evaluate_hand_rank(hole_cards: List[str], community: List[str]) -> int:
-    """
-    Simple hand ranking for determining winner.
-    Higher number = better hand.
+def parse_card(card: str) -> Tuple[int, str]:
+    """Parse card string like 'Ah' into (rank_value, suit)."""
+    rank_str = card[:-1]
+    suit = card[-1]
+    rank_values = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
+                   '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
+    return rank_values.get(rank_str, 0), suit
 
-    This is a simplified evaluation - just picks a random rank
-    since we're fabricating the result anyway.
+
+def evaluate_hand_rank(hole_cards: List[str], community: List[str]) -> Tuple[int, List[int]]:
     """
-    # For simulation purposes, we just need a deterministic ranking
-    # Use hash of cards to get consistent but "random" ranking
-    all_cards = sorted(hole_cards + community)
-    return hash(tuple(all_cards)) % 1000000
+    Evaluate poker hand strength.
+
+    Returns:
+        Tuple of (hand_type, tiebreakers) where:
+        - hand_type: 0=high card, 1=pair, 2=two pair, 3=trips, 4=straight,
+                     5=flush, 6=full house, 7=quads, 8=straight flush
+        - tiebreakers: list of rank values for breaking ties
+    """
+    from itertools import combinations
+
+    all_cards = hole_cards + community
+    if len(all_cards) < 5:
+        return (0, [0])
+
+    best_hand = (0, [0])
+
+    # Try all 5-card combinations
+    for five_cards in combinations(all_cards, 5):
+        parsed = [parse_card(c) for c in five_cards]
+        ranks = sorted([r for r, s in parsed], reverse=True)
+        suits = [s for r, s in parsed]
+
+        # Check for flush
+        is_flush = len(set(suits)) == 1
+
+        # Check for straight
+        unique_ranks = sorted(set(ranks), reverse=True)
+        is_straight = False
+        straight_high = 0
+        if len(unique_ranks) == 5:
+            if unique_ranks[0] - unique_ranks[4] == 4:
+                is_straight = True
+                straight_high = unique_ranks[0]
+            # Ace-low straight (A-2-3-4-5)
+            elif unique_ranks == [14, 5, 4, 3, 2]:
+                is_straight = True
+                straight_high = 5
+
+        # Count rank frequencies
+        rank_counts = {}
+        for r in ranks:
+            rank_counts[r] = rank_counts.get(r, 0) + 1
+        counts = sorted(rank_counts.values(), reverse=True)
+        ranks_by_count = sorted(rank_counts.keys(), key=lambda r: (rank_counts[r], r), reverse=True)
+
+        # Determine hand type
+        if is_straight and is_flush:
+            hand = (8, [straight_high])
+        elif counts == [4, 1]:
+            hand = (7, ranks_by_count)
+        elif counts == [3, 2]:
+            hand = (6, ranks_by_count)
+        elif is_flush:
+            hand = (5, ranks)
+        elif is_straight:
+            hand = (4, [straight_high])
+        elif counts == [3, 1, 1]:
+            hand = (3, ranks_by_count)
+        elif counts == [2, 2, 1]:
+            hand = (2, ranks_by_count)
+        elif counts == [2, 1, 1, 1]:
+            hand = (1, ranks_by_count)
+        else:
+            hand = (0, ranks)
+
+        if hand > best_hand:
+            best_hand = hand
+
+    return best_hand
 
 
 def pick_winner(
-    opponent_hands: dict,
+    all_hands: dict,
     community: List[str],
 ) -> Tuple[str, List[str]]:
     """
-    Pick a winner from the opponents.
+    Pick a winner from all hands using poker hand evaluation.
+
+    Args:
+        all_hands: Dict of player_name -> [card1, card2]
+        community: List of community cards
 
     Returns:
         (winner_name, winner_hole_cards)
     """
-    if not opponent_hands:
-        raise ValueError("No opponents to pick winner from")
+    if not all_hands:
+        raise ValueError("No hands to evaluate")
 
-    # Just pick the first opponent as winner (or could randomize)
-    # In practice, we could implement real hand evaluation
     best_name = None
-    best_rank = -1
+    best_rank = (-1, [])
 
-    for name, hole_cards in opponent_hands.items():
+    for name, hole_cards in all_hands.items():
         rank = evaluate_hand_rank(hole_cards, community)
         if rank > best_rank:
             best_rank = rank
             best_name = name
 
-    return best_name, opponent_hands[best_name]
+    return best_name, all_hands[best_name]
 
 
 def simulate_hand_completion(
@@ -203,6 +285,23 @@ def simulate_hand_completion(
         winner=winner,
         winning_hand=winning_hand,
     )
+
+
+def make_showdown_config(
+    hand_id: str,
+    hero_cards: List[str],
+    community_cards: List[str],
+    opponent_names: List[str],
+    rng: RNG = random,
+) -> ShowdownConfig:
+    """
+    Generate a ShowdownConfig with random opponent cards.
+
+    For CLI use where deterministic output is not required.
+    """
+    used_cards = get_used_cards(hero_cards, community_cards)
+    opponent_hands, _ = deal_opponent_hands(opponent_names, used_cards, rng)
+    return ShowdownConfig(hand_id=hand_id, opponent_cards=opponent_hands)
 
 
 def format_showdown_lines(

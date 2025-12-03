@@ -70,21 +70,21 @@ class HandHistory:
 
 def reconstruct_hand(
     states: List[GameState],
-    player_names: Dict[int, str],
+    players: List[str],
     button_pos: int,
 ) -> Optional[HandHistory]:
     """Reconstruct a HandHistory from a sequence of GameState observations.
 
     Args:
         states: List of GameState objects representing the hand progression
-        player_names: Mapping of seat positions to player names (all active players)
+        players: Ordered list of player names by seat position
         button_pos: Button position (index into player list)
 
     Returns:
         HandHistory if reconstruction succeeds, None otherwise
 
     Note:
-        The hero is always the last player in the sorted player list.
+        The hero is always the last player in the list.
     """
     if not states:
         return None
@@ -96,8 +96,6 @@ def reconstruct_hand(
     small_blind = initial_pot // 3
     big_blind = small_blind * 2
 
-    # players: ordered list of names by seat position
-    players = [player_names[pos] for pos in sorted(player_names.keys())]
     num_players = len(players)
     if num_players == 0:
         return None
@@ -109,19 +107,16 @@ def reconstruct_hand(
         sb_idx = (button_pos + 1) % num_players
         bb_idx = (button_pos + 2) % num_players
 
-    # Build PlayerInfo list and position mapping
+    # Build PlayerInfo list
     # Add blinds back since initial state shows chips AFTER posting
     player_infos: List[PlayerInfo] = []
-    pos_to_name: Dict[int, str] = {}
-    for i, pos in enumerate(sorted(player_names.keys())):
-        name = player_names[pos]
-        chips = initial.players[pos].chips if pos in initial.players else 0
+    for i, name in enumerate(players):
+        chips = initial.players[i].chips if i in initial.players else 0
         if i == sb_idx:
             chips += small_blind
         elif i == bb_idx:
             chips += big_blind
-        player_infos.append(PlayerInfo(name, chips, pos))
-        pos_to_name[pos] = name
+        player_infos.append(PlayerInfo(name, chips, i))
 
     hand = HandHistory(
         small_blind=small_blind,
@@ -170,10 +165,10 @@ def reconstruct_hand(
         if pot_change > 0:
             for pos in state.players:
                 prev_p, curr_p = prev_state.players.get(pos), state.players.get(pos)
-                if prev_p and curr_p and pos in pos_to_name:
+                if prev_p and curr_p and pos < num_players:
                     chip_change = (prev_p.chips or 0) - (curr_p.chips or 0)
                     if chip_change > 0:
-                        name = pos_to_name[pos]
+                        name = players[pos]
                         if chip_change > current_bet:
                             action_type = PlayerAction.BET if current_bet == 0 else PlayerAction.RAISE
                         else:
@@ -350,9 +345,9 @@ class HandReconstructor:
 
     def __init__(
         self,
-        player_names: Optional[Dict[int, str]] = None,
+        player_names: Optional[List[str]] = None,
     ):
-        self.player_names = player_names or {}
+        self.player_names = player_names or []
 
     def reconstruct(
         self,
