@@ -50,3 +50,5 @@ Thumbs.db
 screenshots/
 output/
 **/unmatched/
+.beads/
+scripts/pylint_to_beads.py
