@@ -27,8 +27,15 @@ def debug_export(video_path: str, format: str = "actions"):
     states = analyze_video(video_path, config)
     print(f"  States: {len(states)}")
 
+    # Find hero cards from states
+    hero_cards = []
+    for state in states:
+        if state.hero_cards:
+            hero_cards = state.hero_cards
+            break
+
     # Reconstruct hand (this is where actions are built)
-    hand = reconstruct_hand(states, players, button_pos)
+    hand = reconstruct_hand(states, players, button_pos, hero_cards)
 
     # Export
     output = export_action_log(states, button_pos=button_pos, player_names=players)

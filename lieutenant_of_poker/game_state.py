@@ -36,7 +36,6 @@ class Street(Enum):
     FLOP = auto()
     TURN = auto()
     RIVER = auto()
-    SHOWDOWN = auto()
     UNKNOWN = auto()
 
 

@@ -54,23 +54,11 @@ class ValidationResult:
 # Valid community card counts and their corresponding streets
 VALID_COMMUNITY_COUNTS = {0, 3, 4, 5}
 
-# Street order for progression checking
-STREET_ORDER = [
-    Street.UNKNOWN,
-    Street.PREFLOP,
-    Street.FLOP,
-    Street.TURN,
-    Street.RIVER,
-    Street.SHOWDOWN,
-]
-
-
 def _get_street_index(street: Street) -> int:
     """Get the ordinal index of a street for comparison."""
-    try:
-        return STREET_ORDER.index(street)
-    except ValueError:
-        return 0  # Unknown streets treated as earliest
+    if street == Street.UNKNOWN:
+        return 0
+    return street.value
 
 
 def _cards_to_set(cards: List[Card]) -> Set[Tuple[str, str]]:
@@ -127,7 +115,7 @@ def _is_new_hand(prev: GameState, curr: GameState) -> bool:
     if len(prev.community_cards) > 0 and len(curr.community_cards) == 0:
         return True
 
-    # Street went from SHOWDOWN/RIVER back to PREFLOP - strong indicator
+    # Street went from RIVER back to PREFLOP - strong indicator
     prev_idx = _get_street_index(prev.street)
     curr_idx = _get_street_index(curr.street)
     if prev_idx >= _get_street_index(Street.RIVER) and curr_idx <= _get_street_index(Street.PREFLOP):
