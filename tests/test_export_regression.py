@@ -21,37 +21,30 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 # Showdown configs extracted from fixture files (deterministic, no RNG)
 # force_winner is used for legacy fixtures where opponent cards don't match poker evaluation
 SHOWDOWN_CONFIGS = {
-    1: ShowdownConfig(
-        hand_id="00000000",
+    1: (ShowdownConfig(
         opponent_cards={"Nav": ["Ah", "6d"], "Luvdeniseouly": ["7c", "9c"]},
         # Nav has two pair (aces and sixes), beats hero's pair of aces
-    ),
-    2: ShowdownConfig(
-        hand_id="00000000",
+    ), "00000000"),
+    2: (ShowdownConfig(
         opponent_cards={},  # No showdown - fold winner
-    ),
-    3: ShowdownConfig(
-        hand_id="65917772",
+    ), "00000000"),
+    3: (ShowdownConfig(
         opponent_cards={"player699561": ["Ks", "Qd"]},  # Victor folded
         force_winner="player699561",
-    ),
-    4: ShowdownConfig(
-        hand_id="65917772",
+    ), "65917772"),
+    4: (ShowdownConfig(
         opponent_cards={},  # No showdown - fold winner
-    ),
-    5: ShowdownConfig(
-        hand_id="65917772",
+    ), "65917772"),
+    5: (ShowdownConfig(
         opponent_cards={"Victor": ["5d", "6s"]},
-    ),
-    6: ShowdownConfig(
-        hand_id="65917772",
+    ), "65917772"),
+    6: (ShowdownConfig(
         opponent_cards={},  # No showdown - fold winner
-    ),
-    7: ShowdownConfig(
-        hand_id="65917772",
+    ), "65917772"),
+    7: (ShowdownConfig(
         opponent_cards={"Victor": ["5c", "6d"]},
         force_winner="Victor",
-    ),
+    ), "65917772"),
 }
 
 
@@ -95,8 +88,8 @@ def run_snowie_export_test(video_num: int):
 
     # Load states and generate export with deterministic showdown config
     states = load_game_states(states_path)
-    showdown = SHOWDOWN_CONFIGS.get(video_num)
-    actual = export_snowie(states, button_pos=button_pos, player_names=player_names, showdown=showdown)
+    showdown, hand_id = SHOWDOWN_CONFIGS.get(video_num, (None, None))
+    actual = export_snowie(states, button_pos=button_pos, player_names=player_names, showdown=showdown, hand_id=hand_id)
 
     # Load expected output
     expected = fixture_path.read_text()

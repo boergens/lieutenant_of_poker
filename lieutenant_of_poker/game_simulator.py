@@ -40,7 +40,6 @@ class ShowdownConfig:
     Used by export functions to produce deterministic output without RNG.
     Winner is determined by evaluating the hands unless force_winner is set.
     """
-    hand_id: str  # Game/hand ID for export header
     opponent_cards: dict  # player_name -> [card1, card2]
     force_winner: Optional[str] = None  # Override winner (for legacy fixtures)
 
@@ -288,7 +287,6 @@ def simulate_hand_completion(
 
 
 def make_showdown_config(
-    hand_id: str,
     hero_cards: List[str],
     community_cards: List[str],
     opponent_names: List[str],
@@ -301,7 +299,7 @@ def make_showdown_config(
     """
     used_cards = get_used_cards(hero_cards, community_cards)
     opponent_hands, _ = deal_opponent_hands(opponent_names, used_cards, rng)
-    return ShowdownConfig(hand_id=hand_id, opponent_cards=opponent_hands)
+    return ShowdownConfig(opponent_cards=opponent_hands)
 
 
 def format_showdown_lines(

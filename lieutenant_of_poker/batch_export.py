@@ -1,5 +1,6 @@
 """Batch export hand histories from a folder of videos."""
 
+import re
 import sys
 from pathlib import Path
 
@@ -13,6 +14,17 @@ from .action_log_export import export_action_log
 
 
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
+
+# Matches gop3_YYYYMMDD_HHMMSS format
+TIMESTAMP_PATTERN = re.compile(r'_(\d{8})_(\d{6})')
+
+
+def extract_hand_id(filename: str) -> str | None:
+    """Extract hand ID from filename like gop3_20251203_095609.mp4 -> 20251203095609."""
+    match = TIMESTAMP_PATTERN.search(filename)
+    if match:
+        return match.group(1) + match.group(2)
+    return None
 
 
 def batch_export(folder: Path, output_dir: Path, fmt: str, extension: str):
@@ -47,7 +59,8 @@ def batch_export(folder: Path, output_dir: Path, fmt: str, extension: str):
                 continue
 
             if fmt == "snowie":
-                output = export_snowie(states, button, names)
+                hand_id = extract_hand_id(video.name)
+                output = export_snowie(states, button, names, hand_id=hand_id)
             elif fmt == "human":
                 output = export_human(states, button, names)
             elif fmt == "actions":
