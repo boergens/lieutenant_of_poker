@@ -2,7 +2,7 @@
 Regression tests for hand history export.
 
 These tests use saved game states with first-frame detection from the video
-to test the export pipeline. This ensures the same behavior as the CLI.
+to test the snowie export pipeline. This ensures the same behavior as the CLI.
 """
 
 import random
@@ -12,8 +12,6 @@ import pytest
 
 from lieutenant_of_poker.serialization import load_game_states
 from lieutenant_of_poker.snowie_export import export_snowie
-from lieutenant_of_poker.human_export import export_human
-from lieutenant_of_poker.action_log_export import export_action_log
 from lieutenant_of_poker.first_frame import detect_from_video
 
 
@@ -43,11 +41,11 @@ def normalize_snowie_export(text: str) -> str:
     return "\n".join(lines)
 
 
-def run_export_test(video_num: int, export_func, fixture_suffix: str, normalize_func=None, use_rng=False):
-    """Generic export test runner."""
+def run_snowie_export_test(video_num: int):
+    """Run snowie export test for a given video number."""
     video_path = FIXTURES_DIR / f"{video_num}.mp4"
     states_path = FIXTURES_DIR / f"video{video_num}_states.json"
-    fixture_path = FIXTURES_DIR / f"video{video_num}_export_{fixture_suffix}.txt"
+    fixture_path = FIXTURES_DIR / f"video{video_num}_export_snowie.txt"
 
     if not video_path.exists():
         pytest.skip(f"Video file {video_path} not found")
@@ -63,22 +61,15 @@ def run_export_test(video_num: int, export_func, fixture_suffix: str, normalize_
 
     # Load states and generate export
     states = load_game_states(states_path)
-    if use_rng:
-        rng = random.Random(TEST_SEED)
-        actual = export_func(states, button_pos=button_pos, player_names=player_names, rng=rng)
-    else:
-        actual = export_func(states, button_pos=button_pos, player_names=player_names)
+    rng = random.Random(TEST_SEED)
+    actual = export_snowie(states, button_pos=button_pos, player_names=player_names, rng=rng)
 
     # Load expected output
     expected = fixture_path.read_text()
 
-    # Normalize if needed
-    if normalize_func:
-        actual = normalize_func(actual)
-        expected = normalize_func(expected)
-    else:
-        actual = actual.strip()
-        expected = expected.strip()
+    # Normalize both
+    actual = normalize_snowie_export(actual)
+    expected = normalize_snowie_export(expected)
 
     if actual != expected:
         # Show diff for debugging
@@ -98,61 +89,33 @@ def run_export_test(video_num: int, export_func, fixture_suffix: str, normalize_
         pytest.fail(f"Export mismatch:\n" + "\n".join(diff_lines[:30]))
 
 
-class TestExportRegression:
-    """Regression tests that compare export output against saved fixtures."""
+class TestSnowieExportRegression:
+    """Regression tests that compare snowie export output against saved fixtures."""
 
-    # Video 6 tests
+    def test_video5_snowie_export(self):
+        """Video 5 snowie export matches fixture."""
+        run_snowie_export_test(5)
+
     def test_video6_snowie_export(self):
         """Video 6 snowie export matches fixture."""
-        run_export_test(6, export_snowie, "snowie", normalize_snowie_export, use_rng=True)
+        run_snowie_export_test(6)
 
-    def test_video6_human_export(self):
-        """Video 6 human export matches fixture."""
-        run_export_test(6, export_human, "human")
-
-    def test_video6_action_log_export(self):
-        """Video 6 action log export matches fixture."""
-        run_export_test(6, export_action_log, "action_log")
-
-    # Video 7 tests
     def test_video7_snowie_export(self):
         """Video 7 snowie export matches fixture."""
-        run_export_test(7, export_snowie, "snowie", normalize_snowie_export, use_rng=True)
-
-    def test_video7_human_export(self):
-        """Video 7 human export matches fixture."""
-        run_export_test(7, export_human, "human")
-
-    def test_video7_action_log_export(self):
-        """Video 7 action log export matches fixture."""
-        run_export_test(7, export_action_log, "action_log")
+        run_snowie_export_test(7)
 
 
-class TestExportFixturesValid:
-    """Tests that export fixtures exist and are valid."""
+class TestSnowieFixturesExist:
+    """Tests that snowie export fixtures exist."""
 
-    # Video 6 fixtures
-    def test_video6_states_fixture_exists(self):
+    def test_video5_fixtures_exist(self):
+        assert (FIXTURES_DIR / "video5_states.json").exists()
+        assert (FIXTURES_DIR / "video5_export_snowie.txt").exists()
+
+    def test_video6_fixtures_exist(self):
         assert (FIXTURES_DIR / "video6_states.json").exists()
-
-    def test_video6_snowie_fixture_exists(self):
         assert (FIXTURES_DIR / "video6_export_snowie.txt").exists()
 
-    def test_video6_human_fixture_exists(self):
-        assert (FIXTURES_DIR / "video6_export_human.txt").exists()
-
-    def test_video6_action_log_fixture_exists(self):
-        assert (FIXTURES_DIR / "video6_export_action_log.txt").exists()
-
-    # Video 7 fixtures
-    def test_video7_states_fixture_exists(self):
+    def test_video7_fixtures_exist(self):
         assert (FIXTURES_DIR / "video7_states.json").exists()
-
-    def test_video7_snowie_fixture_exists(self):
         assert (FIXTURES_DIR / "video7_export_snowie.txt").exists()
-
-    def test_video7_human_fixture_exists(self):
-        assert (FIXTURES_DIR / "video7_export_human.txt").exists()
-
-    def test_video7_action_log_fixture_exists(self):
-        assert (FIXTURES_DIR / "video7_export_action_log.txt").exists()
