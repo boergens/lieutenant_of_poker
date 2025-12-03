@@ -32,6 +32,9 @@ from lieutenant_of_poker.chip_ocr import (
     extract_pot,
     extract_player_chips,
 )
+from lieutenant_of_poker.name_detector import (
+    detect_player_names,
+)
 from lieutenant_of_poker.action_detector import (
     PlayerAction,
     DetectedAction,
@@ -72,6 +75,8 @@ __all__ = [
     # Chip OCR
     "extract_pot",
     "extract_player_chips",
+    # Name detection
+    "detect_player_names",
     # Action types
     "PlayerAction",
     "DetectedAction",
