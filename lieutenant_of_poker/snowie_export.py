@@ -14,6 +14,7 @@ def export_snowie(
     button_pos: Optional[int] = None,
     player_names: Optional[List[str]] = None,
     showdown: Optional[ShowdownConfig] = None,
+    hand_id: Optional[str] = None,
 ) -> str:
     """Export GameStates to Snowie format.
 
@@ -21,15 +22,15 @@ def export_snowie(
         states: Game states to export
         button_pos: Button position (auto-detected if not specified)
         player_names: List of player names
-        showdown: Showdown configuration with hand_id and opponent cards.
-                  Required for hands that reach showdown.
+        showdown: Showdown configuration with opponent cards for deterministic output.
+        hand_id: Optional hand ID (random 8-digit number if not provided)
     """
     hand = HandReconstructor(player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
     import random
-    hand_id = showdown.hand_id if showdown else str(random.randint(10000000, 99999999))
-    return SnowieExporter(showdown).export(hand, hand_id)
+    hid = hand_id or str(random.randint(10000000, 99999999))
+    return SnowieExporter(showdown).export(hand, hid)
 
 
 class SnowieExporter:
@@ -159,7 +160,7 @@ class SnowieExporter:
         showdown = self.showdown
         if not showdown or not showdown.opponent_cards:
             opponent_names = [p.name for p in active_opponents]
-            showdown = make_showdown_config("00000000", hero_cards, community, opponent_names)
+            showdown = make_showdown_config(hero_cards, community, opponent_names)
 
         # Filter to only active opponents
         active_opponent_cards = {
