@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Optional, Dict
 
 from .game_state import GameState, Street
-from .table_regions import PlayerPosition
+from .table_regions import NUM_PLAYERS, HERO, seat_name
 from .action_detector import PlayerAction
 from .card_detector import Card
 
@@ -22,12 +22,12 @@ from .card_detector import Card
 class ActionEvent:
     """A recorded player action."""
     timestamp_ms: float
-    position: PlayerPosition
+    position: int  # Seat index 0-4
     action: PlayerAction
     amount: Optional[int] = None
 
     def __str__(self) -> str:
-        name = self.position.name
+        name = seat_name(self.position)
         if self.amount:
             return f"{name}: {self.action.name} ${self.amount:,}"
         return f"{name}: {self.action.name}"
@@ -52,14 +52,14 @@ class HandRecord:
 
     # Results
     final_pot: Optional[int] = None
-    winner: Optional[PlayerPosition] = None
+    winner: Optional[int] = None  # Seat index 0-4
 
-    # Player chip counts at start
-    starting_chips: Dict[PlayerPosition, int] = field(default_factory=dict)
+    # Player chip counts at start (keyed by seat index)
+    starting_chips: Dict[int, int] = field(default_factory=dict)
 
     # Blinds (deduced from action order and pot)
-    small_blind_pos: Optional[PlayerPosition] = None
-    big_blind_pos: Optional[PlayerPosition] = None
+    small_blind_pos: Optional[int] = None  # Seat index 0-4
+    big_blind_pos: Optional[int] = None    # Seat index 0-4
     small_blind_amount: Optional[int] = None
     big_blind_amount: Optional[int] = None
     initial_pot: Optional[int] = None
@@ -79,10 +79,10 @@ class HandRecord:
         lines = [f"=== Hand #{self.hand_number} ==="]
 
         # Show blinds info
-        if self.small_blind_pos and self.big_blind_pos:
+        if self.small_blind_pos is not None and self.big_blind_pos is not None:
             sb_amt = f"${self.small_blind_amount:,}" if self.small_blind_amount else "SB"
             bb_amt = f"${self.big_blind_amount:,}" if self.big_blind_amount else "BB"
-            lines.append(f"Blinds: {self.small_blind_pos.name} ({sb_amt}) / {self.big_blind_pos.name} ({bb_amt})")
+            lines.append(f"Blinds: {seat_name(self.small_blind_pos)} ({sb_amt}) / {seat_name(self.big_blind_pos)} ({bb_amt})")
 
         if self.hero_cards:
             cards = " ".join(str(c) for c in self.hero_cards)
@@ -106,8 +106,8 @@ class HandRecord:
         if self.final_pot:
             lines.append(f"Pot: ${self.final_pot:,}")
 
-        if self.winner:
-            lines.append(f"Winner: {self.winner.name}")
+        if self.winner is not None:
+            lines.append(f"Winner: {seat_name(self.winner)}")
 
         return "\n".join(lines)
 
@@ -131,13 +131,8 @@ class GameLog:
         return "\n".join(lines)
 
 
-_POSITION_ORDER = [
-    PlayerPosition.SEAT_1,
-    PlayerPosition.SEAT_2,
-    PlayerPosition.SEAT_3,
-    PlayerPosition.SEAT_4,
-    PlayerPosition.HERO,
-]
+# Position order for blind deduction (seat indices 0-4)
+_POSITION_ORDER = list(range(NUM_PLAYERS))
 
 
 def _deduce_blinds(hand: HandRecord) -> None:
@@ -215,8 +210,8 @@ def assemble_game_log(states: List[GameState], source: str = "") -> GameLog:
     last_community_count = 0
     first_pot_seen: Optional[int] = None
 
-    # Chip tracking for action deduction
-    last_chips: Dict[PlayerPosition, Optional[int]] = {}
+    # Chip tracking for action deduction (keyed by seat index)
+    last_chips: Dict[int, Optional[int]] = {}
     last_pot: Optional[int] = None
     current_street_bet: int = 0  # Current bet amount to call this street
     players_acted_this_street: set = set()

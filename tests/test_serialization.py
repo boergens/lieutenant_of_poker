@@ -29,7 +29,7 @@ from lieutenant_of_poker.game_state import GameState, PlayerState, Street
 from lieutenant_of_poker.hand_history import HandHistory, HandAction, PlayerInfo
 from lieutenant_of_poker.card_detector import Card, Rank, Suit
 from lieutenant_of_poker.action_detector import PlayerAction, DetectedAction
-from lieutenant_of_poker.table_regions import PlayerPosition
+from lieutenant_of_poker.table_regions import HERO
 
 
 class TestCardSerialization:
@@ -73,18 +73,18 @@ class TestPlayerStateSerialization:
 
     def test_player_state_minimal(self):
         """PlayerState with minimal fields roundtrips."""
-        state = PlayerState(position=PlayerPosition.HERO)
+        state = PlayerState(position=HERO)
         d = player_state_to_dict(state)
         restored = player_state_from_dict(d)
 
-        assert restored.position == PlayerPosition.HERO
+        assert restored.position == HERO
         assert restored.chips is None
         assert restored.cards == []
 
     def test_player_state_full(self):
         """PlayerState with all fields roundtrips."""
         state = PlayerState(
-            position=PlayerPosition.SEAT_1,
+            position=0,  # Seat 0
             name="Player1",
             chips=1000,
             cards=[Card(Rank.ACE, Suit.HEARTS), Card(Rank.KING, Suit.HEARTS)],
@@ -95,7 +95,7 @@ class TestPlayerStateSerialization:
         d = player_state_to_dict(state)
         restored = player_state_from_dict(d)
 
-        assert restored.position == PlayerPosition.SEAT_1
+        assert restored.position == 0
         assert restored.name == "Player1"
         assert restored.chips == 1000
         assert len(restored.cards) == 2
@@ -129,12 +129,12 @@ class TestGameStateSerialization:
             frame_number=100,
             timestamp_ms=5000.0,
         )
-        state.players[PlayerPosition.HERO] = PlayerState(
-            position=PlayerPosition.HERO,
+        state.players[HERO] = PlayerState(
+            position=HERO,
             chips=1940,
         )
-        state.players[PlayerPosition.SEAT_1] = PlayerState(
-            position=PlayerPosition.SEAT_1,
+        state.players[0] = PlayerState(
+            position=0,
             chips=2000,
         )
 
@@ -228,7 +228,7 @@ class TestPlayerInfoSerialization:
             seat=0,
             name="hero",
             chips=2000,
-            position=PlayerPosition.HERO,
+            position=HERO,
             is_hero=True,
         )
         d = player_info_to_dict(info)
@@ -237,7 +237,7 @@ class TestPlayerInfoSerialization:
         assert restored.seat == 0
         assert restored.name == "hero"
         assert restored.chips == 2000
-        assert restored.position == PlayerPosition.HERO
+        assert restored.position == HERO
         assert restored.is_hero is True
 
 
@@ -249,8 +249,8 @@ class TestHandHistorySerialization:
         hand = HandHistory(
             hand_id="12345",
             players=[
-                PlayerInfo(0, "hero", 2000, PlayerPosition.HERO, True),
-                PlayerInfo(1, "villain", 2000, PlayerPosition.SEAT_1, False),
+                PlayerInfo(0, "hero", 2000, HERO, True),
+                PlayerInfo(1, "villain", 2000, 0, False),
             ],
         )
 
@@ -269,8 +269,8 @@ class TestHandHistorySerialization:
             small_blind=10,
             big_blind=20,
             players=[
-                PlayerInfo(0, "hero", 2000, PlayerPosition.HERO, True),
-                PlayerInfo(1, "villain", 1500, PlayerPosition.SEAT_1, False),
+                PlayerInfo(0, "hero", 2000, HERO, True),
+                PlayerInfo(1, "villain", 1500, 0, False),
             ],
             button_seat=0,
             sb_seat=0,
@@ -361,8 +361,8 @@ class TestFileIO:
         hand = HandHistory(
             hand_id="test123",
             players=[
-                PlayerInfo(0, "hero", 2000, PlayerPosition.HERO, True),
-                PlayerInfo(1, "villain", 1500, PlayerPosition.SEAT_1, False),
+                PlayerInfo(0, "hero", 2000, HERO, True),
+                PlayerInfo(1, "villain", 1500, 0, False),
             ],
             hero_cards=[Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.SPADES)],
             pot=300,

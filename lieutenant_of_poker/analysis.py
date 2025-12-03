@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from typing import Optional, Callable, List, TypeVar
 
 from .frame_extractor import VideoFrameExtractor
-from .game_state import GameStateExtractor, GameState, PlayerPosition, PlayerState
+from .game_state import GameStateExtractor, GameState, PlayerState
 
 T = TypeVar("T")
 

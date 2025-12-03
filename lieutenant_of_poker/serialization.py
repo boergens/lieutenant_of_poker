@@ -13,7 +13,24 @@ from lieutenant_of_poker.game_state import GameState, PlayerState, Street
 from lieutenant_of_poker.hand_history import HandHistory, HandAction, PlayerInfo
 from lieutenant_of_poker.card_detector import Card, Rank, Suit
 from lieutenant_of_poker.action_detector import PlayerAction, DetectedAction
-from lieutenant_of_poker.table_regions import PlayerPosition
+from lieutenant_of_poker.table_regions import HERO
+
+
+# Mapping from old enum names to new seat indices for backwards compatibility
+_OLD_POSITION_NAMES = {
+    "SEAT_1": 0,
+    "SEAT_2": 1,
+    "SEAT_3": 2,
+    "SEAT_4": 3,
+    "HERO": HERO,
+}
+
+
+def _position_from_str(s: str) -> int:
+    """Convert position string to seat index. Handles old enum names and new int strings."""
+    if s in _OLD_POSITION_NAMES:
+        return _OLD_POSITION_NAMES[s]
+    return int(s)
 
 
 # --- Card Serialization ---
@@ -58,7 +75,7 @@ def detected_action_from_dict(d: Dict[str, Any]) -> DetectedAction:
 def player_state_to_dict(state: PlayerState) -> Dict[str, Any]:
     """Convert a PlayerState to a dictionary."""
     return {
-        "position": state.position.name,
+        "position": str(state.position),
         "name": state.name,
         "chips": state.chips,
         "cards": [card_to_dict(c) for c in state.cards],
@@ -71,7 +88,7 @@ def player_state_to_dict(state: PlayerState) -> Dict[str, Any]:
 def player_state_from_dict(d: Dict[str, Any]) -> PlayerState:
     """Convert a dictionary to a PlayerState."""
     return PlayerState(
-        position=PlayerPosition[d["position"]],
+        position=_position_from_str(d["position"]),
         name=d.get("name"),
         chips=d.get("chips"),
         cards=[card_from_dict(c) for c in d.get("cards", [])],
@@ -90,7 +107,7 @@ def game_state_to_dict(state: GameState) -> Dict[str, Any]:
         "hero_cards": [card_to_dict(c) for c in state.hero_cards],
         "pot": state.pot,
         "hero_chips": state.hero_chips,
-        "players": {pos.name: player_state_to_dict(ps) for pos, ps in state.players.items()},
+        "players": {str(pos): player_state_to_dict(ps) for pos, ps in state.players.items()},
         "street": state.street.name,
         "frame_number": state.frame_number,
         "timestamp_ms": state.timestamp_ms,
@@ -102,7 +119,7 @@ def game_state_from_dict(d: Dict[str, Any]) -> GameState:
     """Convert a dictionary to a GameState."""
     players = {}
     for pos_name, ps_dict in d.get("players", {}).items():
-        pos = PlayerPosition[pos_name]
+        pos = _position_from_str(pos_name)
         players[pos] = player_state_from_dict(ps_dict)
 
     return GameState(
@@ -146,7 +163,7 @@ def player_info_to_dict(info: PlayerInfo) -> Dict[str, Any]:
         "seat": info.seat,
         "name": info.name,
         "chips": info.chips,
-        "position": info.position.name,
+        "position": str(info.position),
         "is_hero": info.is_hero,
     }
 
@@ -157,7 +174,7 @@ def player_info_from_dict(d: Dict[str, Any]) -> PlayerInfo:
         seat=d["seat"],
         name=d["name"],
         chips=d["chips"],
-        position=PlayerPosition[d["position"]],
+        position=_position_from_str(d["position"]),
         is_hero=d.get("is_hero", False),
     )
 

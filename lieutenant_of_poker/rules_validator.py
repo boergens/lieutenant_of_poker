@@ -11,7 +11,7 @@ from typing import List, Optional, Set, Tuple
 
 from .game_state import GameState, Street, PlayerState
 from .card_detector import Card
-from .table_regions import PlayerPosition
+from .table_regions import HERO, seat_name
 
 
 class ViolationType(Enum):
@@ -102,7 +102,7 @@ def is_complete_frame(state: GameState) -> bool:
     # Check that at least one non-hero player has chips (not all empty seats)
     has_active_player = False
     for player in state.players.values():
-        if player.position == PlayerPosition.HERO:
+        if player.position == HERO:
             continue
         if player.chips is not None:
             has_active_player = True
@@ -331,7 +331,7 @@ def _validate_chip_changes(prev: GameState, curr: GameState) -> List[Violation]:
             # Chips increased - always invalid (we don't track wins)
             violations.append(Violation(
                 violation_type=ViolationType.CHIPS_INCREASED_WITHOUT_WIN,
-                message=f"Player {pos.name} chips increased by {chip_change}",
+                message=f"Player {seat_name(pos)} chips increased by {chip_change}",
                 previous_value=str(prev_chips),
                 current_value=str(curr_chips),
             ))
@@ -341,7 +341,7 @@ def _validate_chip_changes(prev: GameState, curr: GameState) -> List[Violation]:
             if pot_change < chip_decrease * 0.5:
                 violations.append(Violation(
                     violation_type=ViolationType.CHIPS_DECREASED_WITHOUT_POT_INCREASE,
-                    message=f"Player {pos.name} chips decreased by {chip_decrease} but pot only increased by {pot_change}",
+                    message=f"Player {seat_name(pos)} chips decreased by {chip_decrease} but pot only increased by {pot_change}",
                     previous_value=str(prev_chips),
                     current_value=str(curr_chips),
                 ))

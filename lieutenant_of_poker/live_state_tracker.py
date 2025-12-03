@@ -17,7 +17,6 @@ from .frame_extractor import FrameInfo
 from .game_state import GameState, GameStateExtractor, Street
 from .action_detector import PlayerAction
 from .card_detector import Card
-from .table_regions import PlayerPosition
 
 
 class GameEvent(Enum):
@@ -35,7 +34,7 @@ class GameEvent(Enum):
 class TrackedAction:
     """An action tracked during a hand."""
 
-    position: PlayerPosition
+    position: int  # Seat index 0-4
     action: PlayerAction
     amount: Optional[int] = None
     street: Street = Street.UNKNOWN

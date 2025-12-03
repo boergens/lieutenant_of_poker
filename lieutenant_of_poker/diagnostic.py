@@ -79,10 +79,11 @@ class DiagnosticExtractor:
 
     def __init__(self):
         """Initialize the diagnostic extractor."""
-        from .table_regions import detect_table_regions, PlayerPosition
+        from .table_regions import detect_table_regions, NUM_PLAYERS, seat_name
 
         self._detect_regions = detect_table_regions
-        self._PlayerPosition = PlayerPosition
+        self._num_players = NUM_PLAYERS
+        self._seat_name = seat_name
         self.report: Optional[DiagnosticReport] = None
 
     def extract_with_diagnostics(
@@ -372,10 +373,10 @@ class DiagnosticExtractor:
 
     def _extract_players(self, frame: np.ndarray, region_detector) -> None:
         """Extract player info with diagnostics."""
-        for position in self._PlayerPosition:
+        for position in range(self._num_players):
             step = DiagnosticStep(
-                name=f"Player: {position.name}",
-                description=f"Detecting player at {position.name} position",
+                name=f"Player: {self._seat_name(position)}",
+                description=f"Detecting player at {self._seat_name(position)} position",
             )
 
             try:
@@ -425,10 +426,10 @@ class DiagnosticExtractor:
         try:
             names = detect_player_names(frame, scale_frame=False)  # Already scaled
 
-            for position in self._PlayerPosition:
+            for position in range(self._num_players):
                 substep = DiagnosticStep(
-                    name=f"{position.name}",
-                    description=f"Name region for {position.name}",
+                    name=self._seat_name(position),
+                    description=f"Name region for {self._seat_name(position)}",
                 )
 
                 # Extract and show name region image
@@ -447,7 +448,7 @@ class DiagnosticExtractor:
 
             # Count successful detections
             detected_count = sum(1 for n in names.values() if n)
-            step.parsed_result = {k.name: v for k, v in names.items() if v}
+            step.parsed_result = {self._seat_name(k): v for k, v in names.items() if v}
             step.description += f" - Detected {detected_count}/5 names"
             step.success = True  # Step succeeds even with partial detection
 

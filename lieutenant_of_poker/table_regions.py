@@ -6,20 +6,23 @@ for extracting sub-images from frames.
 """
 
 from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
 
-class PlayerPosition(Enum):
-    """Player seat positions around the table (5 players, in playing order)."""
-    SEAT_1 = auto()  # First opponent (left side)
-    SEAT_2 = auto()  # Second opponent (top left)
-    SEAT_3 = auto()  # Third opponent (top right)
-    SEAT_4 = auto()  # Fourth opponent (right side)
-    HERO = auto()    # Main player (bottom)
+# Player positions are integers 0-4
+# 0-3 are opponents (in clockwise order), 4 is hero
+NUM_PLAYERS = 5
+HERO = 4
+
+
+def seat_name(position: int) -> str:
+    """Get a display name for a seat position (fallback when name detection fails)."""
+    if position == HERO:
+        return "Hero"
+    return f"Seat {position}"
 
 
 @dataclass
@@ -66,7 +69,7 @@ class Region:
 @dataclass
 class PlayerRegions:
     """Regions associated with a player position."""
-    position: PlayerPosition
+    position: int              # Player seat index (0-3 opponents, 4 hero)
     name_chip_box: Region      # Player name and chip count area
     cards: Optional[Region]    # Hole cards (only visible for hero or showdown)
     action_label: Region       # Where action labels appear (CHECK, FOLD, etc.)
@@ -149,41 +152,42 @@ class TableRegionDetector:
         self._action_buttons_region = self._scaled(Region(x=380, y=780, width=550, height=50))
 
         # Player regions by position (corrected to BASE_WIDTH x BASE_HEIGHT = 1728x1117)
-        self._player_regions = {
-            PlayerPosition.SEAT_1: PlayerRegions(
-                position=PlayerPosition.SEAT_1,
+        # Keys are seat indices: 0-3 opponents, 4 hero
+        self._player_regions: Dict[int, PlayerRegions] = {
+            0: PlayerRegions(
+                position=0,
                 # Chip: top half, trimmed left 25% / right 10%
                 name_chip_box=self._scaled(Region(x=287, y=646, width=150, height=29)),
                 cards=None,
                 # Action: left half only
                 action_label=self._scaled(Region(x=222, y=679, width=120, height=34)),
             ),
-            PlayerPosition.SEAT_2: PlayerRegions(
-                position=PlayerPosition.SEAT_2,
+            1: PlayerRegions(
+                position=1,
                 # Chip: top half, trimmed left 25% / right 10%
                 name_chip_box=self._scaled(Region(x=439, y=245, width=144, height=31)),
                 cards=None,
                 # Action: left half only
                 action_label=self._scaled(Region(x=376, y=280, width=115, height=36)),
             ),
-            PlayerPosition.SEAT_3: PlayerRegions(
-                position=PlayerPosition.SEAT_3,
+            2: PlayerRegions(
+                position=2,
                 # Chip: top half, trimmed left 25% / right 10%
                 name_chip_box=self._scaled(Region(x=1179, y=251, width=147, height=26)),
                 cards=None,
                 # Action: left half only
                 action_label=self._scaled(Region(x=1115, y=281, width=117, height=32)),
             ),
-            PlayerPosition.SEAT_4: PlayerRegions(
-                position=PlayerPosition.SEAT_4,
+            3: PlayerRegions(
+                position=3,
                 # Chip: top half, trimmed left 25% / right 10%
                 name_chip_box=self._scaled(Region(x=1341, y=645, width=143, height=28)),
                 cards=None,
                 # Action: left half only
                 action_label=self._scaled(Region(x=1279, y=674, width=114, height=31)),
             ),
-            PlayerPosition.HERO: PlayerRegions(
-                position=PlayerPosition.HERO,
+            HERO: PlayerRegions(
+                position=HERO,
                 name_chip_box=self._scaled(Region(x=974, y=845, width=128, height=29)),
                 cards=self._hero_cards_region,
                 action_label=self._scaled(Region(x=917, y=876, width=90, height=33)),
@@ -240,11 +244,11 @@ class TableRegionDetector:
         """Region containing the player's total balance."""
         return self._balance_region
 
-    def get_player_region(self, position: PlayerPosition) -> PlayerRegions:
-        """Get the regions for a specific player position."""
+    def get_player_region(self, position: int) -> PlayerRegions:
+        """Get the regions for a specific player position (0-4)."""
         return self._player_regions[position]
 
-    def get_all_player_regions(self) -> dict[PlayerPosition, PlayerRegions]:
+    def get_all_player_regions(self) -> Dict[int, PlayerRegions]:
         """Get all player regions."""
         return self._player_regions.copy()
 
@@ -268,8 +272,8 @@ class TableRegionDetector:
         """Extract the 2 individual hero card slot images."""
         return [slot.extract(frame) for slot in self._hero_card_slots]
 
-    def extract_player_chips(self, frame: np.ndarray, position: PlayerPosition) -> np.ndarray:
-        """Extract the chip count region for a player."""
+    def extract_player_chips(self, frame: np.ndarray, position: int) -> np.ndarray:
+        """Extract the chip count region for a player (position 0-4)."""
         return self._player_regions[position].name_chip_box.extract(frame)
 
     def draw_regions(self, frame: np.ndarray, include_players: bool = True) -> np.ndarray:
@@ -300,7 +304,7 @@ class TableRegionDetector:
         # Draw player regions
         if include_players:
             for pos, player in self._player_regions.items():
-                label = pos.name
+                label = seat_name(pos)
                 self._draw_region(output, player.name_chip_box, PLAYER_COLOR, label)
 
         return output

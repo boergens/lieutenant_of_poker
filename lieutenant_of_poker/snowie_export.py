@@ -7,14 +7,13 @@ from .hand_history import HandHistory, HandAction, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
 from .game_simulator import simulate_hand_completion
-from .table_regions import PlayerPosition
 
 
 def export_snowie(
     states: List[GameState],
     hero_name: str = "hero",
     button_pos: int = 0,
-    player_names: Optional[Dict[PlayerPosition, str]] = None,
+    player_names: Optional[Dict[int, str]] = None,
 ) -> str:
     """Export GameStates to Snowie format."""
     hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)

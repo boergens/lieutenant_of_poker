@@ -13,10 +13,11 @@ import numpy as np
 
 from lieutenant_of_poker.table_regions import (
     TableRegionDetector,
-    PlayerPosition,
     detect_table_regions,
     BASE_WIDTH,
     BASE_HEIGHT,
+    NUM_PLAYERS,
+    HERO,
 )
 from lieutenant_of_poker.card_detector import Card, CardDetector
 from lieutenant_of_poker.chip_ocr import extract_pot, extract_player_chips
@@ -39,7 +40,7 @@ class Street(Enum):
 @dataclass
 class PlayerState:
     """State of a single player."""
-    position: PlayerPosition
+    position: int  # Seat index 0-4 (HERO = 4)
     name: Optional[str] = None
     chips: Optional[int] = None
     cards: List[Card] = field(default_factory=list)
@@ -59,8 +60,8 @@ class GameState:
     pot: Optional[int] = None
     hero_chips: Optional[int] = None
 
-    # Players
-    players: Dict[PlayerPosition, PlayerState] = field(default_factory=dict)
+    # Players (keyed by seat index 0-4)
+    players: Dict[int, PlayerState] = field(default_factory=dict)
 
     # Game phase
     street: Street = Street.UNKNOWN
@@ -183,12 +184,12 @@ class GameStateExtractor:
 
         state.pot = extract_pot(frame, region_detector)
 
-        for position in PlayerPosition:
+        for position in range(NUM_PLAYERS):
             chips = extract_player_chips(frame, region_detector, position)
             state.players[position] = PlayerState(position=position, chips=chips)
 
-        if PlayerPosition.HERO in state.players:
-            state.hero_chips = state.players[PlayerPosition.HERO].chips
+        if HERO in state.players:
+            state.hero_chips = state.players[HERO].chips
 
         state.street = state.determine_street()
 

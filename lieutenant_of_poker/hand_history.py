@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from lieutenant_of_poker.game_state import GameState, Street
-from lieutenant_of_poker.table_regions import PlayerPosition
+from lieutenant_of_poker.table_regions import NUM_PLAYERS, HERO, seat_name
 from lieutenant_of_poker.card_detector import Card
 from lieutenant_of_poker.action_detector import PlayerAction
 
@@ -28,7 +28,7 @@ class PlayerInfo:
     seat: int
     name: str
     chips: int
-    position: PlayerPosition
+    position: int  # Original seat index 0-4
     is_hero: bool = False
 
 
@@ -105,18 +105,13 @@ def _calculate_blind_positions(button_seat: int, num_players: int) -> Tuple[int,
 class HandReconstructor:
     """Reconstructs hand history from GameState observations."""
 
-    SEAT_ORDER = [
-        PlayerPosition.SEAT_1,
-        PlayerPosition.SEAT_2,
-        PlayerPosition.SEAT_3,
-        PlayerPosition.SEAT_4,
-        PlayerPosition.HERO,
-    ]
+    # Seat order (seat indices 0-4)
+    SEAT_ORDER = list(range(NUM_PLAYERS))
 
     def __init__(
         self,
         hero_name: str = "hero",
-        player_names: Optional[Dict[PlayerPosition, str]] = None,
+        player_names: Optional[Dict[int, str]] = None,
     ):
         self.hero_name = hero_name
         self.player_names = player_names or {}
@@ -204,13 +199,13 @@ class HandReconstructor:
                 if not chips or chips <= 0:
                     continue
 
-                if pos == PlayerPosition.HERO:
+                if pos == HERO:
                     name = self.hero_name
                 elif pos in self.player_names:
                     name = self.player_names[pos]
                 else:
-                    name = pos.name
-                player = PlayerInfo(seat_idx, name, chips, pos, pos == PlayerPosition.HERO)
+                    name = seat_name(pos)
+                player = PlayerInfo(seat_idx, name, chips, pos, pos == HERO)
                 players.append(player)
                 pos_to_player[pos] = player
                 orig_to_new[orig_idx] = seat_idx

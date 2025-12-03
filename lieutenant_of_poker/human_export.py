@@ -6,14 +6,13 @@ from typing import Dict, List, Optional
 from .hand_history import HandHistory, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
-from .table_regions import PlayerPosition
 
 
 def export_human(
     states: List[GameState],
     hero_name: str = "hero",
     button_pos: int = 0,
-    player_names: Optional[Dict[PlayerPosition, str]] = None,
+    player_names: Optional[Dict[int, str]] = None,
 ) -> str:
     """Export GameStates to human-readable format."""
     hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)

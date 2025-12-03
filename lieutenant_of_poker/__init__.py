@@ -17,9 +17,11 @@ from lieutenant_of_poker.frame_extractor import (
 from lieutenant_of_poker.table_regions import (
     TableRegionDetector,
     Region,
-    PlayerPosition,
     PlayerRegions,
     detect_table_regions,
+    NUM_PLAYERS,
+    HERO,
+    seat_name,
 )
 from lieutenant_of_poker.card_detector import (
     Card,
@@ -63,9 +65,11 @@ __all__ = [
     # Table regions
     "TableRegionDetector",
     "Region",
-    "PlayerPosition",
     "PlayerRegions",
     "detect_table_regions",
+    "NUM_PLAYERS",
+    "HERO",
+    "seat_name",
     # Card detection
     "Card",
     "Suit",

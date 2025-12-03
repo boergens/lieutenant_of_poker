@@ -15,21 +15,23 @@ import tesserocr
 
 from .table_regions import (
     TableRegionDetector,
-    PlayerPosition,
     Region,
     BASE_WIDTH,
     BASE_HEIGHT,
+    NUM_PLAYERS,
+    HERO,
 )
 
 
 # Name regions positioned above chip regions (at BASE resolution)
 # These are separate from the per-frame chip detection regions
-_NAME_REGIONS: Dict[PlayerPosition, Region] = {
-    PlayerPosition.SEAT_1: Region(x=287, y=618, width=150, height=28),
-    PlayerPosition.SEAT_2: Region(x=439, y=217, width=144, height=28),
-    PlayerPosition.SEAT_3: Region(x=1179, y=223, width=147, height=28),
-    PlayerPosition.SEAT_4: Region(x=1341, y=617, width=143, height=28),
-    PlayerPosition.HERO: Region(x=974, y=817, width=128, height=28),
+# Keyed by seat index (0-4)
+_NAME_REGIONS: Dict[int, Region] = {
+    0: Region(x=287, y=618, width=150, height=28),
+    1: Region(x=439, y=217, width=144, height=28),
+    2: Region(x=1179, y=223, width=147, height=28),
+    3: Region(x=1341, y=617, width=143, height=28),
+    HERO: Region(x=974, y=817, width=128, height=28),
 }
 
 # Tesseract API for name OCR (separate from digit OCR)
@@ -81,7 +83,7 @@ def _ocr_name(image: np.ndarray) -> Optional[str]:
 def detect_player_names(
     frame: np.ndarray,
     scale_frame: bool = True,
-) -> Dict[PlayerPosition, Optional[str]]:
+) -> Dict[int, Optional[str]]:
     """
     Detect player names from a single frame.
 
@@ -92,7 +94,7 @@ def detect_player_names(
         scale_frame: If True, scale frame to base resolution first.
 
     Returns:
-        Dictionary mapping PlayerPosition to detected name (or None if not found).
+        Dictionary mapping seat index (0-4) to detected name (or None if not found).
     """
     # Scale frame if needed (same logic as GameStateExtractor)
     if scale_frame:
@@ -108,7 +110,7 @@ def detect_player_names(
     scale_x = w / BASE_WIDTH
     scale_y = h / BASE_HEIGHT
 
-    names: Dict[PlayerPosition, Optional[str]] = {}
+    names: Dict[int, Optional[str]] = {}
 
     for position, base_region in _NAME_REGIONS.items():
         # Scale region to match frame
@@ -124,7 +126,7 @@ def detect_player_names(
 
 def extract_name_region(
     frame: np.ndarray,
-    position: PlayerPosition,
+    position: int,
     scale_frame: bool = True,
 ) -> np.ndarray:
     """
@@ -134,7 +136,7 @@ def extract_name_region(
 
     Args:
         frame: BGR image frame.
-        position: Player position to extract.
+        position: Seat index (0-4).
         scale_frame: If True, scale frame to base resolution first.
 
     Returns:

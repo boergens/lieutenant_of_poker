@@ -13,7 +13,7 @@ import numpy as np
 from .fast_ocr import ocr_digits
 
 if TYPE_CHECKING:
-    from .table_regions import TableRegionDetector, PlayerPosition
+    from .table_regions import TableRegionDetector
 
 
 def _image_fingerprint(image: np.ndarray) -> bytes:
@@ -51,9 +51,9 @@ _player_caches: Dict[str, _Cache] = {}
 _ocr_calls = 0
 
 
-def _get_player_cache(position: "PlayerPosition") -> _Cache:
-    """Get or create cache for a player position."""
-    key = position.name
+def _get_player_cache(position: int) -> _Cache:
+    """Get or create cache for a player position (0-4)."""
+    key = str(position)
     if key not in _player_caches:
         _player_caches[key] = _Cache()
     return _player_caches[key]
@@ -149,7 +149,7 @@ def extract_pot(
 def extract_player_chips(
     frame: np.ndarray,
     region_detector: "TableRegionDetector",
-    position: "PlayerPosition",
+    position: int,
 ) -> Optional[int]:
     """
     Extract a player's chip count from a game frame.
@@ -157,7 +157,7 @@ def extract_player_chips(
     Args:
         frame: BGR game frame.
         region_detector: Table region detector for this frame.
-        position: Player position to extract chips for.
+        position: Player seat index (0-4).
 
     Returns:
         Chip count as integer, or None if not detected.
