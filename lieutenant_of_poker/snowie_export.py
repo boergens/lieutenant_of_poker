@@ -27,7 +27,8 @@ def export_snowie(
     hand = HandReconstructor(player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
-    hand_id = showdown.hand_id if showdown else "00000000"
+    import random
+    hand_id = showdown.hand_id if showdown else str(random.randint(10000000, 99999999))
     return SnowieExporter(showdown).export(hand, hand_id)
 
 
