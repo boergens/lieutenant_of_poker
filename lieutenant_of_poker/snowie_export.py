@@ -92,6 +92,8 @@ class SnowieExporter:
             self._write_hero_all_in(f, hand)
         elif hand.hero_folded:
             self._write_hero_fold(f, hand)
+        elif hand.reached_showdown:
+            self._write_showdown(f, hand)
 
         f.write("GameEnd\n\n")
 
@@ -172,6 +174,31 @@ class SnowieExporter:
             for p in opponents:
                 f.write(f"Move: {p.name} call_check 0\n")
 
+        for name, cards in sim.opponent_hands.items():
+            f.write(f"Showdown: {name} [{' '.join(cards)}]\n")
+
+        f.write(f"Winner: {sim.winner} {hand.pot:.2f}\n")
+
+    def _write_showdown(self, f: TextIO, hand: HandHistory):
+        """Write showdown when hand reaches river with no fold."""
+        opponents = hand.get_opponents()
+
+        community = []
+        if hand.flop_cards:
+            community = [c.short_name for c in hand.flop_cards]
+        if hand.turn_card:
+            community.append(hand.turn_card.short_name)
+        if hand.river_card:
+            community.append(hand.river_card.short_name)
+
+        hero_cards = [c.short_name for c in hand.hero_cards] if hand.hero_cards else []
+        sim = simulate_hand_completion(hero_cards, community, [p.name for p in opponents], hand.pot)
+
+        # Write showdown for hero
+        if hand.hero_cards:
+            f.write(f"Showdown: {self.hero_name} [{''.join(hero_cards)}]\n")
+
+        # Write showdown for opponents (simulated cards)
         for name, cards in sim.opponent_hands.items():
             f.write(f"Showdown: {name} [{' '.join(cards)}]\n")
 
