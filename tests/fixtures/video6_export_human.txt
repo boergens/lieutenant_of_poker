@@ -13,7 +13,7 @@ kevin4637565 is dealt: [Ad 8s]
 --- PREFLOP ---
   Victor calls $40
   kevin4637565 raises to $1040
+  Victor folds
 
 --- RESULT ---
-Went to showdown
 Final pot: $1200
