@@ -12,7 +12,6 @@ from .game_simulator import RNG
 
 def export_pokerstars(
     states: List[GameState],
-    hero_name: str = "hero",
     button_pos: int = 0,
     player_names: Optional[Dict[int, str]] = None,
     rng: Optional[RNG] = None,
@@ -20,18 +19,15 @@ def export_pokerstars(
     """Export GameStates to PokerStars format."""
     if rng is None:
         rng = random
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
+    hand = HandReconstructor(player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
     hand_id = str(rng.randint(10000000, 99999999))
-    return PokerStarsExporter(hero_name).export(hand, hand_id)
+    return PokerStarsExporter().export(hand, hand_id)
 
 
 class PokerStarsExporter:
     """Exports HandHistory to PokerStars format."""
-
-    def __init__(self, hero_name: str = "hero"):
-        self.hero_name = hero_name
 
     def export(self, hand: HandHistory, hand_id: str) -> str:
         output = io.StringIO()
@@ -54,10 +50,11 @@ class PokerStarsExporter:
         f.write(f"{bb.name}: posts big blind ${hand.big_blind}\n")
 
         # Hole cards
+        hero = hand.players[-1]
         f.write("*** HOLE CARDS ***\n")
         if hand.hero_cards:
             cards = " ".join(c.short_name for c in hand.hero_cards)
-            f.write(f"Dealt to {self.hero_name} [{cards}]\n")
+            f.write(f"Dealt to {hero.name} [{cards}]\n")
 
         # Preflop
         for a in hand.preflop_actions:

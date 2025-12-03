@@ -64,7 +64,6 @@ class HandHistory:
 
 def reconstruct_hand(
     states: List[GameState],
-    hero_name: str,
     player_names: Dict[int, str],
     button_pos: int,
 ) -> Optional[HandHistory]:
@@ -72,12 +71,14 @@ def reconstruct_hand(
 
     Args:
         states: List of GameState objects representing the hand progression
-        hero_name: Name of the hero player (must match a value in player_names)
         player_names: Mapping of seat positions to player names (all active players)
         button_pos: Button position (index into player list)
 
     Returns:
         HandHistory if reconstruction succeeds, None otherwise
+
+    Note:
+        The hero is always the last player in the sorted player list.
     """
     if not states:
         return None
@@ -287,8 +288,11 @@ def reconstruct_hand(
     if not bb_acted and bb_name in players_active and hand.flop_cards:
         hand.preflop_actions.append(HandAction(bb_name, PlayerAction.CHECK, 0))
 
-    # Showdown if multiple players remain after all action
+    # Determine outcome
+    # Hero is always the last player in the list
+    hero_player_name = players[-1]
     hand.reached_showdown = len(players_active) > 1
+    hand.opponents_folded = len(players_active) == 1 and hero_player_name in players_active
 
     return hand
 
@@ -299,10 +303,8 @@ class HandReconstructor:
 
     def __init__(
         self,
-        hero_name: str = "hero",
         player_names: Optional[Dict[int, str]] = None,
     ):
-        self.hero_name = hero_name
         self.player_names = player_names or {}
 
     def reconstruct(
@@ -310,4 +312,4 @@ class HandReconstructor:
         states: List[GameState],
         button_pos: Optional[int] = None,
     ) -> Optional[HandHistory]:
-        return reconstruct_hand(states, self.hero_name, self.player_names, button_pos)
+        return reconstruct_hand(states, self.player_names, button_pos)

@@ -2,7 +2,7 @@ GameStart
 PokerClient: ExportFormat
 Date: 02/12/2025
 TimeZone: GMT
-Time: 22:46:17
+Time: 22:57:48
 GameId:65917772
 GameType:NoLimit
 GameCurrency: $
@@ -21,5 +21,7 @@ Dealt Cards: [Ad8s]
 Move: Victor call_check 40
 Move: kevin4637565 raise_bet 1040
 Move: Victor folds 0
+Move: Victor folds 0
+Winner: kevin4637565 1200.00
 GameEnd
 

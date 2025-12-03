@@ -12,7 +12,6 @@ from .game_simulator import simulate_hand_completion, RNG
 
 def export_snowie(
     states: List[GameState],
-    hero_name: str = "hero",
     button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
     rng: Optional[RNG] = None,
@@ -20,18 +19,17 @@ def export_snowie(
     """Export GameStates to Snowie format. Auto-detects button if not specified."""
     if rng is None:
         rng = random
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
+    hand = HandReconstructor(player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
     hand_id = str(rng.randint(10000000, 99999999))
-    return SnowieExporter(hero_name, rng).export(hand, hand_id)
+    return SnowieExporter(rng).export(hand, hand_id)
 
 
 class SnowieExporter:
     """Exports HandHistory to Snowie/Freezeout format."""
 
-    def __init__(self, hero_name: str = "hero", rng: RNG = random):
-        self.hero_name = hero_name
+    def __init__(self, rng: RNG = random):
         self.rng = rng
 
     def export(self, hand: HandHistory, hand_id: str) -> str:

@@ -9,12 +9,11 @@ from .action_detector import PlayerAction
 
 def export_action_log(
     states: List[GameState],
-    hero_name: str = "hero",
     button_pos: Optional[int] = None,
     player_names: Optional[Dict[int, str]] = None,
 ) -> str:
     """Export GameStates as a simple chronological action log."""
-    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
+    hand = HandReconstructor(player_names).reconstruct(states, button_pos)
     if not hand:
         return "No hand data."
     return ActionLogExporter().export(hand)
