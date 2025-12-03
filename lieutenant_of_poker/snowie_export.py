@@ -114,7 +114,8 @@ class SnowieExporter:
             elif a.action in (PlayerAction.CHECK, PlayerAction.CALL):
                 f.write(f"Move: {a.player_name} call_check {a.amount or 0}\n")
             elif a.action == PlayerAction.UNCALLED_BET:
-                f.write(f"uncalled_bet: {a.player_name} {a.amount or 0}\n")
+                # Written after fold in _write_opponents_fold
+                f.write(f"Move: {a.player_name} raise_bet {a.amount or 0}\n")
             else:
                 f.write(f"Move: {a.player_name} raise_bet {a.amount or 0}\n")
 
@@ -125,7 +126,15 @@ class SnowieExporter:
 
     def _write_opponents_fold(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
         """Opponents folded to hero's bet - hero wins."""
-        # Note: fold and uncalled_bet actions already written in _write_actions
+        # Find and write uncalled_bet action
+        all_actions = (
+            hand.preflop_actions + hand.flop_actions +
+            hand.turn_actions + hand.river_actions
+        )
+        for a in all_actions:
+            if a.action == PlayerAction.UNCALLED_BET:
+                f.write(f"uncalled_bet: {a.player_name} {a.amount or 0}\n")
+                break
         f.write(f"Winner: {hand.winner} {hand.payout:.2f}\n")
 
     def _write_hero_fold(self, f: TextIO, hand: HandHistory, hero_name: str, opponents, sb, bb):

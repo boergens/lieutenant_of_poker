@@ -3,8 +3,8 @@ GameStart
 PokerClient: ExportFormat
 Date: 02/12/2025
 TimeZone: GMT
-Time: 23:09:08
-GameId:65107282
+Time: 23:15:41
+GameId:75837929
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 40
@@ -20,8 +20,9 @@ SmallBlind: Victor 40
 BigBlind: kevin4637565 80
 Dealt Cards: [Ad8s]
 Move: Victor call_check 40
-uncalled_bet: kevin4637565 1040
+Move: kevin4637565 raise_bet 1040
 Move: Victor folds 0
+uncalled_bet: kevin4637565 1040
 Winner: kevin4637565 160.00
 GameEnd
 
