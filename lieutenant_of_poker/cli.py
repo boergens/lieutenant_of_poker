@@ -71,10 +71,6 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Output verbose per-frame extractions (no filtering/consensus)"
     )
-    analyze_parser.add_argument(
-        "--player-names", "-p", action="store_true",
-        help="Detect and use actual player names from video (one-time OCR on first frame)"
-    )
 
     # export command
     export_parser = subparsers.add_parser(
@@ -95,12 +91,8 @@ def main():
         "--end", "-e", type=float, default=None, help="End timestamp in seconds (default: end of video)"
     )
     export_parser.add_argument(
-        "--button", "-b", type=int, default=0,
-        help="Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero)"
-    )
-    export_parser.add_argument(
-        "--player-names", "-p", action="store_true",
-        help="Detect and use actual player names from video (one-time OCR on first frame)"
+        "--button", "-b", type=int, default=None,
+        help="Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero). Auto-detected if not specified."
     )
 
     # info command
@@ -352,7 +344,7 @@ def cmd_extract_frames(args):
 def cmd_analyze(args):
     """Analyze video and output game states (every frame)."""
     from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
-    from lieutenant_of_poker.frame_extractor import get_video_info, VideoFrameExtractor
+    from lieutenant_of_poker.frame_extractor import get_video_info
 
     info = get_video_info(args.video)
     start_ms = args.start * 1000
@@ -363,20 +355,11 @@ def cmd_analyze(args):
     end_frame = int(end_ms * info['fps'] / 1000) if args.end else info['frame_count']
     total_frames = end_frame - start_frame
 
-    # Detect player names if requested
-    player_names = None
-    if args.player_names:
-        from lieutenant_of_poker.name_detector import detect_player_names
-        print("Detecting player names...", file=sys.stderr)
-        with VideoFrameExtractor(args.video) as extractor:
-            frame_info = extractor.get_frame_at_timestamp(start_ms)
-            if frame_info is not None:
-                player_names = detect_player_names(frame_info.image)
-                detected = {k.name: v for k, v in player_names.items() if v}
-                if detected:
-                    print(f"  Detected: {detected}", file=sys.stderr)
-                else:
-                    print("  No names detected, using defaults", file=sys.stderr)
+    # Detect player names and button from first frame
+    from lieutenant_of_poker.first_frame import detect_from_video
+    first = detect_from_video(args.video, start_ms)
+    player_names = first.player_names
+    print(first, file=sys.stderr)
 
     config = AnalysisConfig(
         start_ms=start_ms,
@@ -419,20 +402,12 @@ def cmd_export(args):
     end_frame = int(end_ms * info['fps'] / 1000) if args.end else info['frame_count']
     total_frames = end_frame - start_frame
 
-    # Detect player names if requested
-    player_names = None
-    if args.player_names:
-        from lieutenant_of_poker.name_detector import detect_player_names
-        print("Detecting player names...", file=sys.stderr)
-        with VideoFrameExtractor(args.video) as extractor:
-            frame_info = extractor.get_frame_at_timestamp(start_ms)
-            if frame_info is not None:
-                player_names = detect_player_names(frame_info.image)
-                detected = {k.name: v for k, v in player_names.items() if v}
-                if detected:
-                    print(f"  Detected: {detected}", file=sys.stderr)
-                else:
-                    print("  No names detected, using defaults", file=sys.stderr)
+    # Detect button position and player names from first frames
+    from lieutenant_of_poker.first_frame import detect_from_video
+    first = detect_from_video(args.video, start_ms)
+    button_pos = args.button if args.button is not None else (first.button_index if first.button_index is not None else 0)
+    player_names = first.player_names
+    print(first, file=sys.stderr)
 
     config = AnalysisConfig(
         start_ms=start_ms,
@@ -453,11 +428,11 @@ def cmd_export(args):
 
     # Export based on format
     if args.format == "snowie":
-        output = export_snowie(states, button_pos=args.button, player_names=player_names)
+        output = export_snowie(states, button_pos=button_pos, player_names=player_names)
     elif args.format == "human":
-        output = export_human(states, button_pos=args.button, player_names=player_names)
+        output = export_human(states, button_pos=button_pos, player_names=player_names)
     else:  # pokerstars
-        output = export_pokerstars(states, button_pos=args.button, player_names=player_names)
+        output = export_pokerstars(states, button_pos=button_pos, player_names=player_names)
         if not output:
             print("No hand data detected.", file=sys.stderr)
             return
@@ -472,7 +447,7 @@ def cmd_export(args):
 
 def cmd_info(args):
     """Show video information."""
-    from lieutenant_of_poker.frame_extractor import get_video_info, VideoFrameExtractor
+    from lieutenant_of_poker.frame_extractor import get_video_info
 
     info = get_video_info(args.video)
     print(f"Video: {info['path']}")
@@ -482,15 +457,10 @@ def cmd_info(args):
     print(f"  Total frames: {info['frame_count']:,}")
 
     if args.players:
-        from lieutenant_of_poker.name_detector import detect_player_names
-        print("  Players:")
-        with VideoFrameExtractor(args.video) as extractor:
-            frame_info = extractor.get_frame_at_timestamp(0)
-            if frame_info is not None:
-                names = detect_player_names(frame_info.image)
-                for pos, name in names.items():
-                    display = name if name else "(not detected)"
-                    print(f"    {pos.name}: {display}")
+        from lieutenant_of_poker.first_frame import detect_from_video
+        first = detect_from_video(args.video)
+        for line in str(first).split('\n'):
+            print(f"  {line}")
 
 
 def cmd_diagnose(args):

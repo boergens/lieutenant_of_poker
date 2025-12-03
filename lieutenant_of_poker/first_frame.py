@@ -51,6 +51,27 @@ class FirstFrameInfo:
         """Dict of player index -> name."""
         return {i: p.name for i, p in enumerate(self.players)}
 
+    def __str__(self) -> str:
+        """Format first frame info for display."""
+        lines = []
+
+        # Button position
+        if self.button_index is not None:
+            btn_player = self.players[self.button_index]
+            btn_name = btn_player.name or f"Player {self.button_index}"
+            lines.append(f"Button: {btn_name}")
+        else:
+            lines.append("Button: (not detected)")
+
+        # Players with names
+        detected = {i: p.name for i, p in enumerate(self.players) if p.name}
+        if detected:
+            lines.append(f"Players: {detected}")
+        else:
+            lines.append("Players: (none detected)")
+
+        return "\n".join(lines)
+
 
 def _scale_frame(frame: np.ndarray) -> np.ndarray:
     """Scale frame to base resolution if needed."""
