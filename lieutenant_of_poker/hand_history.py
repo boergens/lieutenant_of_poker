@@ -112,8 +112,13 @@ class HandReconstructor:
         PlayerPosition.HERO,
     ]
 
-    def __init__(self, hero_name: str = "hero"):
+    def __init__(
+        self,
+        hero_name: str = "hero",
+        player_names: Optional[Dict[PlayerPosition, str]] = None,
+    ):
         self.hero_name = hero_name
+        self.player_names = player_names or {}
 
     def reconstruct(self, states: List[GameState], button_pos: int = 0) -> Optional[HandHistory]:
         if not states:
@@ -196,7 +201,12 @@ class HandReconstructor:
                 if not chips or chips <= 0:
                     continue
 
-                name = self.hero_name if pos == PlayerPosition.HERO else pos.name
+                if pos == PlayerPosition.HERO:
+                    name = self.hero_name
+                elif pos in self.player_names:
+                    name = self.player_names[pos]
+                else:
+                    name = pos.name
                 player = PlayerInfo(seat_idx, name, chips, pos, pos == PlayerPosition.HERO)
                 players.append(player)
                 pos_to_player[pos] = player

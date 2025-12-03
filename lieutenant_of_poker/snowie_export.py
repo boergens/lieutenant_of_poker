@@ -1,17 +1,23 @@
 """Export hand history to PokerSnowie format."""
 
 import io
-from typing import List, TextIO
+from typing import Dict, List, Optional, TextIO
 
 from .hand_history import HandHistory, HandAction, HandReconstructor
 from .game_state import GameState
 from .action_detector import PlayerAction
 from .game_simulator import simulate_hand_completion
+from .table_regions import PlayerPosition
 
 
-def export_snowie(states: List[GameState], hero_name: str = "hero", button_pos: int = 0) -> str:
+def export_snowie(
+    states: List[GameState],
+    hero_name: str = "hero",
+    button_pos: int = 0,
+    player_names: Optional[Dict[PlayerPosition, str]] = None,
+) -> str:
     """Export GameStates to Snowie format."""
-    hand = HandReconstructor(hero_name).reconstruct(states, button_pos)
+    hand = HandReconstructor(hero_name, player_names).reconstruct(states, button_pos)
     if not hand:
         return ""
     return SnowieExporter(hero_name).export(hand)
