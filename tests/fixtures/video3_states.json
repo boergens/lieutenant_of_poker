@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "type": "game_states",
+  "states": [
+    {
+      "community_cards": [],
+      "hero_cards": [
+        {
+          "rank": "A",
+          "suit": "hearts"
+        },
+        {
+          "rank": "K",
+          "suit": "clubs"
+        }
+      ],
+      "pot": 60,
+      "hero_chips": 8980,
+      "players": {
+        "0": {
+          "position": "0",
+          "name": null,
+          "chips": 3200,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "1": {
+          "position": "1",
+          "name": null,
+          "chips": 2760,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "2": {
+          "position": "2",
+          "name": null,
+          "chips": 8980,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        }
+      },
+      "street": "PREFLOP",
+      "frame_number": 0,
+      "timestamp_ms": 0.0,
+      "rejected": false
+    },
+    {
+      "community_cards": [],
+      "hero_cards": [
+        {
+          "rank": "A",
+          "suit": "hearts"
+        },
+        {
+          "rank": "K",
+          "suit": "clubs"
+        }
+      ],
+      "pot": 100,
+      "hero_chips": 8980,
+      "players": {
+        "0": {
+          "position": "0",
+          "name": null,
+          "chips": 3160,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "1": {
+          "position": "1",
+          "name": null,
+          "chips": 2760,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "2": {
+          "position": "2",
+          "name": null,
+          "chips": 8980,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        }
+      },
+      "street": "PREFLOP",
+      "frame_number": 11,
+      "timestamp_ms": 1100.0,
+      "rejected": false
+    },
+    {
+      "community_cards": [],
+      "hero_cards": [
+        {
+          "rank": "A",
+          "suit": "hearts"
+        },
+        {
+          "rank": "K",
+          "suit": "clubs"
+        }
+      ],
+      "pot": 120,
+      "hero_chips": 8980,
+      "players": {
+        "0": {
+          "position": "0",
+          "name": null,
+          "chips": 3160,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "1": {
+          "position": "1",
+          "name": null,
+          "chips": 2740,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "2": {
+          "position": "2",
+          "name": null,
+          "chips": 8980,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        }
+      },
+      "street": "PREFLOP",
+      "frame_number": 27,
+      "timestamp_ms": 2700.0,
+      "rejected": false
+    },
+    {
+      "community_cards": [],
+      "hero_cards": [
+        {
+          "rank": "A",
+          "suit": "hearts"
+        },
+        {
+          "rank": "K",
+          "suit": "clubs"
+        }
+      ],
+      "pot": 9100,
+      "hero_chips": 0,
+      "players": {
+        "0": {
+          "position": "0",
+          "name": null,
+          "chips": 3160,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "1": {
+          "position": "1",
+          "name": null,
+          "chips": 2740,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "2": {
+          "position": "2",
+          "name": null,
+          "chips": 0,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        }
+      },
+      "street": "PREFLOP",
+      "frame_number": 51,
+      "timestamp_ms": 5100.000000000001,
+      "rejected": false
+    },
+    {
+      "community_cards": [],
+      "hero_cards": [
+        {
+          "rank": "A",
+          "suit": "hearts"
+        },
+        {
+          "rank": "K",
+          "suit": "clubs"
+        }
+      ],
+      "pot": 11840,
+      "hero_chips": 0,
+      "players": {
+        "0": {
+          "position": "0",
+          "name": null,
+          "chips": 3160,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "1": {
+          "position": "1",
+          "name": null,
+          "chips": 0,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        },
+        "2": {
+          "position": "2",
+          "name": null,
+          "chips": 0,
+          "cards": [],
+          "last_action": null,
+          "is_active": true,
+          "is_dealer": false
+        }
+      },
+      "street": "PREFLOP",
+      "frame_number": 107,
+      "timestamp_ms": 10700.000000000002,
+      "rejected": false
+    }
+  ]
+}

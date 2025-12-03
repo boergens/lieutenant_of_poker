@@ -5,7 +5,7 @@ import random
 from typing import Dict, List, Optional
 
 from .hand_history import HandHistory, HandAction, HandReconstructor
-from .game_state import GameState
+from .game_state import GameState, Street
 from .action_detector import PlayerAction
 from .game_simulator import RNG
 
@@ -57,21 +57,21 @@ class PokerStarsExporter:
             f.write(f"Dealt to {hero.name} [{cards}]\n")
 
         # Preflop
-        for a in hand.preflop_actions:
+        for a in hand.actions[Street.PREFLOP]:
             f.write(f"{self._format_action(a)}\n")
 
         # Flop
         if hand.flop_cards:
             cards = " ".join(c.short_name for c in hand.flop_cards)
             f.write(f"*** FLOP *** [{cards}]\n")
-            for a in hand.flop_actions:
+            for a in hand.actions[Street.FLOP]:
                 f.write(f"{self._format_action(a)}\n")
 
         # Turn
         if hand.turn_card:
             flop = " ".join(c.short_name for c in hand.flop_cards)
             f.write(f"*** TURN *** [{flop}] [{hand.turn_card.short_name}]\n")
-            for a in hand.turn_actions:
+            for a in hand.actions[Street.TURN]:
                 f.write(f"{self._format_action(a)}\n")
 
         # River
@@ -79,7 +79,7 @@ class PokerStarsExporter:
             board = " ".join(c.short_name for c in hand.flop_cards)
             board += f" {hand.turn_card.short_name}"
             f.write(f"*** RIVER *** [{board}] [{hand.river_card.short_name}]\n")
-            for a in hand.river_actions:
+            for a in hand.actions[Street.RIVER]:
                 f.write(f"{self._format_action(a)}\n")
 
         # Summary

@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional
 
 from .hand_history import HandHistory, HandReconstructor
-from .game_state import GameState
+from .game_state import GameState, Street
 from .action_detector import PlayerAction
 
 
@@ -38,26 +38,26 @@ class ActionLogExporter:
             lines.append(f"Dealer deals hole cards to {hero.name}: [{cards}]")
 
         # Preflop actions
-        for a in hand.preflop_actions:
+        for a in hand.actions[Street.PREFLOP]:
             lines.append(self._format_action(a))
 
         # Flop
         if hand.flop_cards:
             cards = " ".join(c.short_name for c in hand.flop_cards)
             lines.append(f"Dealer reveals flop: {cards}")
-            for a in hand.flop_actions:
+            for a in hand.actions[Street.FLOP]:
                 lines.append(self._format_action(a))
 
         # Turn
         if hand.turn_card:
             lines.append(f"Dealer reveals turn: {hand.turn_card.short_name}")
-            for a in hand.turn_actions:
+            for a in hand.actions[Street.TURN]:
                 lines.append(self._format_action(a))
 
         # River
         if hand.river_card:
             lines.append(f"Dealer reveals river: {hand.river_card.short_name}")
-            for a in hand.river_actions:
+            for a in hand.actions[Street.RIVER]:
                 lines.append(self._format_action(a))
 
         return "\n".join(lines)
@@ -76,6 +76,6 @@ class ActionLogExporter:
         elif a.action == PlayerAction.ALL_IN:
             return f"{a.player_name} goes all-in ${a.amount}"
         elif a.action == PlayerAction.UNCALLED_BET:
-            return f"{a.player_name} bets ${a.amount}"
+            return f"Uncalled bet (${a.amount}) returned to {a.player_name}"
         else:
             return f"{a.player_name} acts"

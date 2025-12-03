@@ -4,7 +4,6 @@ Command line interface for Lieutenant of Poker.
 Usage:
     lieutenant record [--fps=<n>] [--display=<n>] [--hotkey=<key>]
     lieutenant analyze <video>
-    lieutenant monitor [--window=<title>] [--fps=<n>] [--fullscreen]
     lieutenant extract-frames <video> [--output-dir=<dir>]
     lieutenant export <video> [--format=<fmt>] [--output=<file>]
     lieutenant info <video>
@@ -130,73 +129,6 @@ def main():
         "clear-library", help="Clear all cached reference images from card libraries"
     )
 
-    # monitor command
-    monitor_parser = subparsers.add_parser(
-        "monitor", help="[BROKEN] Live monitor the game with mistake detection"
-    )
-    monitor_parser.add_argument(
-        "--window", "-w", default="Governor of Poker",
-        help="Window title to capture (default: Governor of Poker)"
-    )
-    monitor_parser.add_argument(
-        "--fps", "-f", type=int, default=10,
-        help="Frames per second to capture (default: 10)"
-    )
-    monitor_parser.add_argument(
-        "--audio", "-a", action="store_true",
-        help="Enable audio alerts"
-    )
-    monitor_parser.add_argument(
-        "--overlay", action="store_true",
-        help="Show visual overlay notifications (macOS only)"
-    )
-    monitor_parser.add_argument(
-        "--log", "-l", type=str, default=None,
-        help="Log file path for alerts"
-    )
-    monitor_parser.add_argument(
-        "--rules", "-r", nargs="*", default=None,
-        help="Specific rules to enable (default: all)"
-    )
-    monitor_parser.add_argument(
-        "--severity", "-s",
-        choices=["info", "warning", "error", "critical"],
-        default="warning",
-        help="Minimum severity to alert on (default: warning)"
-    )
-    monitor_parser.add_argument(
-        "--quiet", "-q", action="store_true",
-        help="Suppress terminal output (useful with --log)"
-    )
-    monitor_parser.add_argument(
-        "--list-rules", action="store_true",
-        help="List available rules and exit"
-    )
-    monitor_parser.add_argument(
-        "--list-windows", action="store_true",
-        help="List available windows and exit"
-    )
-    monitor_parser.add_argument(
-        "--record", "-R", type=str, default=None,
-        help="Record session to video file (e.g., session.mp4)"
-    )
-    monitor_parser.add_argument(
-        "--fullscreen", "-F", action="store_true",
-        help="Use ScreenCaptureKit for fullscreen app capture (macOS 12.3+)"
-    )
-    monitor_parser.add_argument(
-        "--display", "-D", type=int, default=0,
-        help="Display index to capture when using --fullscreen (default: 0)"
-    )
-    monitor_parser.add_argument(
-        "--hotkey", "-H", type=str, default="cmd+shift+r",
-        help="Global hotkey to toggle recording (default: cmd+shift+r)"
-    )
-    monitor_parser.add_argument(
-        "--output-dir", "-O", type=str, default=".",
-        help="Directory for recorded videos (default: current directory)"
-    )
-
     # split command - split video by brightness detection
     split_parser = subparsers.add_parser(
         "split", help="Split video into chunks based on screen on/off detection"
@@ -281,8 +213,6 @@ def main():
             cmd_info(args)
         elif args.command == "diagnose":
             cmd_diagnose(args)
-        elif args.command == "monitor":
-            cmd_monitor(args)
         elif args.command == "record":
             cmd_record(args)
         elif args.command == "split":
@@ -677,119 +607,6 @@ def cmd_split(args):
         print(f"FAILED: {error}", file=sys.stderr)
 
     print(f"\nCreated {len(result.created_files)} chunk(s) in {output_dir}/", file=sys.stderr)
-
-
-def cmd_monitor(args):
-    """Live monitor the game with mistake detection."""
-    print("⚠️  WARNING: The monitor command is currently broken and may not work correctly.", file=sys.stderr)
-    print("", file=sys.stderr)
-    from datetime import datetime
-    from lieutenant_of_poker.screen_capture import check_screen_recording_permission, get_permission_instructions
-    from lieutenant_of_poker.live_monitor import (
-        MonitorConfig, create_live_monitor, list_available_windows, list_available_rules
-    )
-    from lieutenant_of_poker.hotkeys import create_hotkey_listener, play_sound
-    from lieutenant_of_poker.notifications import OverlayNotifier
-
-    # List rules mode
-    if args.list_rules:
-        print("Available rules:")
-        for name, enabled, description in list_available_rules():
-            status = "enabled" if enabled else "disabled"
-            print(f"  {name}: {description} [{status}]")
-        return
-
-    # List windows mode
-    if args.list_windows:
-        print("Available windows:")
-        for w in list_available_windows():
-            print(f"  [{w['window_id']}] {w['owner']}: {w['title']} ({w['width']}x{w['height']})")
-        return
-
-    # Check screen recording permission
-    if not check_screen_recording_permission():
-        print("Error: Screen recording permission not granted.", file=sys.stderr)
-        print(get_permission_instructions(), file=sys.stderr)
-        sys.exit(1)
-
-    # Create config from args
-    config = MonitorConfig(
-        window_title=args.window,
-        fullscreen=args.fullscreen,
-        display_id=args.display,
-        fps=args.fps,
-        enabled_rules=args.rules if args.rules else None,
-        min_severity=args.severity,
-        terminal_output=not args.quiet,
-        audio_alerts=args.audio,
-        overlay=args.overlay,
-        log_file=Path(args.log) if args.log else None,
-        record_to=Path(args.record) if args.record else None,
-    )
-
-    # Create monitor
-    try:
-        monitor = create_live_monitor(config)
-    except (ValueError, RuntimeError) as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Capture target: {monitor.capture.window}", file=sys.stderr)
-
-    # Set up hotkey for recording toggle
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    recordings_made = []
-    overlay = OverlayNotifier()
-
-    def toggle_recording():
-        if monitor.is_recording:
-            path = monitor.stop_recording()
-            if path:
-                recordings_made.append(path)
-                print(f"\n⬜ Recording stopped: {path}", file=sys.stderr)
-                play_sound("Glass")
-                overlay.send_message("Recording Stopped", path.name)
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = output_dir / f"gop3_{timestamp}.mp4"
-            monitor.start_recording(filename)
-            print(f"\n🔴 Recording started: {filename}", file=sys.stderr)
-            play_sound("Blow")
-            overlay.send_message("Recording Started", filename.name)
-
-    hotkey_listener = create_hotkey_listener(args.hotkey, toggle_recording)
-
-    # Print startup info
-    print(f"\nStarting live monitor (Ctrl+C to stop)...", file=sys.stderr)
-    print(f"  Mode: {'Fullscreen' if args.fullscreen else 'Window'}", file=sys.stderr)
-    print(f"  FPS: {args.fps}", file=sys.stderr)
-    print(f"  Severity: {args.severity}+", file=sys.stderr)
-    print(f"  Recording hotkey: {args.hotkey}", file=sys.stderr)
-    print(f"  Output directory: {output_dir.absolute()}", file=sys.stderr)
-    print("", file=sys.stderr)
-
-    try:
-        monitor.start()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if hotkey_listener:
-            hotkey_listener.stop()
-        monitor.stop()
-
-        stats = monitor.get_stats()
-        print(f"\nSession Summary:", file=sys.stderr)
-        print(f"  Duration: {stats.duration_seconds:.1f}s", file=sys.stderr)
-        print(f"  Frames processed: {stats.frames_processed:,}", file=sys.stderr)
-        print(f"  Hands tracked: {stats.hands_tracked}", file=sys.stderr)
-        print(f"  Violations detected: {stats.violations_detected}", file=sys.stderr)
-        print(f"  Avg frame time: {stats.avg_frame_time_ms:.1f}ms", file=sys.stderr)
-        print(f"  Actual FPS: {stats.actual_fps:.1f}", file=sys.stderr)
-        if recordings_made:
-            print(f"  Recordings: {len(recordings_made)}", file=sys.stderr)
-            for rec in recordings_made:
-                print(f"    - {rec}", file=sys.stderr)
 
 
 if __name__ == "__main__":
