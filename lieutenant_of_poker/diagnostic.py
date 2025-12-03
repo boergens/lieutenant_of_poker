@@ -623,3 +623,59 @@ def _render_step(step: DiagnosticStep, level: int = 0) -> str:
 
     html += '</div>'
     return html
+
+
+def generate_diagnostic_report(
+    video_path: str,
+    output_path: Path,
+    frame_number: Optional[int] = None,
+    timestamp_s: Optional[float] = None,
+) -> dict:
+    """
+    Generate a diagnostic report for a specific frame.
+
+    Args:
+        video_path: Path to the video file.
+        output_path: Path for the HTML report.
+        frame_number: Frame number to analyze (mutually exclusive with timestamp_s).
+        timestamp_s: Timestamp in seconds (mutually exclusive with frame_number).
+
+    Returns:
+        Dictionary with report statistics.
+    """
+    from .frame_extractor import VideoFrameExtractor
+
+    with VideoFrameExtractor(video_path) as video:
+        # Determine which frame to analyze
+        if frame_number is not None:
+            frame_info = video.get_frame_at(frame_number)
+        elif timestamp_s is not None:
+            frame_info = video.get_frame_at_timestamp(timestamp_s * 1000)
+        else:
+            frame_info = video.get_frame_at(0)
+
+        if frame_info is None:
+            raise ValueError("Could not read frame")
+
+        # Run diagnostic extraction
+        extractor = DiagnosticExtractor()
+        report = extractor.extract_with_diagnostics(
+            frame_info.image,
+            frame_number=frame_info.frame_number,
+            timestamp_ms=frame_info.timestamp_ms,
+        )
+
+        # Generate HTML report
+        generate_html_report(report, output_path)
+
+        # Return statistics
+        successes = sum(1 for s in report.steps if s.success)
+        failures = sum(1 for s in report.steps if not s.success)
+
+        return {
+            "frame_number": frame_info.frame_number,
+            "timestamp_ms": frame_info.timestamp_ms,
+            "steps_succeeded": successes,
+            "steps_failed": failures,
+            "output_path": output_path,
+        }

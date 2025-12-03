@@ -6,7 +6,7 @@ Provides tools to load video files and extract frames at configurable intervals.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 import cv2
 import numpy as np
@@ -277,3 +277,70 @@ def extract_frame_to_file(
             return False
 
         return cv2.imwrite(str(output_path), frame_info.image)
+
+
+def extract_frames(
+    video_path: str,
+    output_dir: Path,
+    interval_ms: int = 1000,
+    format: str = "jpg",
+    start_ms: float = 0,
+    end_ms: Optional[float] = None,
+    on_progress: Optional[Callable[[int, int], None]] = None,
+) -> int:
+    """
+    Extract frames from a video file to disk.
+
+    Args:
+        video_path: Path to the video file.
+        output_dir: Directory to save frames.
+        interval_ms: Interval between frames in milliseconds.
+        format: Output format ('jpg' or 'png').
+        start_ms: Start timestamp in milliseconds.
+        end_ms: End timestamp in milliseconds (None = end of video).
+        on_progress: Optional callback (current, total).
+
+    Returns:
+        Number of frames extracted.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+
+    with VideoFrameExtractor(video_path) as video:
+        actual_end_ms = end_ms if end_ms else video.duration_seconds * 1000
+        total_frames = int((actual_end_ms - start_ms) / interval_ms) + 1
+
+        for frame_info in video.iterate_at_interval(
+            interval_ms, start_ms, actual_end_ms if end_ms else None
+        ):
+            timestamp_s = frame_info.timestamp_ms / 1000
+            filename = f"frame_{timestamp_s:.2f}s.{format}"
+            filepath = output_dir / filename
+            cv2.imwrite(str(filepath), frame_info.image)
+            count += 1
+
+            if on_progress:
+                on_progress(count, total_frames)
+
+    return count
+
+
+def get_video_info(video_path: str) -> dict:
+    """
+    Get information about a video file.
+
+    Args:
+        video_path: Path to the video file.
+
+    Returns:
+        Dictionary with video metadata.
+    """
+    with VideoFrameExtractor(video_path) as video:
+        return {
+            "path": video_path,
+            "width": video.width,
+            "height": video.height,
+            "fps": video.fps,
+            "duration_seconds": video.duration_seconds,
+            "frame_count": video.frame_count,
+        }

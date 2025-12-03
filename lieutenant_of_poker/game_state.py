@@ -68,6 +68,7 @@ class GameState:
     # Metadata
     frame_number: Optional[int] = None
     timestamp_ms: Optional[float] = None
+    rejected: bool = False  # True if this state failed validation
 
     def __str__(self) -> str:
         parts = []

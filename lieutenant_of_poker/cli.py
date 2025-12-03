@@ -315,7 +315,7 @@ def main():
 
 def cmd_extract_frames(args):
     """Extract frames from video."""
-    from lieutenant_of_poker.analysis import extract_frames, get_video_info
+    from lieutenant_of_poker.frame_extractor import extract_frames, get_video_info
 
     output_dir = Path(args.output_dir)
     info = get_video_info(args.video)
@@ -363,7 +363,8 @@ def cmd_extract_frames(args):
 
 def cmd_analyze(args):
     """Analyze video and output game states."""
-    from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig, get_video_info
+    from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
+    from lieutenant_of_poker.frame_extractor import get_video_info
 
     info = get_video_info(args.video)
     start_ms = args.start * 1000
@@ -399,7 +400,7 @@ def cmd_analyze(args):
             args.video,
             config,
             on_progress=on_progress,
-            verbose=args.verbose,
+            include_rejected=args.verbose,
         )
 
     print(f"Done! Analyzed {len(states)} state changes.", file=sys.stderr)
@@ -412,7 +413,8 @@ def cmd_analyze(args):
 
 def cmd_export(args):
     """Export hand histories."""
-    from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig, get_video_info
+    from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
+    from lieutenant_of_poker.frame_extractor import get_video_info
     from lieutenant_of_poker.snowie_export import states_to_snowie
 
     info = get_video_info(args.video)
@@ -473,7 +475,7 @@ def cmd_export(args):
 
 def cmd_info(args):
     """Show video information."""
-    from lieutenant_of_poker.analysis import get_video_info
+    from lieutenant_of_poker.frame_extractor import get_video_info
 
     info = get_video_info(args.video)
     print(f"Video: {info['path']}")
@@ -486,7 +488,8 @@ def cmd_info(args):
 def cmd_diagnose(args):
     """Generate detailed diagnostic report for a frame."""
     import webbrowser
-    from lieutenant_of_poker.analysis import generate_diagnostic_report, get_video_info
+    from lieutenant_of_poker.diagnostic import generate_diagnostic_report
+    from lieutenant_of_poker.frame_extractor import get_video_info
 
     info = get_video_info(args.video)
     print(f"Video: {args.video}", file=sys.stderr)
@@ -651,7 +654,7 @@ def cmd_split(args):
     output_dir = Path(args.output_dir) if args.output_dir else video_path.parent
     prefix = args.prefix if args.prefix else video_path.stem
 
-    from lieutenant_of_poker.analysis import get_video_info
+    from lieutenant_of_poker.frame_extractor import get_video_info
     info = get_video_info(args.video)
     total_frames = info['frame_count']
 

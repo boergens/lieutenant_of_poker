@@ -2,7 +2,7 @@
 Output formatting for game state analysis.
 """
 
-from typing import List, Optional
+from typing import List
 from .game_state import GameState
 
 
@@ -11,15 +11,10 @@ def format_changes(states: List[GameState], verbose: bool = False) -> str:
 
     Args:
         states: List of game states to format.
-        verbose: If True, mark changes that would be rejected by the validator.
+        verbose: If True, show [X] prefix on rejected states.
     """
     if not states:
         return "No frames analyzed."
-
-    validator = None
-    if verbose:
-        from .rules_validator import RulesValidator
-        validator = RulesValidator(allow_new_hand=False, check_chip_increases=True)
 
     lines = []
     first = states[0]
@@ -33,7 +28,7 @@ def format_changes(states: List[GameState], verbose: bool = False) -> str:
     for pos, player in first.players.items():
         lines.append(f"  {pos.name}: {player.chips}")
 
-    # Track previous state
+    # Track previous accepted state for computing deltas
     prev = first
 
     # Subsequent frames: only changes
@@ -56,26 +51,28 @@ def format_changes(states: List[GameState], verbose: bool = False) -> str:
         if curr_hero != prev_hero:
             changes.append(f"hero: {' '.join(curr_hero)}")
 
+        total_bet = 0
         for pos in state.players:
             prev_chips = prev.players.get(pos)
             curr_chips = state.players.get(pos)
             if prev_chips and curr_chips and prev_chips.chips != curr_chips.chips:
+                delta = curr_chips.chips - prev_chips.chips
+                if delta < 0:
+                    total_bet += -delta
                 changes.append(f"{pos.name}: {prev_chips.chips} → {curr_chips.chips}")
 
-        if changes:
-            # Check if this transition would be rejected
-            rejected = False
-            if validator:
-                result = validator.validate_transition(prev, state)
-                rejected = not result.is_valid
+        if total_bet > 0 and not state.rejected:
+            changes.insert(0, f"bet: {total_bet}")
 
-            prefix = "[X] " if rejected else ""
+        if changes:
+            prefix = "[X] " if (state.rejected and verbose) else ""
             lines.append(f"{prefix}[{state.frame_number}] {state.timestamp_ms:.0f}ms: {', '.join(changes)}")
 
-            # Only update prev for valid transitions
-            if not rejected:
+            # Only update prev for valid (non-rejected) transitions
+            if not state.rejected:
                 prev = state
         else:
-            prev = state
+            if not state.rejected:
+                prev = state
 
     return '\n'.join(lines)

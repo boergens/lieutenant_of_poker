@@ -7,12 +7,9 @@ extracting frames, and generating reports.
 
 from collections import Counter
 from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import Iterator, Optional, Callable, List, TypeVar
+from typing import Optional, Callable, List, TypeVar
 
-import cv2
-
-from .frame_extractor import VideoFrameExtractor, FrameInfo
+from .frame_extractor import VideoFrameExtractor
 from .game_state import GameStateExtractor, GameState, PlayerPosition, PlayerState
 
 T = TypeVar("T")
@@ -186,10 +183,8 @@ def analyze_video(
     config: AnalysisConfig,
     on_progress: Optional[Callable[[AnalysisProgress], None]] = None,
     initial_frames: int = 3,
-    validate_rules: bool = True,
-    on_invalid_state: Optional[Callable[[GameState, "ValidationResult"], None]] = None,
     consensus_frames: int = CONSENSUS_FRAMES,
-    verbose: bool = False,
+    include_rejected: bool = False,
 ) -> List[GameState]:
     """
     Analyze a video file and extract game states.
@@ -206,43 +201,24 @@ def analyze_video(
         config: Analysis configuration.
         on_progress: Optional callback for progress updates.
         initial_frames: Number of frames to pool for initial state (default 3).
-        validate_rules: If True, filter out states with illegal transitions.
-        on_invalid_state: Optional callback when a state is rejected.
-                         Args: (state, validation_result)
         consensus_frames: Number of consecutive VALID frames needed to accept
                          a state change (default 3).
+        include_rejected: If True, include rejected states in output with
+                         rejected=True flag set. Default False.
 
     Returns:
         List of GameState objects extracted from the video.
     """
     from .chip_ocr import get_ocr_calls, clear_caches
     from .fast_ocr import set_ocr_debug_context
-    from .rules_validator import RulesValidator, ValidationResult
+    from .rules_validator import is_complete_frame, validate_transition
 
     extractor = GameStateExtractor()
     clear_caches()
 
-    # Initialize rules validator - no new hand detection (single game)
-    # Enable chip increase checks to catch OCR errors like 30 → 3660
-    validator = RulesValidator(
-        allow_new_hand=False,
-        check_chip_increases=True,
-    ) if validate_rules else None
-
     states = []
     initial_states = []  # Collect first N frames for majority voting
     pending_change_buffer = []  # Buffer for valid frames proposing a state change
-
-    def is_valid_frame(state: GameState) -> bool:
-        """Check if a frame has all required values (no None in critical fields)."""
-        if state.pot is None or state.hero_chips is None:
-            return False
-        if len(state.hero_cards) < 2:
-            return False
-        for player in state.players.values():
-            if player.chips is None:
-                return False
-        return True
 
     with VideoFrameExtractor(video_path) as video:
         start_ms = config.start_ms
@@ -263,19 +239,6 @@ def analyze_video(
                 timestamp_ms=frame_info.timestamp_ms,
             )
 
-            # Verbose mode: skip validation/consensus, but still deduplicate
-            if verbose:
-                if not states or not states_equivalent(states[-1], state):
-                    states.append(state)
-                current_frame += 1
-                if on_progress:
-                    on_progress(AnalysisProgress(
-                        current_frame=current_frame,
-                        total_frames=total_frames,
-                        timestamp_ms=frame_info.timestamp_ms,
-                        ocr_calls=get_ocr_calls(),
-                    ))
-                continue
 
             # Pool first N frames for majority voting to establish initial state
             if current_frame < initial_frames:
@@ -286,13 +249,11 @@ def analyze_video(
                     states.append(consolidated)
             else:
                 # First check: frame must have all values (no None in critical fields)
-                if not is_valid_frame(state):
+                if not is_complete_frame(state):
                     # Invalid frame - discard completely, reset pending buffer
-                    if on_invalid_state:
-                        on_invalid_state(state, ValidationResult(
-                            is_valid=False,
-                            violations=[],
-                        ))
+                    if include_rejected:
+                        state.rejected = True
+                        states.append(state)
                     pending_change_buffer = []
                     current_frame += 1
                     if on_progress:
@@ -305,13 +266,23 @@ def analyze_video(
                     continue
 
                 # Second check: validate against current accepted state
-                current_state = states[-1] if states else None
-                if validator and current_state:
-                    result = validator.validate_transition(current_state, state)
+                # Find last accepted (non-rejected) state for comparison
+                current_state = None
+                for s in reversed(states):
+                    if not s.rejected:
+                        current_state = s
+                        break
+                if current_state:
+                    result = validate_transition(
+                        current_state, state,
+                        allow_new_hand=False,
+                        check_chip_increases=True,
+                    )
                     if not result.is_valid:
                         # Invalid transition - discard frame, reset pending buffer
-                        if on_invalid_state:
-                            on_invalid_state(state, result)
+                        if include_rejected:
+                            state.rejected = True
+                            states.append(state)
                         pending_change_buffer = []
                     elif states_equivalent(current_state, state):
                         # Valid but no change - keep current state, reset pending buffer
@@ -350,126 +321,3 @@ def analyze_video(
             states.append(consolidated)
 
     return states
-
-
-def extract_frames(
-    video_path: str,
-    output_dir: Path,
-    interval_ms: int = 1000,
-    format: str = "jpg",
-    start_ms: float = 0,
-    end_ms: Optional[float] = None,
-    on_progress: Optional[Callable[[int, int], None]] = None,
-) -> int:
-    """
-    Extract frames from a video file to disk.
-
-    Args:
-        video_path: Path to the video file.
-        output_dir: Directory to save frames.
-        interval_ms: Interval between frames in milliseconds.
-        format: Output format ('jpg' or 'png').
-        start_ms: Start timestamp in milliseconds.
-        end_ms: End timestamp in milliseconds (None = end of video).
-        on_progress: Optional callback (current, total).
-
-    Returns:
-        Number of frames extracted.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    count = 0
-
-    with VideoFrameExtractor(video_path) as video:
-        actual_end_ms = end_ms if end_ms else video.duration_seconds * 1000
-        total_frames = int((actual_end_ms - start_ms) / interval_ms) + 1
-
-        for frame_info in video.iterate_at_interval(
-            interval_ms, start_ms, actual_end_ms if end_ms else None
-        ):
-            timestamp_s = frame_info.timestamp_ms / 1000
-            filename = f"frame_{timestamp_s:.2f}s.{format}"
-            filepath = output_dir / filename
-            cv2.imwrite(str(filepath), frame_info.image)
-            count += 1
-
-            if on_progress:
-                on_progress(count, total_frames)
-
-    return count
-
-
-def get_video_info(video_path: str) -> dict:
-    """
-    Get information about a video file.
-
-    Args:
-        video_path: Path to the video file.
-
-    Returns:
-        Dictionary with video metadata.
-    """
-    with VideoFrameExtractor(video_path) as video:
-        return {
-            "path": video_path,
-            "width": video.width,
-            "height": video.height,
-            "fps": video.fps,
-            "duration_seconds": video.duration_seconds,
-            "frame_count": video.frame_count,
-        }
-
-
-def generate_diagnostic_report(
-    video_path: str,
-    output_path: Path,
-    frame_number: Optional[int] = None,
-    timestamp_s: Optional[float] = None,
-) -> dict:
-    """
-    Generate a diagnostic report for a specific frame.
-
-    Args:
-        video_path: Path to the video file.
-        output_path: Path for the HTML report.
-        frame_number: Frame number to analyze (mutually exclusive with timestamp_s).
-        timestamp_s: Timestamp in seconds (mutually exclusive with frame_number).
-
-    Returns:
-        Dictionary with report statistics.
-    """
-    from .diagnostic import DiagnosticExtractor, generate_html_report
-
-    with VideoFrameExtractor(video_path) as video:
-        # Determine which frame to analyze
-        if frame_number is not None:
-            frame_info = video.get_frame_at(frame_number)
-        elif timestamp_s is not None:
-            frame_info = video.get_frame_at_timestamp(timestamp_s * 1000)
-        else:
-            frame_info = video.get_frame_at(0)
-
-        if frame_info is None:
-            raise ValueError("Could not read frame")
-
-        # Run diagnostic extraction
-        extractor = DiagnosticExtractor()
-        report = extractor.extract_with_diagnostics(
-            frame_info.image,
-            frame_number=frame_info.frame_number,
-            timestamp_ms=frame_info.timestamp_ms,
-        )
-
-        # Generate HTML report
-        generate_html_report(report, output_path)
-
-        # Return statistics
-        successes = sum(1 for s in report.steps if s.success)
-        failures = sum(1 for s in report.steps if not s.success)
-
-        return {
-            "frame_number": frame_info.frame_number,
-            "timestamp_ms": frame_info.timestamp_ms,
-            "steps_succeeded": successes,
-            "steps_failed": failures,
-            "output_path": output_path,
-        }
