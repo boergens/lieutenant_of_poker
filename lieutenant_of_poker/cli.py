@@ -13,23 +13,16 @@ Usage:
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-from rich.progress import (
-    Progress,
-    BarColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-    MofNCompleteColumn,
-    SpinnerColumn,
-)
+from rich.progress import TextColumn
+
+from lieutenant_of_poker.progress import create_progress
 
 from lieutenant_of_poker import __version__
-from lieutenant_of_poker.game_state import GameState
-from lieutenant_of_poker.hand_history import HandHistoryExporter
+from lieutenant_of_poker.snowie_export import export_snowie
+from lieutenant_of_poker.pokerstars_export import export_pokerstars
 
 
 def main():
@@ -90,7 +83,7 @@ def main():
     )
     export_parser.add_argument("video", help="Path to video file")
     export_parser.add_argument(
-        "--format", "-f", default="snowie", choices=["pokerstars", "snowie", "json"],
+        "--format", "-f", default="snowie", choices=["pokerstars", "snowie"],
         help="Output format (default: snowie)"
     )
     export_parser.add_argument(
@@ -330,19 +323,7 @@ def cmd_extract_frames(args):
     print(f"  Expected frames: {total_frames}", file=sys.stderr)
     print(f"  Output: {output_dir}/", file=sys.stderr)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(bar_width=40),
-        MofNCompleteColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        TextColumn("ETA:"),
-        TimeRemainingColumn(),
-        console=None,
-        transient=False,
-        disable=not sys.stderr.isatty(),
-    ) as progress:
+    with create_progress() as progress:
         task = progress.add_task("Extracting frames", total=total_frames)
 
         def on_progress(current, total):
@@ -377,20 +358,7 @@ def cmd_analyze(args):
         end_ms=end_ms if args.end else None,
     )
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(bar_width=40),
-        MofNCompleteColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TextColumn("OCR: {task.fields[ocr]}"),
-        TimeElapsedColumn(),
-        TextColumn("ETA:"),
-        TimeRemainingColumn(),
-        console=None,
-        transient=False,
-        disable=not sys.stderr.isatty(),
-    ) as progress:
+    with create_progress(TextColumn("OCR: {task.fields[ocr]}")) as progress:
         task = progress.add_task("Analyzing frames", total=total_frames, ocr=0)
 
         def on_progress(p):
@@ -428,19 +396,7 @@ def cmd_export(args):
         end_ms=end_ms if args.end else None,
     )
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(bar_width=40),
-        MofNCompleteColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        TextColumn("ETA:"),
-        TimeRemainingColumn(),
-        console=None,
-        transient=False,
-        disable=not sys.stderr.isatty(),
-    ) as progress:
+    with create_progress() as progress:
         task = progress.add_task("Extracting states", total=total_frames)
 
         def on_progress(p):
@@ -454,16 +410,12 @@ def cmd_export(args):
 
     # Export based on format
     if args.format == "snowie":
-        output = states_to_snowie(states, button_pos=args.button)
-    elif args.format == "pokerstars":
-        exporter = HandHistoryExporter()
-        hand = exporter.create_hand_from_states(states)
-        if hand is None:
+        output = export_snowie(states, button_pos=args.button)
+    else:  # pokerstars
+        output = export_pokerstars(states, button_pos=args.button)
+        if not output:
             print("No hand data detected.", file=sys.stderr)
             return
-        output = exporter.export_pokerstars_format(hand)
-    else:  # json
-        output = json.dumps([game_state_to_dict(s) for s in states], indent=2)
 
     if args.output:
         with open(args.output, "w") as f:
@@ -662,17 +614,7 @@ def cmd_split(args):
     print(f"  Duration: {info['duration_seconds']:.1f}s", file=sys.stderr)
     print(f"  Threshold: {args.threshold}, Consecutive: {args.consecutive}", file=sys.stderr)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(bar_width=40),
-        MofNCompleteColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=None,
-        transient=False,
-        disable=not sys.stderr.isatty(),
-    ) as progress:
+    with create_progress() as progress:
         task = progress.add_task("Scanning frames", total=total_frames)
 
         def on_progress(current, total):
@@ -828,39 +770,6 @@ def cmd_monitor(args):
             print(f"  Recordings: {len(recordings_made)}", file=sys.stderr)
             for rec in recordings_made:
                 print(f"    - {rec}", file=sys.stderr)
-
-
-def game_state_to_dict(state: GameState) -> dict:
-    """Convert GameState to dictionary for JSON output."""
-    return {
-        "frame_number": state.frame_number,
-        "timestamp_ms": state.timestamp_ms,
-        "street": state.street.name,
-        "pot": state.pot,
-        "community_cards": [str(c) for c in state.community_cards],
-        "hero_cards": [str(c) for c in state.hero_cards],
-        "players": {
-            pos.name: player.chips
-            for pos, player in state.players.items()
-        }
-    }
-
-
-def hand_to_dict(hand) -> dict:
-    """Convert HandHistory to dictionary for JSON output."""
-    return {
-        "hand_id": hand.hand_id,
-        "table_name": hand.table_name,
-        "timestamp": hand.timestamp.isoformat(),
-        "small_blind": hand.small_blind,
-        "big_blind": hand.big_blind,
-        "pot": hand.pot,
-        "hero_cards": [c.short_name for c in hand.hero_cards],
-        "flop_cards": [c.short_name for c in hand.flop_cards],
-        "turn_card": hand.turn_card.short_name if hand.turn_card else None,
-        "river_card": hand.river_card.short_name if hand.river_card else None,
-        "players": [(name, chips, str(pos)) for name, chips, pos in hand.players],
-    }
 
 
 if __name__ == "__main__":

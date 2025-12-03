@@ -45,10 +45,12 @@ from lieutenant_of_poker.game_state import (
 )
 from lieutenant_of_poker.hand_history import (
     HandAction,
+    PlayerInfo,
     HandHistory,
-    HandHistoryExporter,
-    export_hand_to_pokerstars,
+    HandReconstructor,
 )
+from lieutenant_of_poker.snowie_export import export_snowie
+from lieutenant_of_poker.pokerstars_export import export_pokerstars
 
 __all__ = [
     # Frame extraction
@@ -81,7 +83,9 @@ __all__ = [
     "extract_game_state",
     # Hand history
     "HandAction",
+    "PlayerInfo",
     "HandHistory",
-    "HandHistoryExporter",
-    "export_hand_to_pokerstars",
+    "HandReconstructor",
+    "export_snowie",
+    "export_pokerstars",
 ]

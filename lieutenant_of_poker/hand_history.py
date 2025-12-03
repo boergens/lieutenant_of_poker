@@ -1,16 +1,14 @@
 """
-Hand history export for Governor of Poker.
+Hand history reconstruction from GameState observations.
 
-Exports detected game states to standard hand history formats
-for use with poker analysis tools.
+Shared data structures and reconstruction logic used by all exporters.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, TextIO
-import io
+from typing import List, Optional, Tuple
 
-from lieutenant_of_poker.game_state import GameState, Street, PlayerState
+from lieutenant_of_poker.game_state import GameState, Street
 from lieutenant_of_poker.table_regions import PlayerPosition
 from lieutenant_of_poker.card_detector import Card
 from lieutenant_of_poker.action_detector import PlayerAction
@@ -23,29 +21,15 @@ class HandAction:
     action: PlayerAction
     amount: Optional[int] = None
 
-    def __str__(self) -> str:
-        if self.action == PlayerAction.FOLD:
-            return f"{self.player_name}: folds"
-        elif self.action == PlayerAction.CHECK:
-            return f"{self.player_name}: checks"
-        elif self.action == PlayerAction.CALL:
-            if self.amount:
-                return f"{self.player_name}: calls ${self.amount}"
-            return f"{self.player_name}: calls"
-        elif self.action == PlayerAction.RAISE:
-            if self.amount:
-                return f"{self.player_name}: raises to ${self.amount}"
-            return f"{self.player_name}: raises"
-        elif self.action == PlayerAction.BET:
-            if self.amount:
-                return f"{self.player_name}: bets ${self.amount}"
-            return f"{self.player_name}: bets"
-        elif self.action == PlayerAction.ALL_IN:
-            if self.amount:
-                return f"{self.player_name}: raises to ${self.amount} and is all-in"
-            return f"{self.player_name}: is all-in"
-        else:
-            return f"{self.player_name}: unknown action"
+
+@dataclass
+class PlayerInfo:
+    """Information about a player at the start of the hand."""
+    seat: int
+    name: str
+    chips: int
+    position: PlayerPosition
+    is_hero: bool = False
 
 
 @dataclass
@@ -55,326 +39,191 @@ class HandHistory:
     table_name: str = "Governor of Poker"
     timestamp: datetime = field(default_factory=datetime.now)
 
-    # Stakes
     small_blind: int = 10
     big_blind: int = 20
 
-    # Players and positions
-    players: List[tuple] = field(default_factory=list)  # [(name, chips, position)]
-    button_position: int = 0
+    players: List[PlayerInfo] = field(default_factory=list)
+    button_seat: int = 0
+    sb_seat: int = 0
+    bb_seat: int = 0
 
-    # Cards
     hero_cards: List[Card] = field(default_factory=list)
     flop_cards: List[Card] = field(default_factory=list)
     turn_card: Optional[Card] = None
     river_card: Optional[Card] = None
 
-    # Actions by street
     preflop_actions: List[HandAction] = field(default_factory=list)
     flop_actions: List[HandAction] = field(default_factory=list)
     turn_actions: List[HandAction] = field(default_factory=list)
     river_actions: List[HandAction] = field(default_factory=list)
 
-    # Results
     pot: int = 0
-    winner: Optional[str] = None
-    winnings: Optional[int] = None
+    hero_went_all_in: bool = False
+    hero_folded: bool = False
+    uncalled_bet: int = 0
+    uncalled_bet_player: Optional[str] = None
+
+    def get_sb_player(self) -> Optional[PlayerInfo]:
+        for p in self.players:
+            if p.seat == self.sb_seat:
+                return p
+        return None
+
+    def get_bb_player(self) -> Optional[PlayerInfo]:
+        for p in self.players:
+            if p.seat == self.bb_seat:
+                return p
+        return None
+
+    def get_hero(self) -> Optional[PlayerInfo]:
+        for p in self.players:
+            if p.is_hero:
+                return p
+        return None
+
+    def get_opponents(self) -> List[PlayerInfo]:
+        """Get non-hero players in post-flop action order (starting from SB)."""
+        opponents = []
+        for i in range(len(self.players)):
+            idx = (self.sb_seat + i) % len(self.players)
+            p = self.players[idx]
+            if not p.is_hero:
+                opponents.append(p)
+        return opponents
 
 
-class HandHistoryExporter:
-    """Exports hand histories to various formats."""
+def _calculate_blind_positions(button_seat: int, num_players: int) -> Tuple[int, int]:
+    """Calculate SB and BB seats. Handles heads-up where button = SB."""
+    if num_players == 2:
+        return button_seat, (button_seat + 1) % 2
+    elif num_players >= 3:
+        return (button_seat + 1) % num_players, (button_seat + 2) % num_players
+    return 0, 0
 
-    def __init__(self):
-        """Initialize the exporter."""
-        self._hand_counter = 0
 
-    def export_pokerstars_format(self, hand: HandHistory) -> str:
-        """
-        Export hand history in PokerStars format.
+class HandReconstructor:
+    """Reconstructs hand history from GameState observations."""
 
-        Args:
-            hand: HandHistory object to export.
+    SEAT_ORDER = [
+        PlayerPosition.SEAT_1,
+        PlayerPosition.SEAT_2,
+        PlayerPosition.SEAT_3,
+        PlayerPosition.SEAT_4,
+        PlayerPosition.HERO,
+    ]
 
-        Returns:
-            String in PokerStars hand history format.
-        """
-        output = io.StringIO()
-        self._write_pokerstars_format(hand, output)
-        return output.getvalue()
+    def __init__(self, hero_name: str = "hero"):
+        self.hero_name = hero_name
 
-    def _write_pokerstars_format(self, hand: HandHistory, f: TextIO) -> None:
-        """Write hand history in PokerStars format."""
-        # Header
-        f.write(f"PokerStars Hand #{hand.hand_id}: Hold'em No Limit ")
-        f.write(f"(${hand.small_blind}/${hand.big_blind})\n")
-        f.write(f"Table '{hand.table_name}' 6-max Seat #{hand.button_position + 1} is the button\n")
-
-        # Players
-        for i, (name, chips, pos) in enumerate(hand.players):
-            f.write(f"Seat {i + 1}: {name} (${chips} in chips)\n")
-
-        # Blinds
-        if len(hand.players) >= 2:
-            sb_idx = (hand.button_position + 1) % len(hand.players)
-            bb_idx = (hand.button_position + 2) % len(hand.players)
-            f.write(f"{hand.players[sb_idx][0]}: posts small blind ${hand.small_blind}\n")
-            f.write(f"{hand.players[bb_idx][0]}: posts big blind ${hand.big_blind}\n")
-
-        # Hole cards
-        f.write("*** HOLE CARDS ***\n")
-        if hand.hero_cards:
-            cards_str = " ".join(c.short_name for c in hand.hero_cards)
-            f.write(f"Dealt to Hero [{cards_str}]\n")
-
-        # Preflop actions
-        for action in hand.preflop_actions:
-            f.write(f"{action}\n")
-
-        # Flop
-        if hand.flop_cards:
-            cards_str = " ".join(c.short_name for c in hand.flop_cards)
-            f.write(f"*** FLOP *** [{cards_str}]\n")
-            for action in hand.flop_actions:
-                f.write(f"{action}\n")
-
-        # Turn
-        if hand.turn_card:
-            flop_str = " ".join(c.short_name for c in hand.flop_cards)
-            turn_str = hand.turn_card.short_name
-            f.write(f"*** TURN *** [{flop_str}] [{turn_str}]\n")
-            for action in hand.turn_actions:
-                f.write(f"{action}\n")
-
-        # River
-        if hand.river_card:
-            board_str = " ".join(c.short_name for c in hand.flop_cards)
-            board_str += f" {hand.turn_card.short_name}"
-            river_str = hand.river_card.short_name
-            f.write(f"*** RIVER *** [{board_str}] [{river_str}]\n")
-            for action in hand.river_actions:
-                f.write(f"{action}\n")
-
-        # Summary
-        f.write("*** SUMMARY ***\n")
-        f.write(f"Total pot ${hand.pot}\n")
-
-        # Board
-        board_cards = hand.flop_cards.copy()
-        if hand.turn_card:
-            board_cards.append(hand.turn_card)
-        if hand.river_card:
-            board_cards.append(hand.river_card)
-        if board_cards:
-            board_str = " ".join(c.short_name for c in board_cards)
-            f.write(f"Board [{board_str}]\n")
-
-        if hand.winner and hand.winnings:
-            f.write(f"{hand.winner} collected ${hand.winnings} from pot\n")
-
-    def create_hand_from_states(
-        self,
-        states: List[GameState],
-        hero_name: str = "Hero"
-    ) -> Optional[HandHistory]:
-        """
-        Create a HandHistory from a sequence of GameStates.
-
-        Args:
-            states: List of GameState objects from a single hand.
-            hero_name: Name to use for the hero player.
-
-        Returns:
-            HandHistory object, or None if states are empty.
-        """
+    def reconstruct(self, states: List[GameState], button_pos: int = 0) -> Optional[HandHistory]:
         if not states:
             return None
 
-        self._hand_counter += 1
-        hand = HandHistory(hand_id=str(self._hand_counter))
+        initial, final = states[0], states[-1]
 
-        # Get initial state for player info
-        initial = states[0]
+        # Infer blinds from initial pot (SB:BB = 1:2)
+        initial_pot = initial.pot or 60
+        small_blind = initial_pot // 3
+        big_blind = small_blind * 2
 
-        # Set hero cards from first state that has them
+        players, pos_to_player, orig_to_new = self._build_players(initial)
+        if not players:
+            return None
+
+        new_button = orig_to_new.get(button_pos, 0)
+        sb_seat, bb_seat = _calculate_blind_positions(new_button, len(players))
+
+        hand = HandHistory(
+            hand_id=str(abs(hash(str(initial.timestamp_ms))) % 100000000),
+            small_blind=small_blind,
+            big_blind=big_blind,
+            players=players,
+            button_seat=new_button,
+            sb_seat=sb_seat,
+            bb_seat=bb_seat,
+            pot=final.pot or 0,
+        )
+
         for state in states:
             if state.hero_cards:
                 hand.hero_cards = state.hero_cards
                 break
 
-        # Get community cards from final state
-        final = states[-1]
-        if final.community_cards:
-            if len(final.community_cards) >= 3:
-                hand.flop_cards = final.community_cards[:3]
-            if len(final.community_cards) >= 4:
-                hand.turn_card = final.community_cards[3]
-            if len(final.community_cards) >= 5:
-                hand.river_card = final.community_cards[4]
-
-        # Get pot from final state
-        if final.pot:
-            hand.pot = final.pot
-
-        # Build player list
-        for pos, player in initial.players.items():
-            name = player.name or f"Player_{pos.name}"
-            chips = player.chips or 1000
-            hand.players.append((name, chips, pos))
-
+        self._process_states(hand, states, pos_to_player, big_blind)
         return hand
 
+    def _build_players(self, initial: GameState):
+        players, orig_to_new, pos_to_player = [], {}, {}
+        seat_idx = 0
 
-def export_hand_to_pokerstars(hand: HandHistory) -> str:
-    """
-    Convenience function to export a hand in PokerStars format.
+        for orig_idx, pos in enumerate(self.SEAT_ORDER):
+            if pos in initial.players:
+                chips = initial.players[pos].chips
+                if not chips or chips <= 0:
+                    continue
 
-    Args:
-        hand: HandHistory to export.
+                name = self.hero_name if pos == PlayerPosition.HERO else pos.name
+                player = PlayerInfo(seat_idx, name, chips, pos, pos == PlayerPosition.HERO)
+                players.append(player)
+                pos_to_player[pos] = player
+                orig_to_new[orig_idx] = seat_idx
+                seat_idx += 1
 
-    Returns:
-        PokerStars format string.
-    """
-    exporter = HandHistoryExporter()
-    return exporter.export_pokerstars_format(hand)
+        return players, pos_to_player, orig_to_new
 
+    def _process_states(self, hand: HandHistory, states: List[GameState], pos_to_player: dict, big_blind: int):
+        current_street = Street.PREFLOP
+        prev_state = states[0]
+        current_bet = big_blind
+        last_aggressor, last_bet = None, 0
 
-class SnowieExporter:
-    """Exports hand histories in Snowie/Freezeout format."""
+        for state in states[1:]:
+            new_street = state.street
+            if new_street != current_street and new_street != Street.UNKNOWN:
+                if new_street == Street.FLOP and len(state.community_cards) >= 3:
+                    hand.flop_cards = state.community_cards[:3]
+                elif new_street == Street.TURN and len(state.community_cards) >= 4:
+                    hand.turn_card = state.community_cards[3]
+                elif new_street == Street.RIVER and len(state.community_cards) >= 5:
+                    hand.river_card = state.community_cards[4]
+                current_street = new_street
+                current_bet = 0
 
-    def __init__(self, hero_name: str = "hero"):
-        """
-        Initialize the exporter.
+            pot_change = (state.pot or 0) - (prev_state.pot or 0)
+            if pot_change > 0:
+                for pos in state.players:
+                    prev_p, curr_p = prev_state.players.get(pos), state.players.get(pos)
+                    if prev_p and curr_p and pos in pos_to_player:
+                        chip_change = (prev_p.chips or 0) - (curr_p.chips or 0)
+                        if chip_change > 0:
+                            player = pos_to_player[pos]
+                            action_type = PlayerAction.RAISE if chip_change > current_bet else PlayerAction.CALL
+                            if chip_change > current_bet:
+                                current_bet = chip_change
 
-        Args:
-            hero_name: Name to use for the hero player.
-        """
-        self.hero_name = hero_name
-        self._game_counter = 0
+                            action = HandAction(player.name, action_type, chip_change)
+                            self._add_action(hand, current_street, action)
 
-    def _format_card(self, card: Card) -> str:
-        """Format a card for Snowie format (e.g., 'Jd', 'Qs')."""
-        return card.short_name
+                            last_aggressor, last_bet = player, chip_change
 
-    def _format_cards(self, cards: List[Card]) -> str:
-        """Format cards for Snowie format (e.g., '[JdQs]' or '[6s Jh 8c]')."""
-        if not cards:
-            return "[]"
-        # Hole cards: no spaces, community cards: with spaces
-        if len(cards) == 2:
-            return "[" + "".join(self._format_card(c) for c in cards) + "]"
-        else:
-            return "[" + " ".join(self._format_card(c) for c in cards) + "]"
+                            if player.is_hero and (curr_p.chips or 0) == 0:
+                                hand.hero_went_all_in = True
+                                hand.pot = prev_state.pot or 0
+                                return
 
-    def _format_action(self, action: HandAction) -> str:
-        """Format an action for Snowie format."""
-        player = action.player_name
-        amount = action.amount or 0
+            prev_state = state
 
-        if action.action == PlayerAction.FOLD:
-            return f"Move: {player} folds 0"
-        elif action.action == PlayerAction.CHECK:
-            return f"Move: {player} call_check 0"
-        elif action.action == PlayerAction.CALL:
-            return f"Move: {player} call_check {amount}"
-        elif action.action in (PlayerAction.RAISE, PlayerAction.BET, PlayerAction.ALL_IN):
-            return f"Move: {player} raise_bet {amount}"
-        else:
-            return f"Move: {player} call_check 0"
+        hand.hero_folded = True
+        hand.pot = states[-1].pot or 0
+        if last_aggressor and last_bet > 0:
+            hand.uncalled_bet = last_bet
+            hand.uncalled_bet_player = last_aggressor.name
+            hand.pot -= last_bet
 
-    def export(self, hand: HandHistory) -> str:
-        """
-        Export hand history in Snowie/Freezeout format.
-
-        Args:
-            hand: HandHistory object to export.
-
-        Returns:
-            String in Snowie format.
-        """
-        output = io.StringIO()
-        self._write_snowie_format(hand, output)
-        return output.getvalue()
-
-    def _write_snowie_format(self, hand: HandHistory, f: TextIO) -> None:
-        """Write hand history in Snowie format."""
-        self._game_counter += 1
-
-        # Header
-        f.write("GameStart\n")
-        f.write("PokerClient: ExportFormat\n")
-        f.write(f"Date: {hand.timestamp.strftime('%d/%m/%Y')}\n")
-        f.write("TimeZone: GMT\n")
-        f.write(f"Time: {hand.timestamp.strftime('%H:%M:%S')}\n")
-        f.write(f"GameId:{hand.hand_id}\n")
-        f.write("GameType:NoLimit\n")
-        f.write("GameCurrency: $\n")
-        f.write(f"SmallBlindStake: {hand.small_blind}\n")
-        f.write(f"BigBlindStake: {hand.big_blind}\n")
-        f.write("AnteStake: 0\n")
-        f.write(f"TableName: {hand.table_name}\n")
-        f.write(f"Max number of players: {len(hand.players)}\n")
-        f.write(f"MyPlayerName: {self.hero_name}\n")
-        f.write(f"DealerPosition: {hand.button_position}\n")
-
-        # Seats - Snowie uses 0-indexed seats
-        for i, (name, chips, pos) in enumerate(hand.players):
-            f.write(f"Seat {i} {name} {chips}\n")
-
-        # Blinds
-        if len(hand.players) >= 2:
-            sb_idx = (hand.button_position + 1) % len(hand.players)
-            bb_idx = (hand.button_position + 2) % len(hand.players)
-            sb_name = hand.players[sb_idx][0]
-            bb_name = hand.players[bb_idx][0]
-            f.write(f"SmallBlind: {sb_name} {hand.small_blind}\n")
-            f.write(f"BigBlind: {bb_name} {hand.big_blind}\n")
-
-        # Dealt cards (hero's hole cards)
-        if hand.hero_cards:
-            f.write(f"Dealt Cards: {self._format_cards(hand.hero_cards)}\n")
-
-        # Preflop actions
-        for action in hand.preflop_actions:
-            f.write(f"{self._format_action(action)}\n")
-
-        # Flop
-        if hand.flop_cards:
-            f.write(f"FLOP Community Cards:{self._format_cards(hand.flop_cards)}\n")
-            for action in hand.flop_actions:
-                f.write(f"{self._format_action(action)}\n")
-
-        # Turn
-        if hand.turn_card:
-            turn_board = hand.flop_cards + [hand.turn_card]
-            f.write(f"TURN Community Cards:{self._format_cards(turn_board)}\n")
-            for action in hand.turn_actions:
-                f.write(f"{self._format_action(action)}\n")
-
-        # River
-        if hand.river_card:
-            river_board = hand.flop_cards + [hand.turn_card, hand.river_card]
-            f.write(f"RIVER Community Cards:{self._format_cards(river_board)}\n")
-            for action in hand.river_actions:
-                f.write(f"{self._format_action(action)}\n")
-
-        # Winner
-        if hand.winner and hand.winnings:
-            f.write(f"Winner: {hand.winner} {hand.winnings:.2f}\n")
-
-        f.write("GameEnd\n")
-        f.write("\n")
-
-
-def export_hand_to_snowie(hand: HandHistory, hero_name: str = "hero") -> str:
-    """
-    Convenience function to export a hand in Snowie format.
-
-    Args:
-        hand: HandHistory to export.
-        hero_name: Name to use for the hero player.
-
-    Returns:
-        Snowie format string.
-    """
-    exporter = SnowieExporter(hero_name=hero_name)
-    return exporter.export(hand)
+    def _add_action(self, hand: HandHistory, street: Street, action: HandAction):
+        {
+            Street.PREFLOP: hand.preflop_actions,
+            Street.FLOP: hand.flop_actions,
+            Street.TURN: hand.turn_actions,
+            Street.RIVER: hand.river_actions,
+        }.get(street, []).append(action)
