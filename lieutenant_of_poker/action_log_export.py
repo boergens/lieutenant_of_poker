@@ -75,5 +75,7 @@ class ActionLogExporter:
             return f"{a.player_name} bets ${a.amount}"
         elif a.action == PlayerAction.ALL_IN:
             return f"{a.player_name} goes all-in ${a.amount}"
+        elif a.action == PlayerAction.UNCALLED_BET:
+            return f"{a.player_name} bets ${a.amount}"
         else:
             return f"{a.player_name} acts"

@@ -98,10 +98,8 @@ class SnowieExporter:
         # Ending
         if hand.hero_went_all_in:
             self._write_hero_all_in(f, hand, hero_name, opponents)
-        elif hand.opponents_folded:
-            self._write_opponents_fold(f, hand, hero_name, opponents)
-        elif hand.hero_folded:
-            self._write_hero_fold(f, hand, hero_name, opponents, sb, bb)
+        elif hand.opponents_folded or hand.hero_folded:
+            self._write_fold_winner(f, hand)
         elif hand.reached_showdown:
             self._write_showdown(f, hand, hero_name, opponents)
 
@@ -124,9 +122,8 @@ class SnowieExporter:
             f.write(f"Move: {p.name} folds 0\n")
         f.write(f"Winner: {hero_name} {hand.pot:.2f}\n")
 
-    def _write_opponents_fold(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
-        """Opponents folded to hero's bet - hero wins."""
-        # Find and write uncalled_bet action
+    def _write_fold_winner(self, f: TextIO, hand: HandHistory):
+        """Someone folded - write uncalled bet and winner."""
         all_actions = (
             hand.preflop_actions + hand.flop_actions +
             hand.turn_actions + hand.river_actions
@@ -136,54 +133,6 @@ class SnowieExporter:
                 f.write(f"uncalled_bet: {a.player_name} {a.amount or 0}\n")
                 break
         f.write(f"Winner: {hand.winner} {hand.payout:.2f}\n")
-
-    def _write_hero_fold(self, f: TextIO, hand: HandHistory, hero_name: str, opponents, sb, bb):
-        f.write(f"Move: {hero_name} folds 0\n")
-
-        has_flop = bool(hand.flop_cards)
-        has_turn = hand.turn_card is not None
-        has_river = hand.river_card is not None
-
-        community = []
-        if hand.flop_cards:
-            community = [c.short_name for c in hand.flop_cards]
-        if hand.turn_card:
-            community.append(hand.turn_card.short_name)
-        if hand.river_card:
-            community.append(hand.river_card.short_name)
-
-        # Simulate remaining preflop
-        if not has_flop:
-            for p in opponents:
-                if p.name == sb.name:
-                    f.write(f"Move: {p.name} call_check {hand.small_blind}\n")
-                elif p.name == bb.name:
-                    f.write(f"Move: {p.name} call_check 0\n")
-                else:
-                    f.write(f"Move: {p.name} call_check {hand.big_blind}\n")
-
-        hero_cards = [c.short_name for c in hand.hero_cards] if hand.hero_cards else []
-        sim = simulate_hand_completion(hero_cards, community, [p.name for p in opponents], hand.pot, self.rng)
-
-        if not has_flop:
-            f.write(f"FLOP Community Cards:[{' '.join(sim.flop)}]\n")
-            for p in opponents:
-                f.write(f"Move: {p.name} call_check 0\n")
-
-        if not has_turn:
-            f.write(f"TURN Community Cards:[{' '.join(sim.flop + [sim.turn])}]\n")
-            for p in opponents:
-                f.write(f"Move: {p.name} call_check 0\n")
-
-        if not has_river:
-            f.write(f"RIVER Community Cards:[{' '.join(sim.flop + [sim.turn, sim.river])}]\n")
-            for p in opponents:
-                f.write(f"Move: {p.name} call_check 0\n")
-
-        for name, cards in sim.opponent_hands.items():
-            f.write(f"Showdown: {name} [{' '.join(cards)}]\n")
-
-        f.write(f"Winner: {sim.winner} {hand.pot:.2f}\n")
 
     def _write_showdown(self, f: TextIO, hand: HandHistory, hero_name: str, opponents):
         """Write showdown when hand reaches river with no fold."""

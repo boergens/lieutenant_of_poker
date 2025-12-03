@@ -273,6 +273,12 @@ def reconstruct_hand(
                 )
 
         # Handle end-of-street logic
+        # Always check for folds from unmatched contributions first
+        players_active = add_folds_for_street(
+            actions_list, contributions, players_active, players_onthespot
+        )
+
+        # Then add checks for check-check scenarios
         if next_street and street_reached(next_street):
             # Street completed normally - add checks if no actions recorded
             if street != Street.PREFLOP and not raw_actions[street]:
@@ -283,11 +289,6 @@ def reconstruct_hand(
             if not raw_actions[street]:
                 for name in players_onthespot:
                     actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
-        else:
-            # Hand ended on this street - check for folds from unmatched contributions
-            players_active = add_folds_for_street(
-                actions_list, contributions, players_active, players_onthespot
-            )
 
     # Clean up preflop: remove the synthetic blind actions we added
     hand.preflop_actions = hand.preflop_actions[2:]
@@ -302,10 +303,11 @@ def reconstruct_hand(
     hero_player_name = players[-1]
     hand.reached_showdown = len(players_active) > 1
     hand.opponents_folded = len(players_active) == 1 and hero_player_name in players_active
+    hand.hero_folded = hero_player_name not in players_active
 
-    # Convert last raise/bet to UNCALLED_BET when opponents folded and set winner
-    if hand.opponents_folded:
-        hand.winner = hero_player_name
+    # Convert last raise/bet to UNCALLED_BET when someone folded and set winner
+    if len(players_active) == 1:
+        hand.winner = players_active[0]
         uncalled_amount = 0
         all_action_lists = [
             hand.river_actions,
