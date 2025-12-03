@@ -105,9 +105,14 @@ class SnowieExporter:
         # Ending
         if hand.hero_went_all_in:
             self._write_hero_all_in(f, hand, hero_name, opponents)
-        elif hand.opponents_folded or hand.hero_folded:
+        elif hand.opponents_folded:
+            # All opponents folded, hero wins
             self._write_fold_winner(f, hand)
-        elif hand.reached_showdown:
+        elif hand.hero_folded and not hand.reached_showdown:
+            # Hero folded and only one opponent left - they win
+            self._write_fold_winner(f, hand)
+        elif hand.reached_showdown or hand.hero_folded:
+            # Multiple players to showdown (hero may or may not be included)
             self._write_showdown(f, hand, hero_name, opponents)
 
         f.write("GameEnd\n\n")
