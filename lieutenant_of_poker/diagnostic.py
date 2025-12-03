@@ -122,6 +122,7 @@ class DiagnosticExtractor:
         self._extract_community_cards(scaled_frame, region_detector)
         self._extract_hero_cards(scaled_frame, region_detector)
         self._extract_players(scaled_frame, region_detector)
+        self._extract_player_names(scaled_frame)
 
         return self.report
 
@@ -411,6 +412,50 @@ class DiagnosticExtractor:
                 step.success = False
 
             self.report.steps.append(step)
+
+    def _extract_player_names(self, frame: np.ndarray) -> None:
+        """Extract player names with diagnostics."""
+        from .name_detector import detect_player_names, extract_name_region
+
+        step = DiagnosticStep(
+            name="Player Name Detection",
+            description="One-time detection of player names from name regions",
+        )
+
+        try:
+            names = detect_player_names(frame, scale_frame=False)  # Already scaled
+
+            for position in self._PlayerPosition:
+                substep = DiagnosticStep(
+                    name=f"{position.name}",
+                    description=f"Name region for {position.name}",
+                )
+
+                # Extract and show name region image
+                name_region = extract_name_region(frame, position, scale_frame=False)
+                substep.images.append(("Name Region", name_region))
+
+                detected_name = names.get(position)
+                if detected_name:
+                    substep.parsed_result = detected_name
+                    substep.success = True
+                else:
+                    substep.parsed_result = "(not detected)"
+                    substep.success = False
+
+                step.substeps.append(substep)
+
+            # Count successful detections
+            detected_count = sum(1 for n in names.values() if n)
+            step.parsed_result = {k.name: v for k, v in names.items() if v}
+            step.description += f" - Detected {detected_count}/5 names"
+            step.success = True  # Step succeeds even with partial detection
+
+        except Exception as e:
+            step.error = str(e)
+            step.success = False
+
+        self.report.steps.append(step)
 
 
 def generate_html_report(report: DiagnosticReport, output_path: Optional[Path] = None) -> str:

@@ -70,6 +70,10 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Output verbose per-frame extractions (no filtering/consensus)"
     )
+    analyze_parser.add_argument(
+        "--player-names", "-p", action="store_true",
+        help="Detect and use actual player names from video (one-time OCR on first frame)"
+    )
 
     # export command
     export_parser = subparsers.add_parser(
@@ -93,12 +97,20 @@ def main():
         "--button", "-b", type=int, default=0,
         help="Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero)"
     )
+    export_parser.add_argument(
+        "--player-names", "-p", action="store_true",
+        help="Detect and use actual player names from video (one-time OCR on first frame)"
+    )
 
     # info command
     info_parser = subparsers.add_parser(
         "info", help="Show video information"
     )
     info_parser.add_argument("video", help="Path to video file")
+    info_parser.add_argument(
+        "--players", "-p", action="store_true",
+        help="Detect and display player names from first frame"
+    )
 
     # diagnose command
     diagnose_parser = subparsers.add_parser(
@@ -339,7 +351,7 @@ def cmd_extract_frames(args):
 def cmd_analyze(args):
     """Analyze video and output game states (every frame)."""
     from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
-    from lieutenant_of_poker.frame_extractor import get_video_info
+    from lieutenant_of_poker.frame_extractor import get_video_info, VideoFrameExtractor
 
     info = get_video_info(args.video)
     start_ms = args.start * 1000
@@ -349,6 +361,21 @@ def cmd_analyze(args):
     start_frame = int(start_ms * info['fps'] / 1000)
     end_frame = int(end_ms * info['fps'] / 1000) if args.end else info['frame_count']
     total_frames = end_frame - start_frame
+
+    # Detect player names if requested
+    player_names = None
+    if args.player_names:
+        from lieutenant_of_poker.name_detector import detect_player_names
+        print("Detecting player names...", file=sys.stderr)
+        with VideoFrameExtractor(args.video) as extractor:
+            frame = extractor.get_frame_at_ms(start_ms)
+            if frame is not None:
+                player_names = detect_player_names(frame)
+                detected = {k.name: v for k, v in player_names.items() if v}
+                if detected:
+                    print(f"  Detected: {detected}", file=sys.stderr)
+                else:
+                    print("  No names detected, using defaults", file=sys.stderr)
 
     config = AnalysisConfig(
         start_ms=start_ms,
@@ -372,14 +399,14 @@ def cmd_analyze(args):
 
     # Output results
     from .formatter import format_changes
-    output = format_changes(states, verbose=args.verbose)
+    output = format_changes(states, verbose=args.verbose, player_names=player_names)
     print(output)
 
 
 def cmd_export(args):
     """Export hand histories (analyzes every frame)."""
     from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
-    from lieutenant_of_poker.frame_extractor import get_video_info
+    from lieutenant_of_poker.frame_extractor import get_video_info, VideoFrameExtractor
     from lieutenant_of_poker.snowie_export import export_snowie
 
     info = get_video_info(args.video)
@@ -390,6 +417,21 @@ def cmd_export(args):
     start_frame = int(start_ms * info['fps'] / 1000)
     end_frame = int(end_ms * info['fps'] / 1000) if args.end else info['frame_count']
     total_frames = end_frame - start_frame
+
+    # Detect player names if requested
+    player_names = None
+    if args.player_names:
+        from lieutenant_of_poker.name_detector import detect_player_names
+        print("Detecting player names...", file=sys.stderr)
+        with VideoFrameExtractor(args.video) as extractor:
+            frame = extractor.get_frame_at_ms(start_ms)
+            if frame is not None:
+                player_names = detect_player_names(frame)
+                detected = {k.name: v for k, v in player_names.items() if v}
+                if detected:
+                    print(f"  Detected: {detected}", file=sys.stderr)
+                else:
+                    print("  No names detected, using defaults", file=sys.stderr)
 
     config = AnalysisConfig(
         start_ms=start_ms,
@@ -410,9 +452,9 @@ def cmd_export(args):
 
     # Export based on format
     if args.format == "snowie":
-        output = export_snowie(states, button_pos=args.button)
+        output = export_snowie(states, button_pos=args.button, player_names=player_names)
     else:  # pokerstars
-        output = export_pokerstars(states, button_pos=args.button)
+        output = export_pokerstars(states, button_pos=args.button, player_names=player_names)
         if not output:
             print("No hand data detected.", file=sys.stderr)
             return
@@ -427,7 +469,7 @@ def cmd_export(args):
 
 def cmd_info(args):
     """Show video information."""
-    from lieutenant_of_poker.frame_extractor import get_video_info
+    from lieutenant_of_poker.frame_extractor import get_video_info, VideoFrameExtractor
 
     info = get_video_info(args.video)
     print(f"Video: {info['path']}")
@@ -435,6 +477,17 @@ def cmd_info(args):
     print(f"  FPS: {info['fps']:.2f}")
     print(f"  Duration: {info['duration_seconds']:.1f}s ({info['duration_seconds']/60:.1f} min)")
     print(f"  Total frames: {info['frame_count']:,}")
+
+    if args.players:
+        from lieutenant_of_poker.name_detector import detect_player_names
+        print("  Players:")
+        with VideoFrameExtractor(args.video) as extractor:
+            frame = extractor.get_frame_at_ms(0)
+            if frame is not None:
+                names = detect_player_names(frame)
+                for pos, name in names.items():
+                    display = name if name else "(not detected)"
+                    print(f"    {pos.name}: {display}")
 
 
 def cmd_diagnose(args):

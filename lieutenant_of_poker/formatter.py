@@ -2,17 +2,27 @@
 Output formatting for game state analysis.
 """
 
-from typing import List
+from typing import Dict, List, Optional
 from .game_state import GameState
+from .table_regions import PlayerPosition
 
 
-def format_changes(states: List[GameState], verbose: bool = False) -> str:
+def format_changes(
+    states: List[GameState],
+    verbose: bool = False,
+    player_names: Optional[Dict[PlayerPosition, str]] = None,
+) -> str:
     """Format states as first frame info + list of changes.
 
     Args:
         states: List of game states to format.
         verbose: If True, show [X] prefix on rejected states.
+        player_names: Optional mapping of positions to detected player names.
     """
+    def get_name(pos: PlayerPosition) -> str:
+        if player_names and pos in player_names and player_names[pos]:
+            return player_names[pos]
+        return pos.name
     if not states:
         return "No frames analyzed."
 
@@ -26,7 +36,7 @@ def format_changes(states: List[GameState], verbose: bool = False) -> str:
     lines.append(f"Community: {' '.join(str(c) for c in first.community_cards) or '-'}")
     lines.append(f"Hero: {' '.join(str(c) for c in first.hero_cards) or '-'}")
     for pos, player in first.players.items():
-        lines.append(f"  {pos.name}: {player.chips}")
+        lines.append(f"  {get_name(pos)}: {player.chips}")
 
     # Track previous accepted state for computing deltas
     prev = first
@@ -59,7 +69,7 @@ def format_changes(states: List[GameState], verbose: bool = False) -> str:
                 delta = curr_chips.chips - prev_chips.chips
                 if delta < 0:
                     total_bet += -delta
-                changes.append(f"{pos.name}: {prev_chips.chips} → {curr_chips.chips}")
+                changes.append(f"{get_name(pos)}: {prev_chips.chips} → {curr_chips.chips}")
 
         if total_bet > 0 and not state.rejected:
             changes.insert(0, f"bet: {total_bet}")
