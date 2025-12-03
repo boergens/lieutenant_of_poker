@@ -72,6 +72,7 @@ def reconstruct_hand(
     states: List[GameState],
     players: List[str],
     button_pos: int,
+    hero_cards: List[Card],
 ) -> Optional[HandHistory]:
     """Reconstruct a HandHistory from a sequence of GameState observations.
 
@@ -79,6 +80,7 @@ def reconstruct_hand(
         states: List of GameState objects representing the hand progression
         players: Ordered list of player names by seat position
         button_pos: Button position (index into player list)
+        hero_cards: Hero's hole cards
 
     Returns:
         HandHistory if reconstruction succeeds, None otherwise
@@ -92,20 +94,18 @@ def reconstruct_hand(
     initial, final = states[0], states[-1]
 
     # Derive blinds from initial pot (assumes SB + BB + antes = pot)
-    initial_pot = initial.pot or 60
-    small_blind = initial_pot // 3
+    small_blind = (initial.pot or 60) // 3
     big_blind = small_blind * 2
 
-    num_players = len(players)
-    if num_players == 0:
+    if not players:
         return None
 
     # Calculate blind positions first (heads-up: button = SB)
-    if num_players == 2:
+    if len(players) == 2:
         sb_idx, bb_idx = button_pos, (button_pos + 1) % 2
     else:
-        sb_idx = (button_pos + 1) % num_players
-        bb_idx = (button_pos + 2) % num_players
+        sb_idx = (button_pos + 1) % len(players)
+        bb_idx = (button_pos + 2) % len(players)
 
     # Build PlayerInfo list
     # Add blinds back since initial state shows chips AFTER posting
@@ -128,18 +128,11 @@ def reconstruct_hand(
         pot=final.pot or 0,
     )
 
-    # Find hero cards from any state that has them
-    for state in states:
-        if state.hero_cards:
-            hand.hero_cards = state.hero_cards
-            break
+    hand.hero_cards = hero_cards
 
     # Detect actions from chip changes, organized by street
     raw_actions: Dict[Street, List[HandAction]] = {
-        Street.PREFLOP: [],
-        Street.FLOP: [],
-        Street.TURN: [],
-        Street.RIVER: [],
+        s: [] for s in Street if s != Street.UNKNOWN
     }
 
     # Track players who went all-in (can't fold even if contribution < max bet)
@@ -165,7 +158,7 @@ def reconstruct_hand(
         if pot_change > 0:
             for pos in state.players:
                 prev_p, curr_p = prev_state.players.get(pos), state.players.get(pos)
-                if prev_p and curr_p and pos < num_players:
+                if prev_p and curr_p and pos < len(players):
                     chip_change = (prev_p.chips or 0) - (curr_p.chips or 0)
                     if chip_change > 0:
                         name = players[pos]
@@ -243,8 +236,8 @@ def reconstruct_hand(
         next_street = streets[idx + 1] if idx + 1 < len(streets) else None
 
         # First active player from SB position acts first
-        for i in range(num_players):
-            candidate = players[(sb_idx + i) % num_players]
+        for i in range(len(players)):
+            candidate = players[(sb_idx + i) % len(players)]
             if candidate in players_active:
                 players_onthespot = rotate_to_first(players_active, candidate)
                 break
@@ -254,7 +247,7 @@ def reconstruct_hand(
 
         for action in raw_actions[street]:
             # Post-flop: add checks for skipped players before a bet
-            if street != Street.PREFLOP and action.action == PlayerAction.BET:
+            if action.action == PlayerAction.BET:
                 for name in players_onthespot:
                     if name == action.player_name:
                         break
@@ -354,4 +347,9 @@ class HandReconstructor:
         states: List[GameState],
         button_pos: Optional[int] = None,
     ) -> Optional[HandHistory]:
-        return reconstruct_hand(states, self.player_names, button_pos)
+        hero_cards: List[Card] = []
+        for state in states:
+            if state.hero_cards:
+                hero_cards = state.hero_cards
+                break
+        return reconstruct_hand(states, self.player_names, button_pos, hero_cards)
