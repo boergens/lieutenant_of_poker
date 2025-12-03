@@ -6,7 +6,7 @@ Shared data structures and reconstruction logic used by all exporters.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from lieutenant_of_poker.game_state import GameState, Street
 from lieutenant_of_poker.table_regions import PlayerPosition
@@ -150,7 +150,41 @@ class HandReconstructor:
                 break
 
         self._process_states(hand, states, pos_to_player, big_blind)
+
+        # Add BB check if missing (BB has option after SB completes, check has no pot change)
+        bb_player = hand.get_bb_player()
+        if bb_player and hand.flop_cards:
+            bb_acted = any(a.player_name == bb_player.name for a in hand.preflop_actions)
+            if not bb_acted:
+                hand.preflop_actions.append(
+                    HandAction(bb_player.name, PlayerAction.CHECK, 0)
+                )
+
+        # Add checks for streets with no actions (all players checked)
+        self._add_missing_checks(hand)
+
         return hand
+
+    def _add_missing_checks(self, hand: HandHistory):
+        """Add check actions for streets where no actions were recorded."""
+        # Get players in post-flop action order (SB first)
+        active_players = []
+        for i in range(len(hand.players)):
+            idx = (hand.sb_seat + i) % len(hand.players)
+            active_players.append(hand.players[idx])
+
+        # For each post-flop street, if we have cards but no actions, add checks
+        streets = [
+            (hand.flop_cards, hand.flop_actions, hand.turn_card),
+            (hand.turn_card, hand.turn_actions, hand.river_card),
+            (hand.river_card, hand.river_actions, None),
+        ]
+
+        for street_cards, street_actions, next_street in streets:
+            if street_cards and not street_actions and next_street:
+                # Street exists, no actions recorded, and we went to next street = all checked
+                for p in active_players:
+                    street_actions.append(HandAction(p.name, PlayerAction.CHECK, 0))
 
     def _build_players(self, initial: GameState):
         players, orig_to_new, pos_to_player = [], {}, {}

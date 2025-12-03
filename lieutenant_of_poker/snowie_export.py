@@ -44,7 +44,12 @@ class SnowieExporter:
         f.write(f"TableName: {hand.table_name}\n")
         f.write(f"Max number of players: {len(hand.players)}\n")
         f.write(f"MyPlayerName: {self.hero_name}\n")
-        f.write(f"DealerPosition: {hand.button_seat}\n")
+        # Heads-up: dealer position is inverted in Snowie format
+        if len(hand.players) == 2:
+            dealer_pos = 1 - hand.button_seat
+        else:
+            dealer_pos = hand.button_seat
+        f.write(f"DealerPosition: {dealer_pos}\n")
 
         for p in hand.players:
             f.write(f"Seat {p.seat} {p.name} {p.chips}\n")
