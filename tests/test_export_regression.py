@@ -21,6 +21,11 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 # Showdown configs extracted from fixture files (deterministic, no RNG)
 # force_winner is used for legacy fixtures where opponent cards don't match poker evaluation
 SHOWDOWN_CONFIGS = {
+    1: ShowdownConfig(
+        hand_id="00000000",
+        opponent_cards={"Nav": ["Ah", "6d"], "Luvdeniseouly": ["7c", "9c"]},
+        # Nav has two pair (aces and sixes), beats hero's pair of aces
+    ),
     2: ShowdownConfig(
         hand_id="00000000",
         opponent_cards={},  # No showdown - fold winner
@@ -121,6 +126,10 @@ def run_snowie_export_test(video_num: int):
 class TestSnowieExportRegression:
     """Regression tests that compare snowie export output against saved fixtures."""
 
+    def test_video1_snowie_export(self):
+        """Video 1 snowie export matches fixture (5-way all-in preflop, showdown on turn)."""
+        run_snowie_export_test(1)
+
     def test_video2_snowie_export(self):
         """Video 2 snowie export matches fixture (simple preflop folds)."""
         run_snowie_export_test(2)
@@ -148,6 +157,10 @@ class TestSnowieExportRegression:
 
 class TestSnowieFixturesExist:
     """Tests that snowie export fixtures exist."""
+
+    def test_video1_fixtures_exist(self):
+        assert (FIXTURES_DIR / "video1_states.json").exists()
+        assert (FIXTURES_DIR / "video1_export_snowie.txt").exists()
 
     def test_video2_fixtures_exist(self):
         assert (FIXTURES_DIR / "video2_states.json").exists()

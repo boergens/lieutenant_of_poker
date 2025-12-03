@@ -209,6 +209,12 @@ def reconstruct_hand(
         if not street_reached(street) or len(players_in_hand) <= 1:
             break
 
+        # If all but one player are all-in, no betting action needed on this street
+        # The hand proceeds automatically to showdown
+        active_players = [p for p in players_in_hand if p not in players_all_in]
+        if len(active_players) <= 1:
+            continue
+
         actions_list = hand.actions[street]
         street_actions = raw_actions[street]
 
@@ -294,6 +300,55 @@ def reconstruct_hand(
     if bb_in_hand and not bb_voluntary_actions and hand.flop_cards:
         hand.actions[Street.PREFLOP].append(HandAction(bb_name, PlayerAction.CHECK, 0))
 
+    # Calculate uncalled bet BEFORE removing synthetic blinds
+    # Skip the blind posts (first 2 preflop actions) - blinds are mandatory,
+    # not voluntary bets, so they don't count as "uncalled" if everyone folds.
+    # But include their contribution amounts for proper totaling.
+    all_actions = (
+        hand.actions[Street.PREFLOP][2:] +  # Skip blind posts
+        hand.actions[Street.FLOP] +
+        hand.actions[Street.TURN] +
+        hand.actions[Street.RIVER]
+    )
+
+    # Pre-seed contributions with blind amounts (they're not "bets" for uncalled purposes
+    # but they do count toward total contributions)
+    contributions: Dict[str, int] = {
+        sb_name: small_blind,
+        bb_name: big_blind,
+    }
+    last_bettor: Optional[str] = None
+    last_bet_total = 0
+
+    for a in all_actions:
+        player = a.player_name
+        amount = a.amount or 0
+
+        if a.action in (PlayerAction.BET, PlayerAction.RAISE):
+            contributions[player] = contributions.get(player, 0) + amount
+            last_bettor = player
+            last_bet_total = contributions[player]
+        elif a.action == PlayerAction.CALL:
+            contributions[player] = contributions.get(player, 0) + amount
+
+    # Find max contribution from players other than last_bettor
+    uncalled_amount = 0
+    if last_bettor:
+        max_other_contribution = 0
+        for player, total in contributions.items():
+            if player != last_bettor:
+                max_other_contribution = max(max_other_contribution, total)
+
+        if last_bet_total > max_other_contribution:
+            uncalled_amount = last_bet_total - max_other_contribution
+            # Add to the last street that has actions
+            for street in reversed(streets):
+                if hand.actions[street]:
+                    hand.actions[street].append(
+                        HandAction(last_bettor, PlayerAction.UNCALLED_BET, uncalled_amount)
+                    )
+                    break
+
     # Remove the synthetic blind posts from preflop actions
     del hand.actions[Street.PREFLOP][:2]
 
@@ -303,32 +358,6 @@ def reconstruct_hand(
     hand.reached_showdown = len(players_in_hand) > 1
     hand.opponents_folded = len(players_in_hand) == 1 and hero_player_name in players_in_hand
     hand.hero_folded = hero_player_name not in players_in_hand
-
-    # Calculate uncalled bet - the portion of a bet that wasn't called
-    all_actions = sum((hand.actions[s] for s in streets), [])
-
-    last_bet_amount = 0
-    last_bettor = None
-    max_call_amount = 0
-
-    for a in all_actions:
-        if a.action in (PlayerAction.BET, PlayerAction.RAISE):
-            last_bet_amount = a.amount or 0
-            last_bettor = a.player_name
-            max_call_amount = 0
-        elif a.action == PlayerAction.CALL and last_bettor:
-            max_call_amount = max(max_call_amount, a.amount or 0)
-
-    uncalled_amount = 0
-    if last_bettor and last_bet_amount > max_call_amount:
-        uncalled_amount = last_bet_amount - max_call_amount
-        # Add to the last street that has actions
-        for street in reversed(streets):
-            if hand.actions[street]:
-                hand.actions[street].append(
-                    HandAction(last_bettor, PlayerAction.UNCALLED_BET, uncalled_amount)
-                )
-                break
 
     # Set winner if everyone folded
     if len(players_in_hand) == 1:
