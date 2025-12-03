@@ -27,11 +27,11 @@ from .table_regions import (
 # These are separate from the per-frame chip detection regions
 # Keyed by seat index (0-4)
 _NAME_REGIONS: Dict[int, Region] = {
-    0: Region(x=287, y=618, width=150, height=28),
-    1: Region(x=439, y=217, width=144, height=28),
-    2: Region(x=1179, y=223, width=147, height=28),
-    3: Region(x=1341, y=617, width=143, height=28),
-    HERO: Region(x=974, y=817, width=128, height=28),
+    0: Region(x=287, y=618, width=135, height=28),
+    1: Region(x=439, y=220, width=141, height=28),
+    2: Region(x=1179, y=223, width=132, height=28),
+    3: Region(x=1341, y=620, width=129, height=28),
+    HERO: Region(x=987, y=817, width=130, height=28),
 }
 
 # Tesseract API for name OCR (separate from digit OCR)
