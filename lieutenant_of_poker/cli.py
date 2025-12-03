@@ -82,9 +82,6 @@ def main():
         help="Output format (default: snowie)"
     )
     export_parser.add_argument(
-        "--output", "-o", default=None, help="Output file (default: stdout)"
-    )
-    export_parser.add_argument(
         "--start", "-s", type=float, default=0, help="Start timestamp in seconds (default: 0)"
     )
     export_parser.add_argument(
@@ -437,12 +434,7 @@ def cmd_export(args):
             print("No hand data detected.", file=sys.stderr)
             return
 
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(output)
-        print(f"Hand history written to {args.output}", file=sys.stderr)
-    else:
-        print(output)
+    print(output)
 
 
 def cmd_info(args):
