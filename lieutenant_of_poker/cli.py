@@ -404,7 +404,6 @@ def cmd_export(args):
     first = detect_from_video(args.video, start_ms)
     button_pos = args.button if args.button is not None else (first.button_index if first.button_index is not None else 0)
     player_names = first.player_names
-    print(first, file=sys.stderr)
 
     config = AnalysisConfig(
         start_ms=start_ms,

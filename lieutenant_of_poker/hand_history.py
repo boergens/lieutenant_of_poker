@@ -60,6 +60,7 @@ class HandHistory:
     pot: int = 0
     hero_went_all_in: bool = False
     hero_folded: bool = False
+    opponent_folded: bool = False  # Opponent folded to hero's bet
     reached_showdown: bool = False
     uncalled_bet: int = 0
     uncalled_bet_player: Optional[str] = None
@@ -273,12 +274,21 @@ class HandReconstructor:
             else:
                 hand.reached_showdown = True
         else:
-            # Hand ended before river - hero folded
-            hand.hero_folded = True
-            if last_aggressor and last_bet > 0 and not last_aggressor.is_hero:
+            # Hand ended before river - someone folded
+            # Hero is always the last player in the list
+            hero = hand.players[-1] if hand.players else None
+            if last_aggressor and last_bet > 0:
                 hand.uncalled_bet = last_bet
                 hand.uncalled_bet_player = last_aggressor.name
                 hand.pot -= last_bet
+                if hero and last_aggressor.name == hero.name:
+                    # Hero's bet was uncalled - opponent folded - hero wins
+                    hand.opponent_folded = True
+                else:
+                    # Opponent's bet was uncalled - hero folded
+                    hand.hero_folded = True
+            else:
+                hand.hero_folded = True
 
     def _add_action(self, hand: HandHistory, street: Street, action: HandAction):
         {

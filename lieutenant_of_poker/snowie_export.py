@@ -34,6 +34,10 @@ class SnowieExporter:
         return output.getvalue()
 
     def _write(self, f: TextIO, hand: HandHistory):
+        # Hero is always the last player in the list
+        hero = hand.players[-1] if hand.players else None
+        hero_name = hero.name if hero else self.hero_name
+
         # Header
         f.write("GameStart\n")
         f.write("PokerClient: ExportFormat\n")
@@ -48,7 +52,7 @@ class SnowieExporter:
         f.write("AnteStake: 0\n")
         f.write(f"TableName: {hand.table_name}\n")
         f.write(f"Max number of players: {len(hand.players)}\n")
-        f.write(f"MyPlayerName: {self.hero_name}\n")
+        f.write(f"MyPlayerName: {hero_name}\n")
         # Heads-up: dealer position is inverted in Snowie format
         if len(hand.players) == 2:
             dealer_pos = 1 - hand.button_seat
@@ -89,6 +93,8 @@ class SnowieExporter:
         # Ending
         if hand.hero_went_all_in:
             self._write_hero_all_in(f, hand)
+        elif hand.opponent_folded:
+            self._write_opponent_folds(f, hand)
         elif hand.hero_folded:
             self._write_hero_fold(f, hand)
         elif hand.reached_showdown:
@@ -106,23 +112,35 @@ class SnowieExporter:
                 f.write(f"Move: {a.player_name} raise_bet {a.amount or 0}\n")
 
     def _write_hero_all_in(self, f: TextIO, hand: HandHistory):
+        # Hero is the last player in the list
+        hero = hand.players[-1] if hand.players else None
+        hero_name = hero.name if hero else self.hero_name
+
         for p in hand.players:
-            if not p.is_hero:
+            if p != hero:
                 f.write(f"Move: {p.name} folds 0\n")
 
-        # Find hero's all-in amount
-        amount = 0
-        for actions in [hand.river_actions, hand.turn_actions, hand.flop_actions, hand.preflop_actions]:
-            for a in reversed(actions):
-                if a.player_name == self.hero_name:
-                    amount = a.amount or 0
-                    break
-            if amount:
-                break
+        # Return uncalled bet to hero
+        if hand.uncalled_bet > 0:
+            f.write(f"Move: {hero_name} uncalled_bet {hand.uncalled_bet}\n")
 
-        if amount > 0:
-            f.write(f"Move: {self.hero_name} uncalled_bet {amount}\n")
-        f.write(f"Winner: {self.hero_name} {hand.pot:.2f}\n")
+        f.write(f"Winner: {hero_name} {hand.pot:.2f}\n")
+
+    def _write_opponent_folds(self, f: TextIO, hand: HandHistory):
+        """Opponent folded to hero's bet - hero wins."""
+        # Hero is the last player in the list
+        hero = hand.players[-1] if hand.players else None
+        hero_name = hero.name if hero else self.hero_name
+
+        for p in hand.players:
+            if p != hero:
+                f.write(f"Move: {p.name} folds 0\n")
+
+        # Return uncalled bet to hero
+        if hand.uncalled_bet > 0:
+            f.write(f"Move: {hero_name} uncalled_bet {hand.uncalled_bet}\n")
+
+        f.write(f"Winner: {hero_name} {hand.pot:.2f}\n")
 
     def _write_hero_fold(self, f: TextIO, hand: HandHistory):
         f.write(f"Move: {self.hero_name} folds 0\n")

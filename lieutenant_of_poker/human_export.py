@@ -87,6 +87,10 @@ class HumanExporter:
         f.write("\n--- RESULT ---\n")
         if hand.hero_went_all_in:
             f.write("Hero went all-in\n")
+        elif hand.opponent_folded:
+            f.write("Opponent folded\n")
+            if hand.uncalled_bet_player and hand.uncalled_bet > 0:
+                f.write(f"{hand.uncalled_bet_player} gets back uncalled bet of ${hand.uncalled_bet}\n")
         elif hand.hero_folded:
             f.write("Hero folded\n")
             if hand.uncalled_bet_player and hand.uncalled_bet > 0:
