@@ -1,9 +1,8 @@
 """
 Regression tests for hand history export.
 
-These tests use saved game states (not video analysis) to test the export
-pipeline independently and quickly. This ensures changes to export code
-don't break existing output formats.
+These tests use saved game states with first-frame detection from the video
+to test the export pipeline. This ensures the same behavior as the CLI.
 """
 
 from pathlib import Path
@@ -13,6 +12,7 @@ import pytest
 from lieutenant_of_poker.serialization import load_game_states
 from lieutenant_of_poker.snowie_export import export_snowie
 from lieutenant_of_poker.human_export import export_human
+from lieutenant_of_poker.first_frame import detect_from_video
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -76,17 +76,25 @@ class TestExportRegression:
 
     def test_video6_snowie_export(self):
         """Video 6 snowie export matches fixture."""
+        video_path = FIXTURES_DIR / "6.mp4"
         states_path = FIXTURES_DIR / "video6_states.json"
         fixture_path = FIXTURES_DIR / "video6_export_snowie.txt"
 
+        if not video_path.exists():
+            pytest.skip(f"Video file {video_path} not found")
         if not states_path.exists():
             pytest.skip(f"States file {states_path} not found")
         if not fixture_path.exists():
             pytest.skip(f"Fixture file {fixture_path} not found")
 
+        # Detect first frame info (like CLI does)
+        first = detect_from_video(str(video_path))
+        button_pos = first.button_index if first.button_index is not None else 0
+        player_names = first.player_names
+
         # Load states and generate export
         states = load_game_states(states_path)
-        actual = export_snowie(states, button_pos=0)
+        actual = export_snowie(states, button_pos=button_pos, player_names=player_names)
 
         # Load expected output
         expected = fixture_path.read_text()
@@ -114,17 +122,25 @@ class TestExportRegression:
 
     def test_video6_human_export(self):
         """Video 6 human export matches fixture."""
+        video_path = FIXTURES_DIR / "6.mp4"
         states_path = FIXTURES_DIR / "video6_states.json"
         fixture_path = FIXTURES_DIR / "video6_export_human.txt"
 
+        if not video_path.exists():
+            pytest.skip(f"Video file {video_path} not found")
         if not states_path.exists():
             pytest.skip(f"States file {states_path} not found")
         if not fixture_path.exists():
             pytest.skip(f"Fixture file {fixture_path} not found")
 
+        # Detect first frame info (like CLI does)
+        first = detect_from_video(str(video_path))
+        button_pos = first.button_index if first.button_index is not None else 0
+        player_names = first.player_names
+
         # Load states and generate export
         states = load_game_states(states_path)
-        actual = export_human(states, button_pos=0)
+        actual = export_human(states, button_pos=button_pos, player_names=player_names)
 
         # Load expected output
         expected = fixture_path.read_text()

@@ -2,8 +2,8 @@ GameStart
 PokerClient: ExportFormat
 Date: 02/12/2025
 TimeZone: GMT
-Time: 20:20:09
-GameId:15095173
+Time: 20:22:57
+GameId:20749111
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 40
@@ -11,17 +11,17 @@ BigBlindStake: 80
 AnteStake: 0
 TableName: Governor of Poker
 Max number of players: 2
-MyPlayerName: Seat 1
+MyPlayerName: kevin4637565
 DealerPosition: 1
-Seat 0 Seat 0 6440
-Seat 1 Seat 1 8440
-SmallBlind: Seat 0 40
-BigBlind: Seat 1 80
+Seat 0 Victor 6440
+Seat 1 kevin4637565 8440
+SmallBlind: Victor 40
+BigBlind: kevin4637565 80
 Dealt Cards: [Ad8s]
-Move: Seat 0 call_check 40
-Move: Seat 1 raise_bet 1040
-Move: Seat 0 folds 0
-Move: Seat 1 uncalled_bet 1040
-Winner: Seat 1 160.00
+Move: Victor call_check 40
+Move: kevin4637565 raise_bet 1040
+Move: Victor folds 0
+Move: kevin4637565 uncalled_bet 1040
+Winner: kevin4637565 160.00
 GameEnd
 
