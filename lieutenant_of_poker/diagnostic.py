@@ -77,13 +77,14 @@ class DiagnosticExtractor:
     for later report generation.
     """
 
-    def __init__(self):
+    def __init__(self, table_background: Optional[str] = None):
         """Initialize the diagnostic extractor."""
         from .table_regions import detect_table_regions, NUM_PLAYERS, seat_name
 
         self._detect_regions = detect_table_regions
         self._num_players = NUM_PLAYERS
         self._seat_name = seat_name
+        self._table_background = table_background
         self.report: Optional[DiagnosticReport] = None
 
     def extract_with_diagnostics(
@@ -193,7 +194,7 @@ class DiagnosticExtractor:
             from .card_detector import CardDetector
             from .card_matcher import get_card_matcher
 
-            detector = CardDetector(use_library=False)  # For empty slot check only
+            detector = CardDetector(use_library=False, table_background=self._table_background)
             matcher = get_card_matcher()
 
             cards = []
@@ -285,7 +286,7 @@ class DiagnosticExtractor:
             right_suit_region = _scale_hero_region(HERO_RIGHT_SUIT_REGION, hero_size)
 
             # Background detector for empty slot check
-            bg_detector = CardDetector(use_library=False)
+            bg_detector = CardDetector(use_library=False, table_background=self._table_background)
 
             cards = []
 
@@ -720,6 +721,7 @@ def generate_diagnostic_report(
     output_path: Path,
     frame_number: Optional[int] = None,
     timestamp_s: Optional[float] = None,
+    table_background: Optional[str] = None,
 ) -> dict:
     """
     Generate a diagnostic report for a specific frame.
@@ -729,6 +731,7 @@ def generate_diagnostic_report(
         output_path: Path for the HTML report.
         frame_number: Frame number to analyze (mutually exclusive with timestamp_s).
         timestamp_s: Timestamp in seconds (mutually exclusive with frame_number).
+        table_background: Optional path to table background image.
 
     Returns:
         Dictionary with report statistics.
@@ -748,7 +751,7 @@ def generate_diagnostic_report(
             raise ValueError("Could not read frame")
 
         # Run diagnostic extraction
-        extractor = DiagnosticExtractor()
+        extractor = DiagnosticExtractor(table_background=table_background)
         report = extractor.extract_with_diagnostics(
             frame_info.image,
             frame_number=frame_info.frame_number,
