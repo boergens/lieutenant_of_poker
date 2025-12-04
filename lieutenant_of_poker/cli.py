@@ -71,6 +71,10 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Output verbose per-frame extractions (no filtering/consensus)"
     )
+    analyze_parser.add_argument(
+        "--table-background", "-b", default=None,
+        help="Path to table background image for empty slot detection"
+    )
 
     # export command
     export_parser = subparsers.add_parser(
@@ -316,6 +320,7 @@ def cmd_analyze(args):
     config = AnalysisConfig(
         start_ms=start_ms,
         end_ms=end_ms if args.end else None,
+        table_background=args.table_background,
     )
 
     with create_progress(TextColumn("OCR: {task.fields[ocr]}")) as progress:
