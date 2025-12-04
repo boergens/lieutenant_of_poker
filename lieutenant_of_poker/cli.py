@@ -180,6 +180,10 @@ def main():
         "--extension", "-e", default=".txt",
         help="Output file extension (default: .txt)"
     )
+    batch_parser.add_argument(
+        "--table-background", "-b", default=None,
+        help="Path to table background image for empty slot detection"
+    )
 
     # record command - simple screen recording
     record_parser = subparsers.add_parser(
@@ -398,7 +402,13 @@ def cmd_batch_export(args):
         sys.exit(1)
     output_dir = Path(args.output_dir) if args.output_dir else folder
     output_dir.mkdir(parents=True, exist_ok=True)
-    batch_export(folder, output_dir, args.format, args.extension)
+    batch_export(
+        folder,
+        output_dir,
+        args.format,
+        args.extension,
+        table_background=args.table_background,
+    )
 
 
 def cmd_info(args):

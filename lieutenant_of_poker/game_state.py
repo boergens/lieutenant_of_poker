@@ -127,14 +127,16 @@ class GameStateExtractor:
     TARGET_WIDTH = BASE_WIDTH
     TARGET_HEIGHT = BASE_HEIGHT
 
-    def __init__(self, scale_frames: bool = True):
+    def __init__(self, scale_frames: bool = True, table_background: Optional[str] = None):
         """
         Initialize the game state extractor.
 
         Args:
             scale_frames: If True, scale down frames larger than target resolution.
+            table_background: Optional path to table background image for
+                             empty slot detection.
         """
-        self.card_detector = CardDetector()
+        self.card_detector = CardDetector(table_background=table_background)
         self.scale_frames = scale_frames
 
     def extract(

@@ -166,6 +166,7 @@ class AnalysisConfig:
 
     start_ms: float = 0
     end_ms: Optional[float] = None
+    table_background: Optional[str] = None  # Path to table background image
 
 
 @dataclass
@@ -213,7 +214,7 @@ def analyze_video(
     from .fast_ocr import set_ocr_debug_context
     from .rules_validator import is_complete_frame, validate_transition
 
-    extractor = GameStateExtractor()
+    extractor = GameStateExtractor(table_background=config.table_background)
     clear_caches()
 
     states = []

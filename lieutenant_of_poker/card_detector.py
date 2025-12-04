@@ -99,16 +99,18 @@ class CardDetector:
     # Maximum color distance to consider a slot empty
     EMPTY_SLOT_THRESHOLD = 60
 
-    def __init__(self, use_library: bool = True):
+    def __init__(self, use_library: bool = True, table_background: Optional[str] = None):
         """
         Initialize the card detector.
 
         Args:
             use_library: If True, use the card library for matching.
                         If False, fall back to color-based detection only.
+            table_background: Optional path to table background image.
+                             Uses default library path if not specified.
         """
         # Load table background color from reference image
-        self.table_color = self._load_table_color()
+        self.table_color = self._load_table_color(table_background)
         self.use_library = use_library
 
         # Color thresholds for suit detection (in HSV) - fallback only
@@ -129,13 +131,20 @@ class CardDetector:
         from .card_matcher import match_card
         return match_card(card_image, slot_index)
 
-    def _load_table_color(self) -> np.ndarray:
+    def _load_table_color(self, table_background: Optional[str] = None) -> np.ndarray:
         """Load the table background color from reference image."""
-        if TABLE_COLOR_IMAGE.exists():
-            img = cv2.imread(str(TABLE_COLOR_IMAGE))
-            if img is not None:
-                # Get average color
-                return np.mean(img, axis=(0, 1))
+        # Try custom path first, then default library path
+        paths_to_try = []
+        if table_background:
+            paths_to_try.append(Path(table_background))
+        paths_to_try.append(TABLE_COLOR_IMAGE)
+
+        for path in paths_to_try:
+            if path.exists():
+                img = cv2.imread(str(path))
+                if img is not None:
+                    # Get average color
+                    return np.mean(img, axis=(0, 1))
         return self.DEFAULT_TABLE_COLOR_BGR
 
     def is_empty_slot(self, slot_image: np.ndarray) -> bool:
