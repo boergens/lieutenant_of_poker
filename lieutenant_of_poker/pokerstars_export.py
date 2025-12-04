@@ -3,7 +3,7 @@
 import io
 from typing import List, Optional
 
-from .hand_history import HandHistory, HandAction, HandReconstructor
+from .hand_history import HandHistory, HandAction, reconstruct_hand
 from .game_state import GameState, Street
 from .action_detector import PlayerAction
 
@@ -15,7 +15,12 @@ def export_pokerstars(
     hand_id: Optional[str] = None,
 ) -> str:
     """Export GameStates to PokerStars format."""
-    hand = HandReconstructor(player_names).reconstruct(states, button_pos)
+    hero_cards = []
+    for state in states:
+        if state.hero_cards:
+            hero_cards = state.hero_cards
+            break
+    hand = reconstruct_hand(states, player_names or [], button_pos, hero_cards)
     if not hand:
         return ""
     return PokerStarsExporter().export(hand, hand_id or "00000000")

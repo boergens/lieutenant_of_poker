@@ -3,7 +3,7 @@
 import io
 from typing import List, Optional, TextIO
 
-from .hand_history import HandHistory, HandAction, HandReconstructor
+from .hand_history import HandHistory, HandAction, reconstruct_hand
 from .game_state import GameState, Street
 from .action_detector import PlayerAction
 from .game_simulator import ShowdownConfig, pick_winner
@@ -25,7 +25,12 @@ def export_snowie(
         showdown: Showdown configuration with opponent cards for deterministic output.
         hand_id: Optional hand ID (random 8-digit number if not provided)
     """
-    hand = HandReconstructor(player_names).reconstruct(states, button_pos)
+    hero_cards = []
+    for state in states:
+        if state.hero_cards:
+            hero_cards = state.hero_cards
+            break
+    hand = reconstruct_hand(states, player_names or [], button_pos, hero_cards)
     if not hand:
         return ""
     import random
