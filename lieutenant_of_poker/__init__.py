@@ -52,7 +52,7 @@ from lieutenant_of_poker.hand_history import (
     HandAction,
     PlayerInfo,
     HandHistory,
-    HandReconstructor,
+    reconstruct_hand,
 )
 from lieutenant_of_poker.snowie_export import export_snowie
 from lieutenant_of_poker.pokerstars_export import export_pokerstars
@@ -94,7 +94,7 @@ __all__ = [
     "HandAction",
     "PlayerInfo",
     "HandHistory",
-    "HandReconstructor",
+    "reconstruct_hand",
     "export_snowie",
     "export_pokerstars",
 ]

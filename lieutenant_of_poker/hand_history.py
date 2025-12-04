@@ -14,6 +14,14 @@ from lieutenant_of_poker.action_detector import PlayerAction
 
 
 @dataclass
+class ChipMovement:
+    """Raw chip movement detected from frame-to-frame comparison."""
+    player_name: str
+    amount: int
+    is_all_in: bool = False
+
+
+@dataclass
 class HandAction:
     """A single action in a hand."""
     player_name: str
@@ -130,17 +138,14 @@ def reconstruct_hand(
 
     hand.hero_cards = hero_cards
 
-    # Detect actions from chip changes, organized by street
-    raw_actions: Dict[Street, List[HandAction]] = {
+    # Detect chip movements from frame-to-frame comparison, organized by street
+    # This is a dumb pass - just record who put in how much, when
+    chip_movements: Dict[Street, List[ChipMovement]] = {
         s: [] for s in Street if s != Street.UNKNOWN
     }
 
-    # Track which actions result in all-in (player's chips went to 0)
-    all_in_actions: set = set()
-
     current_street = Street.PREFLOP
     prev_state = states[0]
-    current_bet = big_blind
 
     for state in states[1:]:
         new_street = state.street
@@ -152,7 +157,6 @@ def reconstruct_hand(
             elif new_street == Street.RIVER and len(state.community_cards) >= 5:
                 hand.river_card = state.community_cards[4]
             current_street = new_street
-            current_bet = 0
 
         pot_change = (state.pot or 0) - (prev_state.pot or 0)
         if pot_change > 0:
@@ -162,29 +166,18 @@ def reconstruct_hand(
                     chip_change = (prev_p.chips or 0) - (curr_p.chips or 0)
                     if chip_change > 0:
                         name = players[pos]
-                        if chip_change > current_bet:
-                            action_type = PlayerAction.BET if current_bet == 0 else PlayerAction.RAISE
-                        else:
-                            action_type = PlayerAction.CALL
-                        if chip_change > current_bet:
-                            current_bet = chip_change
-
-                        action = HandAction(name, action_type, chip_change)
-                        if current_street in raw_actions:
-                            raw_actions[current_street].append(action)
-
-                        # Track all-in (chips went to 0 after betting)
-                        if curr_p.chips == 0:
-                            all_in_actions.add(id(action))
+                        is_all_in = curr_p.chips == 0
+                        movement = ChipMovement(name, chip_change, is_all_in)
+                        if current_street in chip_movements:
+                            chip_movements[current_street].append(movement)
 
         prev_state = state
 
-    # Add blind posts as explicit actions at start of preflop
-    # This allows preflop to be treated uniformly with other streets
+    # Add blind posts as chip movements at start of preflop
     sb_name = players[sb_idx]
     bb_name = players[bb_idx]
-    raw_actions[Street.PREFLOP].insert(0, HandAction(bb_name, PlayerAction.BET, big_blind))
-    raw_actions[Street.PREFLOP].insert(0, HandAction(sb_name, PlayerAction.BET, small_blind))
+    chip_movements[Street.PREFLOP].insert(0, ChipMovement(bb_name, big_blind))
+    chip_movements[Street.PREFLOP].insert(0, ChipMovement(sb_name, small_blind))
 
     # players_in_hand: who hasn't folded (may include all-in players)
     players_in_hand = list(players)
@@ -205,6 +198,15 @@ def reconstruct_hand(
     # Cumulative set of players who are all-in (added as we process actions)
     players_all_in: set = set()
 
+    def get_next_active_player(start_pos: int, in_hand: List[str], all_in: set) -> tuple[int, str] | None:
+        """Find next player who can act, starting from start_pos."""
+        for i in range(len(players)):
+            pos = (start_pos + i) % len(players)
+            name = players[pos]
+            if name in in_hand and name not in all_in:
+                return pos, name
+        return None
+
     for street in streets:
         if not street_reached(street) or len(players_in_hand) <= 1:
             break
@@ -216,9 +218,9 @@ def reconstruct_hand(
             continue
 
         actions_list = hand.actions[street]
-        street_actions = raw_actions[street]
+        street_movements = chip_movements[street]
 
-        # Contributions this street (starts empty, built from actions)
+        # Contributions this street (starts empty, built from movements)
         contributions: Dict[str, int] = {}
         current_bet = 0
 
@@ -228,21 +230,12 @@ def reconstruct_hand(
         # Current position in the rotation (index into players list)
         current_pos = first_to_act_idx
 
-        def get_next_active_player(start_pos: int, in_hand: List[str], all_in: set) -> tuple[int, str] | None:
-            """Find next player who can act, starting from start_pos."""
-            for i in range(len(players)):
-                pos = (start_pos + i) % len(players)
-                name = players[pos]
-                if name in in_hand and name not in all_in:
-                    return pos, name
-            return None
-
-        # Process each raw action in order
-        for action in street_actions:
+        # Process each chip movement and classify it based on betting context
+        for movement in street_movements:
             if len(players_in_hand) <= 1:
                 break
 
-            actor = action.player_name
+            actor = movement.player_name
 
             # Walk from current position to actor, inferring checks/folds
             while True:
@@ -252,14 +245,24 @@ def reconstruct_hand(
                 pos, name = result
 
                 if name == actor:
-                    # Found the actor - record their action
+                    # Found the actor - classify and record their action
+                    # Now we have full betting context to determine action type
+                    new_total = contributions.get(name, 0) + movement.amount
+
+                    if new_total > current_bet:
+                        action_type = PlayerAction.BET if current_bet == 0 else PlayerAction.RAISE
+                    else:
+                        action_type = PlayerAction.CALL
+
+                    action = HandAction(name, action_type, movement.amount)
                     actions_list.append(action)
-                    if action.amount:
-                        contributions[name] = contributions.get(name, 0) + action.amount
-                        if contributions[name] > current_bet:
-                            current_bet = contributions[name]
-                    # Mark as all-in if this action put them all-in
-                    if id(action) in all_in_actions:
+
+                    contributions[name] = new_total
+                    if new_total > current_bet:
+                        current_bet = new_total
+
+                    # Mark as all-in if this movement put them all-in
+                    if movement.is_all_in:
                         players_all_in.add(name)
                     current_pos = (pos + 1) % len(players)
                     break
@@ -273,7 +276,7 @@ def reconstruct_hand(
                         actions_list.append(HandAction(name, PlayerAction.CHECK, 0))
                     current_pos = (pos + 1) % len(players)
 
-        # After all raw actions, close out remaining players
+        # After all movements, close out remaining players
         # - Players who owe chips must fold
         # - Players who don't owe (and haven't acted) must check
         if len(players_in_hand) > 1:
@@ -365,26 +368,3 @@ def reconstruct_hand(
         hand.payout = hand.pot - uncalled_amount
 
     return hand
-
-
-# Backwards compatibility alias
-class HandReconstructor:
-    """Deprecated: Use reconstruct_hand() function instead."""
-
-    def __init__(
-        self,
-        player_names: Optional[List[str]] = None,
-    ):
-        self.player_names = player_names or []
-
-    def reconstruct(
-        self,
-        states: List[GameState],
-        button_pos: Optional[int] = None,
-    ) -> Optional[HandHistory]:
-        hero_cards: List[Card] = []
-        for state in states:
-            if state.hero_cards:
-                hero_cards = state.hero_cards
-                break
-        return reconstruct_hand(states, self.player_names, button_pos, hero_cards)
