@@ -6,6 +6,7 @@ existing video analysis results. Each test compares fresh analysis
 against saved "golden" fixtures.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,18 @@ from lieutenant_of_poker.serialization import load_game_states, game_state_to_di
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 VIDEOS_DIR = FIXTURES_DIR  # Videos are stored alongside fixtures
+
+
+def load_analysis_config(video_num: int) -> AnalysisConfig:
+    """Load analysis config from JSON file if it exists."""
+    config_path = FIXTURES_DIR / f"video{video_num}_config.json"
+    if not config_path.exists():
+        return AnalysisConfig()
+
+    data = json.loads(config_path.read_text())
+    return AnalysisConfig(
+        table_background=data.get("table_background"),
+    )
 
 
 def states_match(actual_states, expected_states, tolerance_ms=100):
@@ -96,8 +109,11 @@ class TestAnalysisRegression:
         # Load expected states from fixture
         expected_states = load_game_states(fixture_path)
 
+        # Load config (may include table_background)
+        config = load_analysis_config(video_num)
+
         # Run fresh analysis
-        actual_states = analyze_video(str(video_path), AnalysisConfig())
+        actual_states = analyze_video(str(video_path), config)
 
         # Compare
         match, differences = states_match(actual_states, expected_states)
