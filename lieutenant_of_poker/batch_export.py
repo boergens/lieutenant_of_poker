@@ -27,8 +27,22 @@ def extract_hand_id(filename: str) -> str | None:
     return None
 
 
-def batch_export(folder: Path, output_dir: Path, fmt: str, extension: str):
-    """Export all videos in folder to text files."""
+def batch_export(
+    folder: Path,
+    output_dir: Path,
+    fmt: str,
+    extension: str,
+    table_background: str | None = None,
+):
+    """Export all videos in folder to text files.
+
+    Args:
+        folder: Path to folder containing video files
+        output_dir: Path to output directory for text files
+        fmt: Export format (snowie, pokerstars, human, actions)
+        extension: Output file extension
+        table_background: Optional path to table background image
+    """
     videos = sorted([
         f for f in folder.iterdir()
         if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
@@ -40,9 +54,13 @@ def batch_export(folder: Path, output_dir: Path, fmt: str, extension: str):
 
     print(f"Found {len(videos)} video(s) in {folder}", file=sys.stderr)
     print(f"Output: {output_dir}", file=sys.stderr)
-    print(f"Format: {fmt}\n", file=sys.stderr)
+    print(f"Format: {fmt}", file=sys.stderr)
+    if table_background:
+        print(f"Table background: {table_background}", file=sys.stderr)
+    print(file=sys.stderr)
 
     success = errors = 0
+    config = AnalysisConfig(table_background=table_background)
 
     for i, video in enumerate(videos, 1):
         out_file = output_dir / (video.stem + extension)
@@ -53,7 +71,7 @@ def batch_export(folder: Path, output_dir: Path, fmt: str, extension: str):
             button = first.button_index or 0
             names = first.player_names
 
-            states = analyze_video(str(video), AnalysisConfig())
+            states = analyze_video(str(video), config)
             if not states:
                 print("-> no hands", file=sys.stderr)
                 continue
