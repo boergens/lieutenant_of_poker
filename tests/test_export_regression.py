@@ -41,7 +41,7 @@ def load_showdown_config(num: int):
     """Load showdown config from JSON file if it exists."""
     config_path = FIXTURES_DIR / f"video{num}_config.json"
     if not config_path.exists():
-        return None, None
+        return None, None, None
 
     data = json.loads(config_path.read_text())
     showdown = ShowdownConfig(
@@ -49,7 +49,8 @@ def load_showdown_config(num: int):
         force_winner=data.get("force_winner"),
     )
     hand_id = data.get("hand_id")
-    return showdown, hand_id
+    table_background = data.get("table_background")
+    return showdown, hand_id, table_background
 
 
 def normalize_snowie_export(text: str) -> str:
@@ -79,7 +80,7 @@ def test_snowie_export(num):
 
     # Load states and config
     states = load_game_states(states_path)
-    showdown, hand_id = load_showdown_config(num)
+    showdown, hand_id, _table_background = load_showdown_config(num)
 
     # Generate and compare
     actual = export_snowie(states, button_pos=button_pos, player_names=player_names,

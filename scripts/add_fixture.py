@@ -44,6 +44,7 @@ def main():
     parser.add_argument("video", help="Path to video file")
     parser.add_argument("--number", "-n", type=int, help="Fixture number (auto if not specified)")
     parser.add_argument("--hand-id", "-i", help="Hand ID for export (random if not specified)")
+    parser.add_argument("--table-background", "-b", help="Path to table background image for empty slot detection")
     args = parser.parse_args()
 
     video_path = Path(args.video)
@@ -73,7 +74,8 @@ def main():
 
     # Analyze
     print("Analyzing video...", end=" ", flush=True)
-    states = analyze_video(str(video_dest), AnalysisConfig())
+    config = AnalysisConfig(table_background=args.table_background)
+    states = analyze_video(str(video_dest), config)
     print(f"OK ({len(states)} states)")
 
     # Save states
@@ -105,6 +107,8 @@ def main():
         "hand_id": hand_id,
         "opponent_cards": {},
     }
+    if args.table_background:
+        config["table_background"] = args.table_background
     print(f"Saving {config_path.name}...", end=" ", flush=True)
     config_path.write_text(json.dumps(config, indent=2) + "\n")
     print("OK")
