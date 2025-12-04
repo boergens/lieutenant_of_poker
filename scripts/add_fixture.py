@@ -88,24 +88,40 @@ def main():
     button_pos = first.button_index if first.button_index is not None else 0
     player_names = first.player_names
 
-    # Export snowie (let it generate random hand_id if not specified)
+    # Export snowie (let it generate random opponent cards and hand_id)
     print(f"Saving {snowie_path.name}...", end=" ", flush=True)
     output = export_snowie(states, button_pos=button_pos, player_names=player_names,
                            hand_id=args.hand_id)
     snowie_path.write_text(output)
     print("OK")
 
-    # Extract hand_id from generated output
+    # Extract hand_id and opponent_cards from generated output
     hand_id = None
+    opponent_cards = {}
+    hero_name = None
+
     for line in output.split("\n"):
         if line.startswith("GameId:"):
             hand_id = line.split(":")[1]
-            break
+        elif line.startswith("MyPlayerName:"):
+            hero_name = line.split(":")[1].strip()
+        elif line.startswith("Showdown:"):
+            # Format: "Showdown: PlayerName [Ah Kd]"
+            parts = line[len("Showdown:"):].strip()
+            bracket_start = parts.find("[")
+            bracket_end = parts.find("]")
+            if bracket_start != -1 and bracket_end != -1:
+                name = parts[:bracket_start].strip()
+                cards_str = parts[bracket_start+1:bracket_end]
+                cards = cards_str.split()
+                # Only save opponent cards (not hero)
+                if name != hero_name:
+                    opponent_cards[name] = cards
 
-    # Create config with the actual hand_id used
+    # Create config with the actual values used
     config = {
         "hand_id": hand_id,
-        "opponent_cards": {},
+        "opponent_cards": opponent_cards,
     }
     if args.table_background:
         config["table_background"] = args.table_background
