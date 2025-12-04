@@ -5,6 +5,7 @@ Player names are static during a game session, so this module provides
 a function to detect names once from a single frame and cache them.
 """
 
+import re
 import threading
 from typing import Dict, Optional
 
@@ -61,6 +62,18 @@ def _preprocess_for_name_ocr(image: np.ndarray) -> np.ndarray:
     return image
 
 
+# Pattern for disallowed characters in player names (not A-Za-z0-9_)
+_DISALLOWED_CHARS = re.compile(r'[^A-Za-z0-9_]')
+
+
+def _sanitize_name(name: str) -> str:
+    """Sanitize player name to only contain A-Za-z0-9 and underscores."""
+    # Replace spaces with underscores first
+    name = name.replace(' ', '_')
+    # Remove any other disallowed characters
+    return _DISALLOWED_CHARS.sub('', name)
+
+
 def _ocr_name(image: np.ndarray) -> Optional[str]:
     """Extract player name from a region image."""
     if image is None or image.size == 0:
@@ -72,6 +85,9 @@ def _ocr_name(image: np.ndarray) -> Optional[str]:
         api = _get_tess_api()
         api.SetImage(Image.fromarray(processed))
         text = api.GetUTF8Text().strip()
+
+    # Sanitize to only allowed characters
+    text = _sanitize_name(text)
 
     # Filter out very short results (likely noise)
     if len(text) < 2:
