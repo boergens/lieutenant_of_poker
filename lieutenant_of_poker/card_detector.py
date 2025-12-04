@@ -97,7 +97,8 @@ class CardDetector:
     # Default table background color (purple/magenta from Governor of Poker)
     DEFAULT_TABLE_COLOR_BGR = np.array([204, 96, 184])
     # Maximum color distance to consider a slot empty
-    EMPTY_SLOT_THRESHOLD = 60
+    # Tightened from 60 to 40 to avoid false positives with light-colored cards
+    EMPTY_SLOT_THRESHOLD = 40
 
     def __init__(self, use_library: bool = True, table_background: Optional[str] = None):
         """
