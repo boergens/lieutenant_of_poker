@@ -16,7 +16,7 @@ import numpy as np
 from .frame_extractor import FrameInfo
 from .game_state import GameState, GameStateExtractor, Street
 from .action_detector import PlayerAction
-from .card_detector import Card
+from .table_regions import HERO
 
 
 class GameEvent(Enum):
@@ -54,8 +54,8 @@ class TrackedHand:
     start_time: datetime = field(default_factory=datetime.now)
     states: list[GameState] = field(default_factory=list)
     actions: list[TrackedAction] = field(default_factory=list)
-    hero_cards: list[Card] = field(default_factory=list)
-    community_cards: list[Card] = field(default_factory=list)
+    hero_cards: list[str] = field(default_factory=list)  # Card strings like "Ah"
+    community_cards: list[str] = field(default_factory=list)
     current_street: Street = Street.PREFLOP
     pot: int = 0
     hero_chips: int = 0
@@ -238,7 +238,7 @@ class LiveStateTracker:
         or if hero's position shows as active.
         """
         # Check if hero has a pending action indicator
-        hero = state.players.get(PlayerPosition.HERO)
+        hero = state.players.get(HERO)
         if hero and hero.last_action:
             # If hero's last action is recent and still shown, it might not be their turn
             pass
@@ -263,7 +263,7 @@ class LiveStateTracker:
 
         new_actions = []
 
-        for position in PlayerPosition:
+        for position in curr.players.keys():
             prev_player = prev.players.get(position)
             curr_player = curr.players.get(position)
 
@@ -300,7 +300,7 @@ class LiveStateTracker:
     ) -> Optional[TrackedAction]:
         """Check if any of the new actions are from hero."""
         for action in new_actions:
-            if action.position == PlayerPosition.HERO:
+            if action.position == HERO:
                 return action
         return None
 

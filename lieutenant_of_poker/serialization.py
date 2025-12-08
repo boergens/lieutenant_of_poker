@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 from lieutenant_of_poker.game_state import GameState, PlayerState, Street
-from lieutenant_of_poker.card_detector import Card, Rank, Suit
 from lieutenant_of_poker.action_detector import PlayerAction, DetectedAction
 from lieutenant_of_poker.table_regions import HERO
 
@@ -32,20 +31,7 @@ def _position_from_str(s: str) -> int:
 
 
 # --- Card Serialization ---
-
-def card_to_dict(card: Card) -> Dict[str, str]:
-    """Convert a Card to a dictionary."""
-    return {
-        "rank": card.rank.value,
-        "suit": card.suit.value,
-    }
-
-
-def card_from_dict(d: Dict[str, str]) -> Card:
-    """Convert a dictionary to a Card."""
-    rank = next(r for r in Rank if r.value == d["rank"])
-    suit = next(s for s in Suit if s.value == d["suit"])
-    return Card(rank=rank, suit=suit)
+# Cards are now simple strings like "Ah", "Kc" so serialization is trivial
 
 
 # --- DetectedAction Serialization ---
@@ -76,7 +62,7 @@ def player_state_to_dict(state: PlayerState) -> Dict[str, Any]:
         "position": str(state.position),
         "name": state.name,
         "chips": state.chips,
-        "cards": [card_to_dict(c) for c in state.cards],
+        "cards": state.cards,  # Already strings like "Ah"
         "last_action": detected_action_to_dict(state.last_action) if state.last_action else None,
         "is_active": state.is_active,
         "is_dealer": state.is_dealer,
@@ -89,7 +75,7 @@ def player_state_from_dict(d: Dict[str, Any]) -> PlayerState:
         position=_position_from_str(d["position"]),
         name=d.get("name"),
         chips=d.get("chips"),
-        cards=[card_from_dict(c) for c in d.get("cards", [])],
+        cards=d.get("cards", []),  # Already strings like "Ah"
         last_action=detected_action_from_dict(d["last_action"]) if d.get("last_action") else None,
         is_active=d.get("is_active", True),
         is_dealer=d.get("is_dealer", False),
@@ -101,8 +87,8 @@ def player_state_from_dict(d: Dict[str, Any]) -> PlayerState:
 def game_state_to_dict(state: GameState) -> Dict[str, Any]:
     """Convert a GameState to a dictionary."""
     return {
-        "community_cards": [card_to_dict(c) for c in state.community_cards],
-        "hero_cards": [card_to_dict(c) for c in state.hero_cards],
+        "community_cards": state.community_cards,  # Already strings like "Ah"
+        "hero_cards": state.hero_cards,  # Already strings like "Ah"
         "pot": state.pot,
         "hero_chips": state.hero_chips,
         "players": {str(pos): player_state_to_dict(ps) for pos, ps in state.players.items()},
@@ -121,8 +107,8 @@ def game_state_from_dict(d: Dict[str, Any]) -> GameState:
         players[pos] = player_state_from_dict(ps_dict)
 
     return GameState(
-        community_cards=[card_from_dict(c) for c in d.get("community_cards", [])],
-        hero_cards=[card_from_dict(c) for c in d.get("hero_cards", [])],
+        community_cards=d.get("community_cards", []),  # Already strings like "Ah"
+        hero_cards=d.get("hero_cards", []),  # Already strings like "Ah"
         pot=d.get("pot"),
         hero_chips=d.get("hero_chips"),
         players=players,

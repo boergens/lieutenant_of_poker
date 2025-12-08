@@ -11,7 +11,7 @@ from typing import Optional, Callable, List, TypeVar
 
 from .frame_extractor import VideoFrameExtractor
 from .game_state import GameStateExtractor, GameState, PlayerState
-from .first_frame import FirstFrameInfo, ActivePlayer, detect_first_frame_majority, detect_best_background
+from .first_frame import FirstFrameInfo, ActivePlayer, detect_first_frame_majority
 
 T = TypeVar("T")
 
@@ -26,19 +26,13 @@ def states_equivalent(state1: GameState, state2: GameState) -> bool:
     Compares hero cards, community cards, pot, hero chips, and player chips.
     Used to detect if consecutive rejected frames are requesting the same change.
     """
-    # Compare hero cards
-    if len(state1.hero_cards) != len(state2.hero_cards):
+    # Compare hero cards (now strings like "Ah")
+    if state1.hero_cards != state2.hero_cards:
         return False
-    for c1, c2 in zip(state1.hero_cards, state2.hero_cards):
-        if c1.rank != c2.rank or c1.suit != c2.suit:
-            return False
 
-    # Compare community cards
-    if len(state1.community_cards) != len(state2.community_cards):
+    # Compare community cards (now strings like "Ah")
+    if state1.community_cards != state2.community_cards:
         return False
-    for c1, c2 in zip(state1.community_cards, state2.community_cards):
-        if c1.rank != c2.rank or c1.suit != c2.suit:
-            return False
 
     # Compare pot
     if state1.pot != state2.pot:
@@ -92,24 +86,22 @@ def compute_initial_state(states: List[GameState]) -> GameState:
     # Use the first state as the base (for metadata like frame_number, timestamp)
     base_state = states[0]
 
-    # Majority vote for hero cards
-    # Cards are compared by their (rank, suit) tuple for hashability
+    # Majority vote for hero cards (now strings like "Ah")
     hero_cards_left = []
     hero_cards_right = []
     for state in states:
         if len(state.hero_cards) >= 1:
-            hero_cards_left.append((state.hero_cards[0].rank, state.hero_cards[0].suit))
+            hero_cards_left.append(state.hero_cards[0])
         if len(state.hero_cards) >= 2:
-            hero_cards_right.append((state.hero_cards[1].rank, state.hero_cards[1].suit))
+            hero_cards_right.append(state.hero_cards[1])
 
-    from .card_detector import Card
     voted_hero_cards = []
     voted_left = majority_vote(hero_cards_left)
     if voted_left:
-        voted_hero_cards.append(Card(rank=voted_left[0], suit=voted_left[1]))
+        voted_hero_cards.append(voted_left)
     voted_right = majority_vote(hero_cards_right)
     if voted_right:
-        voted_hero_cards.append(Card(rank=voted_right[0], suit=voted_right[1]))
+        voted_hero_cards.append(voted_right)
 
     # Majority vote for pot
     pots = [s.pot for s in states]
@@ -166,7 +158,6 @@ class AnalysisConfig:
 
     start_ms: float = 0
     end_ms: Optional[float] = None
-    table_background: Optional[str] = None  # Path to table background image
 
 
 @dataclass
@@ -221,7 +212,7 @@ def analyze_video(
     initial_images = []  # Collect frame images for first_frame detection
     pending_change_buffer = []  # Buffer for valid frames proposing a state change
     players: Optional[List[ActivePlayer]] = None  # Set after first_frame detection
-    extractor: Optional[GameStateExtractor] = None  # Created after background detection
+    extractor = GameStateExtractor()
 
     with VideoFrameExtractor(video_path) as video:
         start_ms = config.start_ms
@@ -244,14 +235,6 @@ def analyze_video(
 
                 # When we have enough frames, detect active players and compute initial state
                 if len(initial_images) == initial_frames:
-                    # Auto-detect background from first frame if not explicitly provided
-                    table_background = config.table_background
-                    if table_background is None:
-                        table_background = detect_best_background(initial_images[0])
-
-                    # Create extractor with the detected/configured background
-                    extractor = GameStateExtractor(table_background=table_background)
-
                     # Detect active players from initial frames
                     first_frame_info = detect_first_frame_majority(initial_images)
                     players = first_frame_info.players

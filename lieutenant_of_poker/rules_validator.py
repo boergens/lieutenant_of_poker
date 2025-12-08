@@ -10,7 +10,6 @@ from enum import Enum, auto
 from typing import List, Optional, Set, Tuple
 
 from .game_state import GameState, Street, PlayerState
-from .card_detector import Card
 
 
 class ViolationType(Enum):
@@ -62,19 +61,14 @@ def _get_street_index(street: Street) -> int:
     return street.value
 
 
-def _cards_to_set(cards: List[Card]) -> Set[Tuple[str, str]]:
-    """Convert a list of cards to a set of (rank, suit) tuples for comparison."""
-    return {(card.rank.name, card.suit.name) for card in cards}
+def _cards_to_set(cards: List[str]) -> Set[str]:
+    """Convert a list of card strings to a set for comparison."""
+    return set(cards)
 
 
-def _card_to_str(card: Card) -> str:
-    """Convert a card to a string representation."""
-    return f"{card.rank.name}{card.suit.name[0]}"
-
-
-def _cards_to_str(cards: List[Card]) -> str:
-    """Convert a list of cards to a string representation."""
-    return ", ".join(_card_to_str(c) for c in cards) if cards else "none"
+def _cards_to_str(cards: List[str]) -> str:
+    """Convert a list of card strings to a display string."""
+    return ", ".join(cards) if cards else "none"
 
 
 def is_complete_frame(state: GameState) -> bool:
@@ -209,7 +203,7 @@ def _validate_hero_cards(prev: GameState, curr: GameState) -> List[Violation]:
 def _validate_no_duplicates(state: GameState) -> List[Violation]:
     """Check for duplicate cards in the current state."""
     violations = []
-    all_cards = []
+    all_cards: List[str] = []
 
     # Collect all visible cards
     all_cards.extend(state.hero_cards)
@@ -218,13 +212,12 @@ def _validate_no_duplicates(state: GameState) -> List[Violation]:
         all_cards.extend(player.cards)
 
     # Check for duplicates
-    seen = set()
+    seen: Set[str] = set()
     duplicates = []
     for card in all_cards:
-        card_tuple = (card.rank.name, card.suit.name)
-        if card_tuple in seen:
-            duplicates.append(_card_to_str(card))
-        seen.add(card_tuple)
+        if card in seen:
+            duplicates.append(card)
+        seen.add(card)
 
     if duplicates:
         violations.append(Violation(

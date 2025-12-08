@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from lieutenant_of_poker.game_state import GameState, Street
-from lieutenant_of_poker.card_detector import Card
 from lieutenant_of_poker.action_detector import PlayerAction
 
 
@@ -51,10 +50,10 @@ class HandHistory:
     sb_seat: int = 0
     bb_seat: int = 0
 
-    hero_cards: List[Card] = field(default_factory=list)
-    flop_cards: Optional[List[Card]] = None
-    turn_card: Optional[Card] = None
-    river_card: Optional[Card] = None
+    hero_cards: List[str] = field(default_factory=list)  # Card strings like "Ah"
+    flop_cards: Optional[List[str]] = None
+    turn_card: Optional[str] = None
+    river_card: Optional[str] = None
 
     actions: Dict[Street, List[HandAction]] = field(default_factory=lambda: {
         Street.PREFLOP: [],
@@ -80,7 +79,7 @@ def reconstruct_hand(
     states: List[GameState],
     players: List[str],
     button_pos: int,
-    hero_cards: List[Card],
+    hero_cards: List[str],
 ) -> Optional[HandHistory]:
     """Reconstruct a HandHistory from a sequence of GameState observations.
 

@@ -23,13 +23,6 @@ from lieutenant_of_poker.table_regions import (
     HERO,
     seat_name,
 )
-from lieutenant_of_poker.card_detector import (
-    Card,
-    Suit,
-    Rank,
-    CardDetector,
-    detect_cards_in_region,
-)
 from lieutenant_of_poker.chip_ocr import (
     extract_pot,
     extract_player_chips,
@@ -70,12 +63,6 @@ __all__ = [
     "NUM_PLAYERS",
     "HERO",
     "seat_name",
-    # Card detection
-    "Card",
-    "Suit",
-    "Rank",
-    "CardDetector",
-    "detect_cards_in_region",
     # Chip OCR
     "extract_pot",
     "extract_player_chips",

@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from lieutenant_of_poker.table_regions import BASE_WIDTH, BASE_HEIGHT
+from lieutenant_of_poker.table_regions import detect_table_regions, NUM_PLAYERS, seat_name
 
 
 @dataclass
@@ -39,10 +39,8 @@ class DiagnosticReport:
     timestamp: datetime = field(default_factory=datetime.now)
     frame_number: Optional[int] = None
     frame_timestamp_ms: Optional[float] = None
-    original_size: tuple[int, int] = (0, 0)
-    scaled_size: tuple[int, int] = (0, 0)
-    original_frame: Optional[np.ndarray] = None
-    scaled_frame: Optional[np.ndarray] = None
+    frame_size: tuple[int, int] = (0, 0)
+    frame: Optional[np.ndarray] = None
     steps: List[DiagnosticStep] = field(default_factory=list)
     final_state: Optional[dict] = None
 
@@ -77,14 +75,11 @@ class DiagnosticExtractor:
     for later report generation.
     """
 
-    def __init__(self, table_background: Optional[str] = None):
+    def __init__(self):
         """Initialize the diagnostic extractor."""
-        from .table_regions import detect_table_regions, NUM_PLAYERS, seat_name
-
         self._detect_regions = detect_table_regions
         self._num_players = NUM_PLAYERS
         self._seat_name = seat_name
-        self._table_background = table_background
         self.report: Optional[DiagnosticReport] = None
 
     def extract_with_diagnostics(
@@ -107,55 +102,22 @@ class DiagnosticExtractor:
         self.report = DiagnosticReport(
             frame_number=frame_number,
             frame_timestamp_ms=timestamp_ms,
-            original_size=(frame.shape[1], frame.shape[0]),
-            original_frame=frame.copy(),
+            frame_size=(frame.shape[1], frame.shape[0]),
+            frame=frame.copy(),
         )
-
-        # Scale frame if needed
-        scaled_frame = self._scale_frame(frame)
-        self.report.scaled_size = (scaled_frame.shape[1], scaled_frame.shape[0])
-        self.report.scaled_frame = scaled_frame.copy()
 
         # Create region detector
-        region_detector = self._detect_regions(scaled_frame)
+        region_detector = self._detect_regions(frame)
 
         # Extract each component with diagnostics
-        self._extract_pot(scaled_frame, region_detector)
-        self._extract_community_cards(scaled_frame, region_detector)
-        self._extract_hero_cards(scaled_frame, region_detector)
-        self._extract_players(scaled_frame, region_detector)
-        self._extract_player_names(scaled_frame)
-        self._extract_dealer_button(scaled_frame, region_detector)
+        self._extract_pot(frame, region_detector)
+        self._extract_community_cards(frame, region_detector)
+        self._extract_hero_cards(frame, region_detector)
+        self._extract_players(frame, region_detector)
+        self._extract_player_names(frame)
+        self._extract_dealer_button(frame, region_detector)
 
         return self.report
-
-    def _scale_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Scale frame and record the step."""
-        h, w = frame.shape[:2]
-        target_w, target_h = BASE_WIDTH, BASE_HEIGHT
-
-        step = DiagnosticStep(
-            name="Frame Scaling",
-            description=f"Original size: {w}x{h}",
-        )
-        step.images.append(("Original Frame", frame))
-
-        if w <= target_w and h <= target_h:
-            step.description += f" (no scaling needed)"
-            step.parsed_result = "No scaling"
-            self.report.steps.append(step)
-            return frame
-
-        scale = min(target_w / w, target_h / h)
-        new_w, new_h = int(w * scale), int(h * scale)
-        scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-        step.description += f" → Scaled to: {new_w}x{new_h} (scale={scale:.2f})"
-        step.images.append(("Scaled Frame", scaled))
-        step.parsed_result = f"{new_w}x{new_h}"
-        self.report.steps.append(step)
-
-        return scaled
 
     def _extract_pot(self, frame: np.ndarray, region_detector) -> None:
         """Extract pot with diagnostics."""
@@ -178,76 +140,55 @@ class DiagnosticExtractor:
         self.report.steps.append(step)
 
     def _extract_community_cards(self, frame: np.ndarray, region_detector) -> None:
-        """Extract community cards with diagnostics using fixed slots and library matching."""
+        """Extract community cards with diagnostics using absolute frame coordinates."""
         step = DiagnosticStep(
             name="Community Cards Detection",
-            description="Detecting cards on the board using 5 fixed slots + library matching",
+            description="Detecting cards on the board using absolute coordinates",
         )
 
         try:
-            # Show the overall region
-            comm_region = region_detector.extract_community_cards(frame)
-            step.images.append(("Community Cards Region", comm_region))
+            from .card_matcher import (
+                COMMUNITY_LIBRARY, _match_rank, _match_suit,
+                extract_community_card_regions, match_community_cards,
+            )
 
-            # Extract each slot
-            card_slots = region_detector.extract_community_card_slots(frame)
-            from .card_detector import CardDetector
-            from .card_matcher import get_card_matcher
+            # Extract regions for diagnostic display
+            regions = extract_community_card_regions(frame)
 
-            detector = CardDetector(use_library=False, table_background=self._table_background)
-            matcher = get_card_matcher()
+            # Get matched cards
+            matched_cards = match_community_cards(frame)
 
             cards = []
-            for i, slot_img in enumerate(card_slots):
+            for i, (rank_img, suit_img) in enumerate(regions.cards):
                 substep = DiagnosticStep(
                     name=f"Slot {i+1}",
                     description=f"Card slot {i+1} of 5",
                 )
-                substep.images.append((f"Slot {i+1}", slot_img))
+                substep.images.append(("Rank Region", rank_img))
+                substep.images.append(("Suit Region", suit_img))
 
-                # First check if slot is empty
-                if detector.is_empty_slot(slot_img):
-                    substep.match_info = "Empty slot (matches table background)"
-                    substep.parsed_result = "(empty slot)"
-                    substep.success = True  # Empty is a valid state
-                    step.substeps.append(substep)
-                    continue
+                # Match rank and suit
+                rank = _match_rank(rank_img, COMMUNITY_LIBRARY)
+                suit = _match_suit(suit_img, COMMUNITY_LIBRARY)
 
-                # Extract and show rank/suit regions
-                rank_region = matcher.extract_rank_region(slot_img)
-                suit_region = matcher.extract_suit_region(slot_img)
-                substep.images.append(("Rank Region", rank_region))
-                substep.images.append(("Suit Region", suit_region))
-
-                # Match rank
-                rank = matcher.rank_matcher.match(rank_region)
-                rank_info = f"Rank: {rank.value if rank else 'not found'}"
-
-                # Match suit
-                suit = matcher.suit_matcher.match(suit_region)
-                suit_info = f"Suit: {suit.value if suit else 'not found'}"
-
+                rank_info = f"Rank: {rank if rank else 'not found'}"
+                suit_info = f"Suit: {suit if suit else 'not found'}"
                 substep.match_info = f"{rank_info}, {suit_info}"
 
-                if rank and suit:
-                    from .card_detector import Card
-                    card = Card(rank=rank, suit=suit)
-                    substep.parsed_result = str(card)
+                card = matched_cards[i]
+                if card:
+                    substep.parsed_result = card
                     substep.success = True
                     cards.append(card)
                 else:
-                    substep.parsed_result = "(incomplete detection)"
-                    substep.success = False
+                    substep.parsed_result = "(not detected)"
+                    substep.success = True  # Empty is a valid state (preflop/flop)
 
                 step.substeps.append(substep)
 
-            step.parsed_result = [str(c) for c in cards] if cards else []
+            step.parsed_result = cards if cards else []
             step.success = True  # Success even with 0 cards (preflop)
             step.description += f" - Found {len(cards)} cards"
-
-            # Show library stats
-            stats = matcher.get_library_stats()
-            step.description += f" (ranks: {stats['ranks']}/13, suits: {stats['suits']}/4)"
 
         except Exception as e:
             step.error = str(e)
@@ -256,114 +197,80 @@ class DiagnosticExtractor:
         self.report.steps.append(step)
 
     def _extract_hero_cards(self, frame: np.ndarray, region_detector) -> None:
-        """Extract hero cards with diagnostics using calibrated subregions."""
+        """Extract hero cards with diagnostics using absolute frame coordinates."""
         step = DiagnosticStep(
             name="Hero Cards Detection",
-            description="Detecting hero's hole cards using calibrated subregions",
+            description="Detecting hero's hole cards",
         )
 
         try:
-            from .card_detector import Card, CardDetector
             from .card_matcher import (
-                get_card_matcher, HERO_LEFT_LIBRARY, HERO_RIGHT_LIBRARY,
-                HERO_LEFT_RANK_REGION, HERO_LEFT_SUIT_REGION,
-                HERO_RIGHT_RANK_REGION, HERO_RIGHT_SUIT_REGION,
-                _extract_region, _scale_hero_region,
+                HERO_LIBRARY, _match_rank, _match_suit,
+                extract_hero_card_regions, match_hero_cards,
             )
 
-            # Show the overall region
-            hero_region = region_detector.extract_hero_cards(frame)
-            step.images.append(("Hero Cards Region", hero_region))
+            # Extract regions directly from frame
+            regions = extract_hero_card_regions(frame)
 
-            # Get actual hero region size for scaling
-            h, w = hero_region.shape[:2]
-            hero_size = (w, h)
-
-            # Scale regions to match actual hero region size
-            left_rank_region = _scale_hero_region(HERO_LEFT_RANK_REGION, hero_size)
-            left_suit_region = _scale_hero_region(HERO_LEFT_SUIT_REGION, hero_size)
-            right_rank_region = _scale_hero_region(HERO_RIGHT_RANK_REGION, hero_size)
-            right_suit_region = _scale_hero_region(HERO_RIGHT_SUIT_REGION, hero_size)
-
-            # Background detector for empty slot check
-            bg_detector = CardDetector(use_library=False, table_background=self._table_background)
+            # Get matched cards
+            matched_cards = match_hero_cards(frame)
 
             cards = []
 
             # LEFT CARD
             left_substep = DiagnosticStep(
-                name="Left Card (hero_left)",
-                description="Hero left card using hero_left library",
+                name="Left Card",
+                description="Hero left card",
             )
-            left_matcher = get_card_matcher(HERO_LEFT_LIBRARY)
+            left_substep.images.append(("Left Rank Region", regions.left_rank))
+            left_substep.images.append(("Left Suit Region", regions.left_suit))
 
-            left_rank_img = _extract_region(hero_region, left_rank_region)
-            left_suit_img = _extract_region(hero_region, left_suit_region)
-            left_substep.images.append(("Left Rank Region", left_rank_img))
-            left_substep.images.append(("Left Suit Region", left_suit_img))
+            left_rank = _match_rank(regions.left_rank, HERO_LIBRARY)
+            left_suit = _match_suit(regions.left_suit, HERO_LIBRARY)
 
-            # Check if slot is empty (matches table background)
-            if bg_detector.is_empty_slot(left_rank_img):
-                left_substep.match_info = "Empty slot (matches table background)"
-                left_substep.parsed_result = "(empty slot)"
+            left_rank_info = f"Rank: {left_rank if left_rank else 'not found'}"
+            left_suit_info = f"Suit: {left_suit if left_suit else 'not found'}"
+            left_substep.match_info = f"{left_rank_info}, {left_suit_info}"
+
+            left_card = matched_cards[0]
+            if left_card:
+                left_substep.parsed_result = left_card
                 left_substep.success = True
+                cards.append(left_card)
             else:
-                left_rank = left_matcher.rank_matcher.match(left_rank_img)
-                left_suit = left_matcher.suit_matcher.match(left_suit_img)
-
-                left_rank_info = f"Rank: {left_rank.value if left_rank else 'not found'}"
-                left_suit_info = f"Suit: {left_suit.value if left_suit else 'not found'}"
-                left_substep.match_info = f"{left_rank_info}, {left_suit_info}"
-
-                if left_rank and left_suit:
-                    left_card = Card(rank=left_rank, suit=left_suit)
-                    left_substep.parsed_result = str(left_card)
-                    left_substep.success = True
-                    cards.append(left_card)
-                else:
-                    left_substep.parsed_result = "(incomplete detection)"
-                    left_substep.success = False
+                left_substep.parsed_result = "(not detected)"
+                left_substep.success = False
 
             step.substeps.append(left_substep)
 
             # RIGHT CARD
             right_substep = DiagnosticStep(
-                name="Right Card (hero_right)",
-                description="Hero right card using hero_right library",
+                name="Right Card",
+                description="Hero right card",
             )
-            right_matcher = get_card_matcher(HERO_RIGHT_LIBRARY)
+            right_substep.images.append(("Right Rank Region", regions.right_rank))
+            right_substep.images.append(("Right Suit Region", regions.right_suit))
 
-            right_rank_img = _extract_region(hero_region, right_rank_region)
-            right_suit_img = _extract_region(hero_region, right_suit_region)
-            right_substep.images.append(("Right Rank Region", right_rank_img))
-            right_substep.images.append(("Right Suit Region", right_suit_img))
+            right_rank = _match_rank(regions.right_rank, HERO_LIBRARY)
+            right_suit = _match_suit(regions.right_suit, HERO_LIBRARY)
 
-            # Check if slot is empty (matches table background)
-            if bg_detector.is_empty_slot(right_rank_img):
-                right_substep.match_info = "Empty slot (matches table background)"
-                right_substep.parsed_result = "(empty slot)"
+            right_rank_info = f"Rank: {right_rank if right_rank else 'not found'}"
+            right_suit_info = f"Suit: {right_suit if right_suit else 'not found'}"
+            right_substep.match_info = f"{right_rank_info}, {right_suit_info}"
+
+            right_card = matched_cards[1]
+            if right_card:
+                right_substep.parsed_result = right_card
                 right_substep.success = True
+                cards.append(right_card)
             else:
-                right_rank = right_matcher.rank_matcher.match(right_rank_img)
-                right_suit = right_matcher.suit_matcher.match(right_suit_img)
-
-                right_rank_info = f"Rank: {right_rank.value if right_rank else 'not found'}"
-                right_suit_info = f"Suit: {right_suit.value if right_suit else 'not found'}"
-                right_substep.match_info = f"{right_rank_info}, {right_suit_info}"
-
-                if right_rank and right_suit:
-                    right_card = Card(rank=right_rank, suit=right_suit)
-                    right_substep.parsed_result = str(right_card)
-                    right_substep.success = True
-                    cards.append(right_card)
-                else:
-                    right_substep.parsed_result = "(incomplete detection)"
-                    right_substep.success = False
+                right_substep.parsed_result = "(not detected)"
+                right_substep.success = False
 
             step.substeps.append(right_substep)
 
-            step.parsed_result = [str(c) for c in cards] if cards else []
-            # Success if all substeps succeeded (even if both are empty slots)
+            step.parsed_result = cards if cards else []
+            # Success if all substeps succeeded
             step.success = all(s.success for s in step.substeps)
             step.description += f" - Found {len(cards)} cards"
 
@@ -635,16 +542,15 @@ def generate_html_report(report: DiagnosticReport, output_path: Optional[Path] =
         html_parts.append(f'<div class="meta-item">Frame #: <span class="meta-value">{report.frame_number}</span></div>')
     if report.frame_timestamp_ms is not None:
         html_parts.append(f'<div class="meta-item">Timestamp: <span class="meta-value">{report.frame_timestamp_ms/1000:.2f}s</span></div>')
-    html_parts.append(f'<div class="meta-item">Original Size: <span class="meta-value">{report.original_size[0]}x{report.original_size[1]}</span></div>')
-    html_parts.append(f'<div class="meta-item">Scaled Size: <span class="meta-value">{report.scaled_size[0]}x{report.scaled_size[1]}</span></div>')
+    html_parts.append(f'<div class="meta-item">Frame Size: <span class="meta-value">{report.frame_size[0]}x{report.frame_size[1]}</span></div>')
     html_parts.append('</div></div>')
 
-    # Frame previews
+    # Frame preview
     html_parts.append('<h2>Frame Preview</h2>')
     html_parts.append('<div class="frames-preview">')
-    if report.scaled_frame is not None:
-        b64 = _image_to_base64(report.scaled_frame, max_width=700)
-        html_parts.append(f'<div class="image-container"><img src="data:image/png;base64,{b64}"><div class="image-label">Scaled Frame (used for analysis)</div></div>')
+    if report.frame is not None:
+        b64 = _image_to_base64(report.frame, max_width=700)
+        html_parts.append(f'<div class="image-container"><img src="data:image/png;base64,{b64}"><div class="image-label">Frame</div></div>')
     html_parts.append('</div>')
 
     # Steps
@@ -721,7 +627,6 @@ def generate_diagnostic_report(
     output_path: Path,
     frame_number: Optional[int] = None,
     timestamp_s: Optional[float] = None,
-    table_background: Optional[str] = None,
 ) -> dict:
     """
     Generate a diagnostic report for a specific frame.
@@ -731,7 +636,6 @@ def generate_diagnostic_report(
         output_path: Path for the HTML report.
         frame_number: Frame number to analyze (mutually exclusive with timestamp_s).
         timestamp_s: Timestamp in seconds (mutually exclusive with frame_number).
-        table_background: Optional path to table background image.
 
     Returns:
         Dictionary with report statistics.
@@ -751,7 +655,7 @@ def generate_diagnostic_report(
             raise ValueError("Could not read frame")
 
         # Run diagnostic extraction
-        extractor = DiagnosticExtractor(table_background=table_background)
+        extractor = DiagnosticExtractor()
         report = extractor.extract_with_diagnostics(
             frame_info.image,
             frame_number=frame_info.frame_number,

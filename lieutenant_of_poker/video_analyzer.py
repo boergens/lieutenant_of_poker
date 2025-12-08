@@ -15,7 +15,6 @@ from typing import List, Optional, Dict
 from .game_state import GameState, Street
 from .table_regions import NUM_PLAYERS, HERO, seat_name
 from .action_detector import PlayerAction
-from .card_detector import Card
 
 
 @dataclass
@@ -40,9 +39,9 @@ class HandRecord:
     start_time_ms: float
     end_time_ms: Optional[float] = None
 
-    # Cards
-    hero_cards: List[Card] = field(default_factory=list)
-    community_cards: List[Card] = field(default_factory=list)
+    # Cards (strings like "Ah", "Kc")
+    hero_cards: List[str] = field(default_factory=list)
+    community_cards: List[str] = field(default_factory=list)
 
     # Actions by street
     preflop_actions: List[ActionEvent] = field(default_factory=list)

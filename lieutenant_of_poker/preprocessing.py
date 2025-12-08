@@ -4,28 +4,11 @@ Image preprocessing for Governor of Poker analysis.
 Game-specific preprocessing that happens before OCR or other analysis.
 """
 
-from pathlib import Path
-from typing import Optional
-
 import cv2
 import numpy as np
 
-# Load reference green color from card library
-_GREEN_REFERENCE_PATH = Path(__file__).parent / "card_library" / "green.png"
-_GREEN_BGR: Optional[np.ndarray] = None
-
-
-def _get_green_reference() -> np.ndarray:
-    """Load and cache the green reference color from card library."""
-    global _GREEN_BGR
-    if _GREEN_BGR is None:
-        green_img = cv2.imread(str(_GREEN_REFERENCE_PATH))
-        if green_img is not None:
-            _GREEN_BGR = np.mean(green_img, axis=(0, 1)).astype(np.float32)
-        else:
-            # Fallback to approximate green if file not found
-            _GREEN_BGR = np.array([24.0, 122.0, 105.0], dtype=np.float32)
-    return _GREEN_BGR
+# Reference green color for table background (BGR)
+_GREEN_BGR = np.array([24.0, 122.0, 105.0], dtype=np.float32)
 
 
 def _map_green_to_dark(image: np.ndarray) -> np.ndarray:
@@ -38,7 +21,7 @@ def _map_green_to_dark(image: np.ndarray) -> np.ndarray:
     Returns:
         Image with green pixels mapped to dark.
     """
-    green_ref = _get_green_reference()
+    green_ref = _GREEN_BGR
     green_tolerance = 40
 
     # Calculate distance from each pixel to reference green

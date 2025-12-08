@@ -32,7 +32,6 @@ def batch_export(
     output_dir: Path,
     fmt: str,
     extension: str,
-    table_background: str | None = None,
 ):
     """Export all videos in folder to text files.
 
@@ -41,7 +40,6 @@ def batch_export(
         output_dir: Path to output directory for text files
         fmt: Export format (snowie, pokerstars, human, actions)
         extension: Output file extension
-        table_background: Optional path to table background image
     """
     videos = sorted([
         f for f in folder.iterdir()
@@ -55,12 +53,10 @@ def batch_export(
     print(f"Found {len(videos)} video(s) in {folder}", file=sys.stderr)
     print(f"Output: {output_dir}", file=sys.stderr)
     print(f"Format: {fmt}", file=sys.stderr)
-    if table_background:
-        print(f"Table background: {table_background}", file=sys.stderr)
     print(file=sys.stderr)
 
     success = errors = 0
-    config = AnalysisConfig(table_background=table_background)
+    config = AnalysisConfig()
 
     for i, video in enumerate(videos, 1):
         out_file = output_dir / (video.stem + extension)

@@ -11,18 +11,14 @@ from typing import Optional, List, Dict, Set, TYPE_CHECKING
 if TYPE_CHECKING:
     from .first_frame import ActivePlayer
 
-import cv2
 import numpy as np
 
 from lieutenant_of_poker.table_regions import (
     TableRegionDetector,
     detect_table_regions,
-    BASE_WIDTH,
-    BASE_HEIGHT,
     NUM_PLAYERS,
     HERO,
 )
-from lieutenant_of_poker.card_detector import Card, CardDetector
 from lieutenant_of_poker.chip_ocr import extract_pot, extract_player_chips
 from lieutenant_of_poker.action_detector import (
     PlayerAction,
@@ -45,7 +41,7 @@ class PlayerState:
     position: int  # Seat index 0-4 (HERO = 4)
     name: Optional[str] = None
     chips: Optional[int] = None
-    cards: List[Card] = field(default_factory=list)
+    cards: List[str] = field(default_factory=list)
     last_action: Optional[DetectedAction] = None
     is_active: bool = True
     is_dealer: bool = False
@@ -54,9 +50,9 @@ class PlayerState:
 @dataclass
 class GameState:
     """Complete state of a poker game at a moment in time."""
-    # Cards
-    community_cards: List[Card] = field(default_factory=list)
-    hero_cards: List[Card] = field(default_factory=list)
+    # Cards (strings like "Ah", "Kc")
+    community_cards: List[str] = field(default_factory=list)
+    hero_cards: List[str] = field(default_factory=list)
 
     # Money
     pot: Optional[int] = None
@@ -122,22 +118,9 @@ class GameState:
 class GameStateExtractor:
     """Extracts complete game state from video frames."""
 
-    # Target resolution for processing (scale down larger frames)
-    # Uses BASE from table_regions to ensure coordinates match
-    TARGET_WIDTH = BASE_WIDTH
-    TARGET_HEIGHT = BASE_HEIGHT
-
-    def __init__(self, scale_frames: bool = True, table_background: Optional[str] = None):
-        """
-        Initialize the game state extractor.
-
-        Args:
-            scale_frames: If True, scale down frames larger than target resolution.
-            table_background: Optional path to table background image for
-                             empty slot detection.
-        """
-        self.card_detector = CardDetector(table_background=table_background)
-        self.scale_frames = scale_frames
+    def __init__(self):
+        """Initialize the game state extractor."""
+        pass
 
     def extract(
         self,
@@ -160,15 +143,6 @@ class GameStateExtractor:
         """
         from .chip_ocr import ocr_chip_region
 
-        # Scale down large frames for faster processing
-        if self.scale_frames:
-            h, w = frame.shape[:2]
-            if w > self.TARGET_WIDTH or h > self.TARGET_HEIGHT:
-                scale = min(self.TARGET_WIDTH / w, self.TARGET_HEIGHT / h)
-                new_w = int(w * scale)
-                new_h = int(h * scale)
-                frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
         # Create region detector for this frame
         region_detector = detect_table_regions(frame)
 
@@ -178,17 +152,10 @@ class GameStateExtractor:
             timestamp_ms=timestamp_ms
         )
 
-        # Extract community cards
-        card_slots = region_detector.extract_community_card_slots(frame)
-        state.community_cards = [
-            card for i, slot_img in enumerate(card_slots)
-            if (card := self.card_detector.detect_card(slot_img, slot_index=i))
-        ]
-
-        # Extract hero cards
-        from .card_matcher import match_hero_cards
-        hero_region = region_detector.extract_hero_cards(frame)
-        state.hero_cards = [c for c in match_hero_cards(hero_region) if c]
+        # Extract cards directly from frame
+        from .card_matcher import match_hero_cards, match_community_cards
+        state.community_cards = [c for c in match_community_cards(frame) if c]
+        state.hero_cards = [c for c in match_hero_cards(frame) if c]
 
         state.pot = extract_pot(frame, region_detector)
 

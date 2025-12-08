@@ -71,10 +71,6 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Output verbose per-frame extractions (no filtering/consensus)"
     )
-    analyze_parser.add_argument(
-        "--table-background", default=None,
-        help="Path to table background image for empty slot detection"
-    )
 
     # export command
     export_parser = subparsers.add_parser(
@@ -94,10 +90,6 @@ def main():
     export_parser.add_argument(
         "--button", "-b", type=int, default=None,
         help="Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero). Auto-detected if not specified."
-    )
-    export_parser.add_argument(
-        "--table-background", default=None,
-        help="Path to table background image for empty slot detection"
     )
 
     # info command
@@ -130,10 +122,6 @@ def main():
     diagnose_parser.add_argument(
         "--open", action="store_true",
         help="Open the report in browser after generation"
-    )
-    diagnose_parser.add_argument(
-        "--table-background", default=None,
-        help="Path to table background image for empty slot detection"
     )
 
     # clear-library command
@@ -191,10 +179,6 @@ def main():
     batch_parser.add_argument(
         "--extension", "-e", default=".txt",
         help="Output file extension (default: .txt)"
-    )
-    batch_parser.add_argument(
-        "--table-background", default=None,
-        help="Path to table background image for empty slot detection"
     )
 
     # record command - simple screen recording
@@ -324,7 +308,6 @@ def cmd_analyze(args):
     config = AnalysisConfig(
         start_ms=start_ms,
         end_ms=end_ms if args.end else None,
-        table_background=args.table_background,
     )
 
     with create_progress(TextColumn("OCR: {task.fields[ocr]}")) as progress:
@@ -372,7 +355,6 @@ def cmd_export(args):
     config = AnalysisConfig(
         start_ms=start_ms,
         end_ms=end_ms if args.end else None,
-        table_background=args.table_background,
     )
 
     with create_progress() as progress:
@@ -417,7 +399,6 @@ def cmd_batch_export(args):
         output_dir,
         args.format,
         args.extension,
-        table_background=args.table_background,
     )
 
 
@@ -456,7 +437,6 @@ def cmd_diagnose(args):
         output_path,
         frame_number=args.frame,
         timestamp_s=args.timestamp,
-        table_background=args.table_background,
     )
 
     print(f"\nAnalyzing frame {result['frame_number']} ({result['timestamp_ms']/1000:.2f}s)...", file=sys.stderr)
