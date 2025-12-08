@@ -13,19 +13,17 @@ import numpy as np
 
 from .image_matcher import match_image
 
-# Expected frame resolution (all coordinates are absolute for this resolution)
-FRAME_WIDTH = 1342
-FRAME_HEIGHT = 960
-
 # Library locations
 LIBRARY_DIR = Path(__file__).parent / "card_library"
 COMMUNITY_LIBRARY = "community"
 HERO_LIBRARY = "hero"
 
-# Hero card regions (absolute coordinates in frame)
-HERO_LEFT_RANK_REGION = (831, 600, 17, 22)   # x, y, w, h (top of card)
-HERO_LEFT_SUIT_REGION = (829, 623, 22, 24)   # x, y, w, h (below rank)
-HERO_CARD_OFFSET = 58  # pixels between left and right hero card
+# Hero card offsets relative to player position
+HERO_RANK_OFFSET = (-15, -110)  # (dx, dy) from player position to left card rank
+HERO_SUIT_OFFSET = (-17, -87)   # (dx, dy) from player position to left card suit
+HERO_RANK_SIZE = (17, 22)       # (w, h)
+HERO_SUIT_SIZE = (22, 24)       # (w, h)
+HERO_CARD_SPACING = 58          # pixels between left and right hero card
 
 # Community card regions (absolute coordinates in frame)
 COMMUNITY_LEFT_RANK_REGION = (482, 374, 25, 28)  # x, y, w, h (top of card)
@@ -75,17 +73,31 @@ def _match_card(rank_img: np.ndarray, suit_img: np.ndarray, library_name: str) -
     return None
 
 
-def match_hero_cards(frame: np.ndarray) -> list[Optional[str]]:
+def match_hero_cards(frame: np.ndarray, hero_position: tuple[int, int]) -> list[Optional[str]]:
     """
     Match both hero cards directly from frame.
+
+    Args:
+        frame: The video frame.
+        hero_position: (x, y) of hero's player position.
 
     Returns:
         List of [left_card, right_card], each a string like "Ah" or None.
     """
-    left_rank = _extract_region(frame, HERO_LEFT_RANK_REGION)
-    left_suit = _extract_region(frame, HERO_LEFT_SUIT_REGION)
-    right_rank = _extract_region(frame, _offset_region(HERO_LEFT_RANK_REGION, HERO_CARD_OFFSET))
-    right_suit = _extract_region(frame, _offset_region(HERO_LEFT_SUIT_REGION, HERO_CARD_OFFSET))
+    px, py = hero_position
+
+    # Left card regions
+    left_rank_region = (px + HERO_RANK_OFFSET[0], py + HERO_RANK_OFFSET[1], *HERO_RANK_SIZE)
+    left_suit_region = (px + HERO_SUIT_OFFSET[0], py + HERO_SUIT_OFFSET[1], *HERO_SUIT_SIZE)
+
+    # Right card regions
+    right_rank_region = _offset_region(left_rank_region, HERO_CARD_SPACING)
+    right_suit_region = _offset_region(left_suit_region, HERO_CARD_SPACING)
+
+    left_rank = _extract_region(frame, left_rank_region)
+    left_suit = _extract_region(frame, left_suit_region)
+    right_rank = _extract_region(frame, right_rank_region)
+    right_suit = _extract_region(frame, right_suit_region)
 
     return [
         _match_card(left_rank, left_suit, HERO_LIBRARY),

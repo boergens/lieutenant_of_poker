@@ -18,6 +18,8 @@ from scipy.signal import convolve2d, find_peaks
 # Tesseract API for pot OCR
 _tess_lock = threading.Lock()
 _tess_api = None
+_tess_name_api = None
+_DISALLOWED_NAME_CHARS = __import__('re').compile(r'[^A-Za-z0-9_]')
 
 # Load digit matched filters (10 templates for digits 0-9)
 _FILTER_PATH = Path(__file__).parent / "digit_filters.npy"
@@ -172,3 +174,43 @@ def ocr_digits(image: np.ndarray, category: str = "other") -> str:
         cv2.imwrite(str(category_dir / filename), image)
 
     return result
+
+
+def _get_tess_name_api() -> tesserocr.PyTessBaseAPI:
+    """Get or create tesseract API for name OCR."""
+    global _tess_name_api
+    if _tess_name_api is None:
+        _tess_name_api = tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_LINE)
+        _tess_name_api.SetVariable(
+            "tessedit_char_whitelist",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+        )
+    return _tess_name_api
+
+
+def ocr_name(image: np.ndarray) -> str | None:
+    """
+    OCR for player names.
+
+    Args:
+        image: BGR or grayscale numpy array.
+
+    Returns:
+        Recognized name string, or None if too short.
+    """
+    processed = _preprocess_for_tesseract(image)
+
+    with _tess_lock:
+        api = _get_tess_name_api()
+        api.SetImage(Image.fromarray(processed))
+        text = api.GetUTF8Text().strip()
+
+    # Sanitize: replace spaces with underscores, remove invalid chars
+    text = text.replace(' ', '_')
+    text = _DISALLOWED_NAME_CHARS.sub('', text)
+
+    # Filter out very short results (likely noise)
+    if len(text) < 2:
+        return None
+
+    return text
