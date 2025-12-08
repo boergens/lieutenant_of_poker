@@ -3,9 +3,9 @@
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
-from .analysis import analyze_video, AnalysisConfig
-from .frame_extractor import get_video_info
+from .analysis import analyze_video
 from .first_frame import TableInfo
 from .snowie_export import export_snowie
 from .pokerstars_export import export_pokerstars
@@ -27,14 +27,12 @@ def extract_hand_id(filename: str) -> str | None:
     return None
 
 
-from typing import Optional
-
-
 def batch_export(
     folder: str,
     output_dir: Optional[str],
     fmt: str,
     extension: str,
+    max_rake_pct: float = 0.10,
 ):
     """Export all videos in folder to text files.
 
@@ -43,6 +41,7 @@ def batch_export(
         output_dir: Path to output directory for text files (None = same as folder)
         fmt: Export format (snowie, pokerstars, human, actions)
         extension: Output file extension
+        max_rake_pct: Maximum rake as percentage of pot (default 10%, 0 to disable)
     """
     folder_path = Path(folder)
     if not folder_path.is_dir():
@@ -67,7 +66,6 @@ def batch_export(
     print(file=sys.stderr)
 
     success = errors = 0
-    config = AnalysisConfig()
 
     for i, video in enumerate(videos, 1):
         out_file = out_path / (video.stem + extension)
@@ -78,7 +76,7 @@ def batch_export(
             button = table_info.button_index or 0
             names = list(table_info.names)
 
-            states = analyze_video(str(video), config)
+            states = analyze_video(str(video), max_rake_pct=max_rake_pct)
             if not states:
                 print("-> no hands", file=sys.stderr)
                 continue

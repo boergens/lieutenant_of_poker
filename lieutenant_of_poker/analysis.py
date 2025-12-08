@@ -52,13 +52,19 @@ def _total_chips(state: dict) -> int | None:
     return total
 
 
-def _validate_transition(prev: dict, curr: dict) -> tuple[bool, list[str]]:
+def _validate_transition(prev: dict, curr: dict, max_rake_pct: float = 0.10) -> tuple[bool, list[str], int]:
     """
     Validate a state transition.
 
-    Returns (is_valid, list of violation messages).
+    Args:
+        prev: Previous game state.
+        curr: Current game state.
+        max_rake_pct: Maximum allowed rake as percentage of pot (default 10%).
+
+    Returns (is_valid, list of violation messages, rake_applied).
     """
     violations = []
+    rake_applied = 0
 
     # Community cards can't decrease
     if len(curr["community_cards"]) < len(prev["community_cards"]):
@@ -74,10 +80,13 @@ def _validate_transition(prev: dict, curr: dict) -> tuple[bool, list[str]]:
         if prev["community_cards"] != curr["community_cards"][:prev_count]:
             violations.append(f"community cards changed: {prev['community_cards']} → {curr['community_cards'][:prev_count]}")
 
-    # Pot can't decrease (within same hand)
+    # Pot can decrease slightly due to house rake, but not by more than max_rake_pct
     if prev["pot"] is not None and curr["pot"] is not None:
         if curr["pot"] < prev["pot"]:
-            violations.append(f"pot decreased: {prev['pot']} → {curr['pot']}")
+            max_rake = max(1, int(prev["pot"] * max_rake_pct))
+            pot_decrease = prev["pot"] - curr["pot"]
+            if pot_decrease > max_rake:
+                violations.append(f"pot decreased too much: {prev['pot']} → {curr['pot']} (max rake: {max_rake})")
 
     # Player chips can't increase (no wins tracked)
     for p_prev, p_curr in zip(prev["players"], curr["players"]):
@@ -85,32 +94,41 @@ def _validate_transition(prev: dict, curr: dict) -> tuple[bool, list[str]]:
             if p_curr["chips"] > p_prev["chips"]:
                 violations.append(f"{p_curr['name']} chips increased: {p_prev['chips']} → {p_curr['chips']}")
 
-    # Total chips in circulation must be conserved
+    # Total chips in circulation must be conserved (minus rake)
     prev_total = _total_chips(prev)
     curr_total = _total_chips(curr)
     if prev_total is not None and curr_total is not None:
-        if curr_total != prev_total:
-            violations.append(f"total chips changed: {prev_total} → {curr_total}")
+        # Rake is taken from the pot, use current pot for calculation
+        pot_for_rake = curr["pot"] if curr["pot"] else prev["pot"] if prev["pot"] else 0
+        max_rake = max(1, int(pot_for_rake * max_rake_pct))
+        chip_loss = prev_total - curr_total
+        if chip_loss < 0:
+            # Chips increased - invalid
+            violations.append(f"total chips increased: {prev_total} → {curr_total}")
+        elif chip_loss > max_rake:
+            # Lost more chips than rake allows
+            violations.append(f"total chips decreased too much: {prev_total} → {curr_total} (max rake: {max_rake})")
+        elif chip_loss > 0:
+            # Valid with rake applied
+            rake_applied = chip_loss
 
-    return len(violations) == 0, violations
+    return len(violations) == 0, violations, rake_applied
 
 
 def analyze_video(
     video_path: str,
-    start_ms: float = 0,
-    end_ms: Optional[float] = None,
     consensus_frames: int = CONSENSUS_FRAMES,
     include_rejected: bool = False,
+    max_rake_pct: float = 0.10,
 ) -> list[dict]:
     """
     Analyze a video file and extract game states.
 
     Args:
         video_path: Path to the video file.
-        start_ms: Start timestamp in milliseconds.
-        end_ms: End timestamp in milliseconds (None = entire video).
         consensus_frames: Number of consecutive valid frames needed to accept change.
         include_rejected: If True, include rejected states with rejected=True.
+        max_rake_pct: Maximum rake as percentage of pot (default 10%, 0 to disable).
 
     Returns:
         List of state dicts with keys:
@@ -131,14 +149,9 @@ def analyze_video(
     pending_buffer = []  # Buffer for valid frames proposing a state change
 
     with VideoFrameExtractor(video_path) as video:
-        if end_ms is None:
-            end_ms = video.duration_seconds * 1000
+        total_frames = video.frame_count
 
-        start_frame = int(start_ms * video.fps / 1000)
-        end_frame = int(end_ms * video.fps / 1000)
-        total_frames = end_frame - start_frame
-
-        for i, frame_info in enumerate(video.iterate_frames(start_frame, end_frame)):
+        for i, frame_info in enumerate(video.iterate_frames()):
             # Progress bar
             pct = (i + 1) / total_frames
             bar_width = 40
@@ -194,7 +207,7 @@ def analyze_video(
                 continue
 
             # Validate transition
-            is_valid, violations = _validate_transition(current, state)
+            is_valid, violations, rake_applied = _validate_transition(current, state, max_rake_pct)
 
             if not is_valid:
                 if include_rejected:
@@ -203,6 +216,10 @@ def analyze_video(
                     states.append(state)
                 pending_buffer = []
                 continue
+
+            # Store rake if applied
+            if rake_applied > 0:
+                state["rake"] = rake_applied
 
             # Valid frame - check if it's a change
             if _states_equivalent(current, state):
@@ -228,25 +245,21 @@ def analyze_video(
 
 def analyze_and_print(
     video_path: str,
-    start_s: float = 0,
-    end_s: float | None = None,
     verbose: bool = False,
+    max_rake_pct: float = 0.10,
 ) -> None:
     """
     Analyze a video and print formatted output showing only changes.
 
     Args:
         video_path: Path to the video file.
-        start_s: Start timestamp in seconds.
-        end_s: End timestamp in seconds (None = entire video).
         verbose: If True, show rejected states with [X] prefix.
+        max_rake_pct: Maximum rake as percentage of pot (default 10%, 0 to disable).
     """
     table = TableInfo.from_video(video_path)
     print(f"Hero: {' '.join(table.hero_cards)}")
 
-    start_ms = start_s * 1000
-    end_ms = end_s * 1000 if end_s else None
-    states = analyze_video(video_path, start_ms, end_ms, include_rejected=verbose)
+    states = analyze_video(video_path, include_rejected=verbose, max_rake_pct=max_rake_pct)
 
     if not states:
         print("No valid frames found.")
@@ -282,7 +295,12 @@ def analyze_and_print(
 
         if parts:
             prefix = "[X] " if is_rejected else ""
-            print(f"{prefix}[{state['timestamp_ms']/1000:.1f}s] {' | '.join(parts)}")
+            line = f"{prefix}[{state['timestamp_ms']/1000:.1f}s] {' | '.join(parts)}"
+            # Show rake applied suffix
+            rake = state.get("rake", 0)
+            if rake > 0:
+                line += f" (rake applied: {rake})"
+            print(line)
 
         # Only update prev for non-rejected states
         if not is_rejected:

@@ -1,10 +1,10 @@
 """Debug helper to step through export logic in IDE."""
 
-from lieutenant_of_poker.analysis import analyze_video, AnalysisConfig
+from lieutenant_of_poker.analysis import analyze_video
 from lieutenant_of_poker.frame_extractor import get_video_info
 from lieutenant_of_poker.first_frame import detect_from_video
 from lieutenant_of_poker.action_log_export import export_action_log
-from lieutenant_of_poker.hand_history import reconstruct_hand
+from lieutenant_of_poker.export import reconstruct_hand
 
 
 def debug_export(video_path: str, format: str = "actions"):
@@ -23,8 +23,7 @@ def debug_export(video_path: str, format: str = "actions"):
     print(f"  Players: {players}")
 
     # Analyze video
-    config = AnalysisConfig(start_ms=0, end_ms=None)
-    states = analyze_video(video_path, config)
+    states = analyze_video(video_path)
     print(f"  States: {len(states)}")
 
     # Find hero cards from states

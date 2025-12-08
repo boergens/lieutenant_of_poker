@@ -3,7 +3,7 @@
 import io
 from typing import List, Optional, TextIO
 
-from .hand_history import HandHistory, HandAction, reconstruct_hand
+from .export import HandHistory, HandAction, reconstruct_hand
 from .game_state import GameState, Street
 from .action_detector import PlayerAction
 from .game_simulator import ShowdownConfig, pick_winner

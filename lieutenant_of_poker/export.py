@@ -367,3 +367,47 @@ def reconstruct_hand(
         hand.payout = hand.pot - uncalled_amount
 
     return hand
+
+
+def export_video(
+    video_path: str,
+    fmt: str,
+    button: Optional[int] = None,
+    max_rake_pct: float = 0.10,
+) -> Optional[str]:
+    """
+    Analyze a video and export to the specified format.
+
+    Args:
+        video_path: Path to the video file.
+        fmt: Export format (pokerstars, snowie, human, actions).
+        button: Button position override (None = auto-detect).
+        max_rake_pct: Maximum rake as percentage of pot (default 10%, 0 to disable).
+
+    Returns:
+        Formatted output string, or None if no states found.
+    """
+    from .analysis import analyze_video
+    from .first_frame import TableInfo
+    from .snowie_export import export_snowie
+    from .pokerstars_export import export_pokerstars
+    from .human_export import export_human
+    from .action_log_export import export_action_log
+
+    table = TableInfo.from_video(video_path)
+    if button is None:
+        button = table.button_index or 0
+    names = list(table.names)
+
+    states = analyze_video(video_path, max_rake_pct=max_rake_pct)
+    if not states:
+        return None
+
+    if fmt == "snowie":
+        return export_snowie(states, button, names)
+    elif fmt == "human":
+        return export_human(states, button, names)
+    elif fmt == "actions":
+        return export_action_log(states, button, names)
+    else:
+        return export_pokerstars(states, button, names)
