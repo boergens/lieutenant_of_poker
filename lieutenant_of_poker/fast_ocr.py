@@ -147,8 +147,8 @@ def ocr_digits(image: np.ndarray, category: str = "other") -> str:
     """
     import secrets
 
-    # Use tesseract for pot (works great), matched filter for players
-    if category == "pot":
+    # Use tesseract for pot and money, matched filter for players
+    if category in ("pot", "money"):
         result = _get_numbers_tesseract(image)
     else:
         digits = _get_numbers_matched_filter(image)

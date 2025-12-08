@@ -194,3 +194,71 @@ def ocr_chip_region(chip_region: np.ndarray, player_index: int) -> Optional[int]
     result = _ocr_region(chip_region, category="player")
     cache.put(chip_region, result)
     return result
+
+
+# Player money region parameters (relative to player position)
+_MONEY_OFFSET_X = 24
+_MONEY_OFFSET_Y = -3
+_MONEY_WIDTH = 113
+_MONEY_HEIGHT = 33
+
+if TYPE_CHECKING:
+    from .first_frame import TableInfo
+
+
+def get_money_region(
+    frame: np.ndarray,
+    table: "TableInfo",
+    player_index: int,
+) -> np.ndarray:
+    """
+    Extract the money display region for a player.
+
+    Args:
+        frame: BGR game frame.
+        table: TableInfo with player positions.
+        player_index: Player index (0 to len(table.positions)-1).
+
+    Returns:
+        BGR image of the money region.
+    """
+    px, py = table.positions[player_index]
+    x = px + _MONEY_OFFSET_X
+    y = py + _MONEY_OFFSET_Y
+
+    height, width = frame.shape[:2]
+    x = max(0, min(x, width - _MONEY_WIDTH))
+    y = max(0, min(y, height - _MONEY_HEIGHT))
+
+    return frame[y:y + _MONEY_HEIGHT, x:x + _MONEY_WIDTH]
+
+
+def extract_player_money(
+    frame: np.ndarray,
+    table: "TableInfo",
+    player_index: int,
+) -> Optional[int]:
+    """
+    Extract a player's money from a game frame using OCR.
+
+    Args:
+        frame: BGR game frame.
+        table: TableInfo with player positions.
+        player_index: Player index (0 to len(table.positions)-1).
+
+    Returns:
+        Money amount as integer, or None if not detected.
+    """
+    money_region = get_money_region(frame, table, player_index)
+
+    if money_region.size == 0:
+        return None
+
+    cache = _get_player_cache(player_index)
+    found, cached = cache.get(money_region)
+    if found:
+        return cached
+
+    result = _ocr_region(money_region, category="money")
+    cache.put(money_region, result)
+    return result

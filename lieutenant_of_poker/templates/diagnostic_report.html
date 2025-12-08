@@ -1,0 +1,172 @@
+{% macro step_html(step) %}
+<div class="step {{ 'success' if step.success else 'failure' }}">
+    <div class="step-header">
+        <span class="step-name">{{ step.name }}</span>
+        <span class="badge {{ 'success' if step.success else 'failure' }}">
+            {{ '✓ Success' if step.success else '✗ Failed' }}
+        </span>
+    </div>
+    <div class="description">{{ step.description }}</div>
+
+    {% if step.get('images') %}
+    <div class="images">
+        {% for label, b64 in step.images %}
+        {% if b64 %}
+        <div class="image-container">
+            <img src="data:image/png;base64,{{ b64 }}">
+            <div class="image-label">{{ label }}</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if step.get('ocr_result') is not none %}
+    <div class="ocr-result">OCR Result: <code>{{ step.ocr_result }}</code></div>
+    {% endif %}
+
+    {% if step.get('match_info') is not none %}
+    <div class="ocr-result">Match: <code>{{ step.match_info }}</code></div>
+    {% endif %}
+
+    {% if step.get('parsed_result') is not none %}
+    <div class="parsed-result">Parsed: {{ step.parsed_result }}</div>
+    {% endif %}
+
+    {% if step.get('error') %}
+    <div class="error">Error: {{ step.error }}</div>
+    {% endif %}
+
+    {% if step.get('substeps') %}
+    <div class="substeps">
+        {% for substep in step.substeps %}
+        {{ step_html(substep) }}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Frame Analysis Report</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        .step {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .step.success { border-left: 4px solid #4CAF50; }
+        .step.failure { border-left: 4px solid #f44336; }
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .step-name { font-weight: bold; font-size: 1.1em; }
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+        }
+        .badge.success { background: #e8f5e9; color: #2e7d32; }
+        .badge.failure { background: #ffebee; color: #c62828; }
+        .description { color: #666; margin: 10px 0; }
+        .images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .image-container { text-align: center; }
+        .image-container img {
+            max-width: 400px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .image-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .ocr-result {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+        .parsed-result { font-weight: bold; color: #1976d2; }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .substeps {
+            margin-left: 30px;
+            border-left: 2px solid #e0e0e0;
+            padding-left: 20px;
+        }
+        .meta {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .meta-item { color: #666; }
+        .meta-value { font-weight: bold; color: #333; }
+        .frame-preview img {
+            max-width: 700px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Frame Analysis Report</h1>
+
+    <div class="meta">
+        <div class="meta-grid">
+            <div class="meta-item">Generated: <span class="meta-value">{{ timestamp }}</span></div>
+            {% if frame_number is not none %}
+            <div class="meta-item">Frame #: <span class="meta-value">{{ frame_number }}</span></div>
+            {% endif %}
+            {% if timestamp_ms is not none %}
+            <div class="meta-item">Timestamp: <span class="meta-value">{{ "%.2f"|format(timestamp_ms / 1000) }}s</span></div>
+            {% endif %}
+            <div class="meta-item">Frame Size: <span class="meta-value">{{ frame_size[0] }}x{{ frame_size[1] }}</span></div>
+        </div>
+    </div>
+
+    <h2>Frame Preview</h2>
+    {% if frame_b64 %}
+    <div class="frame-preview">
+        <img src="data:image/png;base64,{{ frame_b64 }}">
+    </div>
+    {% endif %}
+
+    <h2>Detection Steps</h2>
+    {% for step in steps %}
+    {{ step_html(step) }}
+    {% endfor %}
+</body>
+</html>
