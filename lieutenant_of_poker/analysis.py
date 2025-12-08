@@ -1,373 +1,289 @@
 """
-High-level analysis operations for video processing.
+Video analysis for Governor of Poker.
 
-This module provides the main entry points for analyzing poker videos,
-extracting frames, and generating reports.
+Extracts game states from video frames using TableInfo for player positions.
 """
 
+import sys
 from collections import Counter
-from dataclasses import dataclass
-from typing import Optional, Callable, List, TypeVar
+from typing import Optional
 
+from .first_frame import TableInfo
 from .frame_extractor import VideoFrameExtractor
-from .game_state import GameStateExtractor, GameState, PlayerState
+from .card_matcher import match_community_cards
+from .chip_ocr import extract_pot, extract_player_money, clear_caches
 
-T = TypeVar("T")
-
-# Number of consecutive matching rejected frames needed to accept a state change
+# Number of consecutive matching frames needed to accept a state change
 CONSENSUS_FRAMES = 3
 
 
-def states_equivalent(state1: GameState, state2: GameState) -> bool:
-    """
-    Check if two game states have equivalent significant values.
-
-    Compares hero cards, community cards, pot, hero chips, and player chips.
-    Used to detect if consecutive rejected frames are requesting the same change.
-    """
-    # Compare hero cards (now strings like "Ah")
-    if state1.hero_cards != state2.hero_cards:
-        return False
-
-    # Compare community cards (now strings like "Ah")
-    if state1.community_cards != state2.community_cards:
-        return False
-
-    # Compare pot
-    if state1.pot != state2.pot:
-        return False
-
-    # Compare hero chips
-    if state1.hero_chips != state2.hero_chips:
-        return False
-
-    # Compare player chips
-    if set(state1.players.keys()) != set(state2.players.keys()):
-        return False
-    for pos in state1.players:
-        if state1.players[pos].chips != state2.players[pos].chips:
-            return False
-
-    return True
-
-
-def majority_vote(values: List[T]) -> Optional[T]:
-    """
-    Return the most common value from a list, or None if the list is empty.
-
-    For values that appear equally often, returns the first one encountered.
-    None values are filtered out before voting.
-    """
-    # Filter out None values
-    valid_values = [v for v in values if v is not None]
-    if not valid_values:
-        return None
-    counter = Counter(valid_values)
-    return counter.most_common(1)[0][0]
-
-
-def compute_initial_state(states: List[GameState]) -> GameState:
-    """
-    Compute a consolidated initial state from multiple frame states using majority voting.
-
-    Pools hero cards and chip values from the provided states and returns
-    a new GameState with the majority-voted values.
-
-    Args:
-        states: List of GameState objects from the first few frames.
-
-    Returns:
-        A consolidated GameState with majority-voted values.
-    """
-    if not states:
-        return GameState()
-
-    # Use the first state as the base (for metadata like frame_number, timestamp)
-    base_state = states[0]
-
-    # Majority vote for hero cards (now strings like "Ah")
-    hero_cards_left = []
-    hero_cards_right = []
-    for state in states:
-        if len(state.hero_cards) >= 1:
-            hero_cards_left.append(state.hero_cards[0])
-        if len(state.hero_cards) >= 2:
-            hero_cards_right.append(state.hero_cards[1])
-
-    voted_hero_cards = []
-    voted_left = majority_vote(hero_cards_left)
-    if voted_left:
-        voted_hero_cards.append(voted_left)
-    voted_right = majority_vote(hero_cards_right)
-    if voted_right:
-        voted_hero_cards.append(voted_right)
-
-    # Majority vote for pot
-    pots = [s.pot for s in states]
-    voted_pot = majority_vote(pots)
-
-    # Majority vote for hero_chips
-    hero_chips_list = [s.hero_chips for s in states]
-    voted_hero_chips = majority_vote(hero_chips_list)
-
-    # Majority vote for each player's chips
-    # First, collect all player positions that appear
-    all_positions = set()
-    for state in states:
-        all_positions.update(state.players.keys())
-
-    voted_players = {}
-    for pos in all_positions:
-        chips_list = [s.players.get(pos, PlayerState(position=pos)).chips for s in states]
-        voted_chips = majority_vote(chips_list)
-
-        # Get a base PlayerState from the first state that has this position
-        base_player = None
-        for state in states:
-            if pos in state.players:
-                base_player = state.players[pos]
-                break
-
-        if base_player:
-            voted_players[pos] = PlayerState(
-                position=pos,
-                name=base_player.name,
-                chips=voted_chips,
-                cards=base_player.cards,
-                last_action=base_player.last_action,
-                is_active=base_player.is_active,
-                is_dealer=base_player.is_dealer,
-            )
-
-    return GameState(
-        community_cards=[],  # No community cards at start
-        hero_cards=voted_hero_cards,
-        pot=voted_pot,
-        hero_chips=voted_hero_chips,
-        players=voted_players,
-        street=base_state.street,
-        frame_number=base_state.frame_number,
-        timestamp_ms=base_state.timestamp_ms,
+def _state_key(state: dict) -> tuple:
+    """Create a hashable key from state for comparison."""
+    return (
+        tuple(state["community_cards"]),
+        state["pot"],
+        tuple(p["chips"] for p in state["players"]),
     )
 
 
-@dataclass
-class AnalysisConfig:
-    """Configuration for video analysis."""
-
-    start_ms: float = 0
-    end_ms: Optional[float] = None
+def _states_equivalent(s1: dict, s2: dict) -> bool:
+    """Check if two states have the same values."""
+    return _state_key(s1) == _state_key(s2)
 
 
-@dataclass
-class AnalysisProgress:
-    """Progress information during analysis."""
+def _is_complete(state: dict) -> bool:
+    """Check if state has all required values (no None in critical fields)."""
+    if state["pot"] is None:
+        return False
+    # All players must have chips
+    return all(p["chips"] is not None for p in state["players"])
 
-    current_frame: int
-    total_frames: int
-    timestamp_ms: float
-    ocr_calls: int = 0
+
+def _total_chips(state: dict) -> int | None:
+    """Calculate total chips in circulation (pot + all player chips)."""
+    total = 0
+    if state["pot"] is None:
+        return None
+    total += state["pot"]
+    for p in state["players"]:
+        if p["chips"] is None:
+            return None
+        total += p["chips"]
+    return total
+
+
+def _validate_transition(prev: dict, curr: dict) -> tuple[bool, list[str]]:
+    """
+    Validate a state transition.
+
+    Returns (is_valid, list of violation messages).
+    """
+    violations = []
+
+    # Community cards can't decrease
+    if len(curr["community_cards"]) < len(prev["community_cards"]):
+        violations.append(f"community cards decreased: {len(prev['community_cards'])} → {len(curr['community_cards'])}")
+
+    # Community cards must be valid count (0, 3, 4, or 5)
+    if len(curr["community_cards"]) not in (0, 3, 4, 5):
+        violations.append(f"invalid community card count: {len(curr['community_cards'])}")
+
+    # Existing community cards shouldn't change
+    prev_count = len(prev["community_cards"])
+    if prev_count > 0 and len(curr["community_cards"]) >= prev_count:
+        if prev["community_cards"] != curr["community_cards"][:prev_count]:
+            violations.append(f"community cards changed: {prev['community_cards']} → {curr['community_cards'][:prev_count]}")
+
+    # Pot can't decrease (within same hand)
+    if prev["pot"] is not None and curr["pot"] is not None:
+        if curr["pot"] < prev["pot"]:
+            violations.append(f"pot decreased: {prev['pot']} → {curr['pot']}")
+
+    # Player chips can't increase (no wins tracked)
+    for p_prev, p_curr in zip(prev["players"], curr["players"]):
+        if p_prev["chips"] is not None and p_curr["chips"] is not None:
+            if p_curr["chips"] > p_prev["chips"]:
+                violations.append(f"{p_curr['name']} chips increased: {p_prev['chips']} → {p_curr['chips']}")
+
+    # Total chips in circulation must be conserved
+    prev_total = _total_chips(prev)
+    curr_total = _total_chips(curr)
+    if prev_total is not None and curr_total is not None:
+        if curr_total != prev_total:
+            violations.append(f"total chips changed: {prev_total} → {curr_total}")
+
+    return len(violations) == 0, violations
 
 
 def analyze_video(
     video_path: str,
-    config: AnalysisConfig,
-    on_progress: Optional[Callable[[AnalysisProgress], None]] = None,
-    initial_frames: int = 3,
+    start_ms: float = 0,
+    end_ms: Optional[float] = None,
     consensus_frames: int = CONSENSUS_FRAMES,
     include_rejected: bool = False,
-) -> List[GameState]:
+) -> list[dict]:
     """
     Analyze a video file and extract game states.
 
-    Assumes we're analyzing a single poker hand from a clean starting state
-    (hero cards dealt, blinds posted, no community cards).
-
-    State changes are only accepted when 3 consecutive VALID frames agree
-    on the same change. Invalid frames (OCR errors, impossible states) are
-    discarded completely.
-
     Args:
         video_path: Path to the video file.
-        config: Analysis configuration.
-        on_progress: Optional callback for progress updates.
-        initial_frames: Number of frames to pool for initial state (default 3).
-        consensus_frames: Number of consecutive VALID frames needed to accept
-                         a state change (default 3).
-        include_rejected: If True, include rejected states in output with
-                         rejected=True flag set. Default False.
+        start_ms: Start timestamp in milliseconds.
+        end_ms: End timestamp in milliseconds (None = entire video).
+        consensus_frames: Number of consecutive valid frames needed to accept change.
+        include_rejected: If True, include rejected states with rejected=True.
 
     Returns:
-        List of GameState objects extracted from the video.
+        List of state dicts with keys:
+            - frame_number: int
+            - timestamp_ms: float
+            - community_cards: list[str]
+            - pot: int or None
+            - players: list[dict] with keys: name, chips
+            - rejected: bool (only if include_rejected=True)
     """
-    from .chip_ocr import get_ocr_calls, clear_caches
-    from .fast_ocr import set_ocr_debug_context
-    from .rules_validator import is_complete_frame, validate_transition
-
     clear_caches()
 
+    table = TableInfo.from_video(video_path)
+    if not table.positions:
+        return []
+
     states = []
-    initial_states = []  # Collect first N frames for majority voting
-    pending_change_buffer = []  # Buffer for valid frames proposing a state change
-    extractor = GameStateExtractor()
+    pending_buffer = []  # Buffer for valid frames proposing a state change
 
     with VideoFrameExtractor(video_path) as video:
-        start_ms = config.start_ms
-        end_ms = config.end_ms if config.end_ms else video.duration_seconds * 1000
+        if end_ms is None:
+            end_ms = video.duration_seconds * 1000
 
-        # Calculate frame range from timestamps
         start_frame = int(start_ms * video.fps / 1000)
-        end_frame = int(end_ms * video.fps / 1000) if end_ms else video.frame_count
-
+        end_frame = int(end_ms * video.fps / 1000)
         total_frames = end_frame - start_frame
-        current_frame = 0
 
-        for frame_info in video.iterate_frames(start_frame, end_frame):
-            # Set OCR debug context for this frame
-            set_ocr_debug_context(video_path, frame_info.timestamp_ms)
+        for i, frame_info in enumerate(video.iterate_frames(start_frame, end_frame)):
+            # Progress bar
+            pct = (i + 1) / total_frames
+            bar_width = 40
+            filled = int(bar_width * pct)
+            bar = "█" * filled + "░" * (bar_width - filled)
+            print(f"\r[{bar}] {pct*100:.0f}% ({i+1}/{total_frames})", end="", file=sys.stderr, flush=True)
+            frame = frame_info.image
 
-            # Extract state for this frame
-            state = extractor.extract(
-                frame_info.image,
-                frame_number=frame_info.frame_number,
-                timestamp_ms=frame_info.timestamp_ms,
-            )
+            # Extract all data from frame
+            community = [c for c in match_community_cards(frame) if c]
+            pot = extract_pot(frame)
 
-            # Pool first N frames for initial state majority voting
-            if current_frame < initial_frames:
-                initial_states.append(state)
+            player_chips = []
+            for i in range(len(table.names)):
+                chips = extract_player_money(frame, table, i)
+                player_chips.append(chips)
 
-                # When we have enough frames, compute consolidated initial state
-                if len(initial_states) == initial_frames:
-                    consolidated = compute_initial_state(initial_states)
-                    states.append(consolidated)
-            else:
-                # First check: frame must have all values (no None in critical fields)
-                if not is_complete_frame(state):
-                    # Invalid frame - discard completely, reset pending buffer
-                    if include_rejected:
-                        state.rejected = True
-                        states.append(state)
-                    pending_change_buffer = []
-                    current_frame += 1
-                    if on_progress:
-                        on_progress(AnalysisProgress(
-                            current_frame=current_frame,
-                            total_frames=total_frames,
-                            timestamp_ms=frame_info.timestamp_ms,
-                            ocr_calls=get_ocr_calls(),
-                        ))
-                    continue
+            state = {
+                "frame_number": frame_info.frame_number,
+                "timestamp_ms": frame_info.timestamp_ms,
+                "community_cards": community,
+                "pot": pot,
+                "players": [{"name": name, "chips": chips}
+                           for name, chips in zip(table.names, player_chips)],
+            }
 
-                # Second check: validate against current accepted state
-                # Find last accepted (non-rejected) state for comparison
-                current_state = None
-                for s in reversed(states):
-                    if not s.rejected:
-                        current_state = s
-                        break
-                if current_state:
-                    result = validate_transition(
-                        current_state, state,
-                        allow_new_hand=False,
-                        check_chip_increases=True,
-                    )
-                    if not result.is_valid:
-                        # Invalid transition - discard frame, reset pending buffer
-                        if include_rejected:
-                            state.rejected = True
-                            states.append(state)
-                        pending_change_buffer = []
-                    elif states_equivalent(current_state, state):
-                        # Valid but no change - keep current state, reset pending buffer
-                        pending_change_buffer = []
-                    else:
-                        # Valid frame with a state change - add to pending buffer
-                        if pending_change_buffer and states_equivalent(pending_change_buffer[-1], state):
-                            # Matches previous pending change
-                            pending_change_buffer.append(state)
-                        else:
-                            # Different change - start new pending buffer
-                            pending_change_buffer = [state]
-
-                        # Accept change when we have enough consecutive valid frames
-                        if len(pending_change_buffer) >= consensus_frames:
-                            states.append(pending_change_buffer[-1])
-                            pending_change_buffer = []
-                else:
+            # First state - just accept it
+            if not states:
+                if _is_complete(state):
                     states.append(state)
+                elif include_rejected:
+                    state["rejected"] = True
+                    states.append(state)
+                continue
 
-            current_frame += 1
+            # Get last accepted state
+            current = None
+            for s in reversed(states):
+                if not s.get("rejected"):
+                    current = s
+                    break
 
-            if on_progress:
-                on_progress(
-                    AnalysisProgress(
-                        current_frame=current_frame,
-                        total_frames=total_frames,
-                        timestamp_ms=frame_info.timestamp_ms,
-                        ocr_calls=get_ocr_calls(),
-                    )
-                )
+            if not current:
+                states.append(state)
+                continue
 
-        # Handle edge case: video has fewer frames than initial_frames
-        if initial_states and not states:
-            consolidated = compute_initial_state(initial_states)
-            states.append(consolidated)
+            # Check completeness
+            if not _is_complete(state):
+                if include_rejected:
+                    state["rejected"] = True
+                    states.append(state)
+                pending_buffer = []
+                continue
+
+            # Validate transition
+            is_valid, violations = _validate_transition(current, state)
+
+            if not is_valid:
+                if include_rejected:
+                    state["rejected"] = True
+                    state["violations"] = violations
+                    states.append(state)
+                pending_buffer = []
+                continue
+
+            # Valid frame - check if it's a change
+            if _states_equivalent(current, state):
+                # No change, reset pending buffer
+                pending_buffer = []
+                continue
+
+            # Valid change - add to pending buffer
+            if pending_buffer and _states_equivalent(pending_buffer[-1], state):
+                pending_buffer.append(state)
+            else:
+                pending_buffer = [state]
+
+            # Accept when we have enough consecutive valid frames
+            if len(pending_buffer) >= consensus_frames:
+                states.append(pending_buffer[-1])
+                pending_buffer = []
+
+        print(file=sys.stderr)  # Clear progress bar line
 
     return states
 
 
-def analyze_and_format(
+def analyze_and_print(
     video_path: str,
     start_s: float = 0,
-    end_s: Optional[float] = None,
+    end_s: float | None = None,
     verbose: bool = False,
-) -> str:
-    """Analyze video and return formatted output."""
-    from .first_frame import TableInfo
-    from .formatter import format_changes
+) -> None:
+    """
+    Analyze a video and print formatted output showing only changes.
 
-    table_info = TableInfo.from_video(video_path)
-    config = AnalysisConfig(
-        start_ms=start_s * 1000,
-        end_ms=end_s * 1000 if end_s else None,
-    )
-    states = analyze_video(video_path, config, include_rejected=verbose)
-    return format_changes(states, verbose=verbose, player_names=list(table_info.names))
+    Args:
+        video_path: Path to the video file.
+        start_s: Start timestamp in seconds.
+        end_s: End timestamp in seconds (None = entire video).
+        verbose: If True, show rejected states with [X] prefix.
+    """
+    table = TableInfo.from_video(video_path)
+    print(f"Hero: {' '.join(table.hero_cards)}")
 
-
-def analyze_and_export(
-    video_path: str,
-    fmt: str = "actions",
-    start_s: float = 0,
-    end_s: Optional[float] = None,
-    button: Optional[int] = None,
-) -> str:
-    """Analyze video and return exported hand history."""
-    from .first_frame import TableInfo
-    from .snowie_export import export_snowie
-    from .pokerstars_export import export_pokerstars
-    from .human_export import export_human
-    from .action_log_export import export_action_log
-
-    table_info = TableInfo.from_video(video_path)
-    button_pos = button if button is not None else (table_info.button_index or 0)
-    player_names = list(table_info.names)
-
-    config = AnalysisConfig(
-        start_ms=start_s * 1000,
-        end_ms=end_s * 1000 if end_s else None,
-    )
-    states = analyze_video(video_path, config)
+    start_ms = start_s * 1000
+    end_ms = end_s * 1000 if end_s else None
+    states = analyze_video(video_path, start_ms, end_ms, include_rejected=verbose)
 
     if not states:
-        return ""
+        print("No valid frames found.")
+        return
 
-    if fmt == "snowie":
-        return export_snowie(states, button_pos=button_pos, player_names=player_names)
-    elif fmt == "human":
-        return export_human(states, button_pos=button_pos, player_names=player_names)
-    elif fmt == "actions":
-        return export_action_log(states, button_pos=button_pos, player_names=player_names)
-    else:
-        return export_pokerstars(states, button_pos=button_pos, player_names=player_names)
+    prev_state = None
+    for state in states:
+        is_rejected = state.get("rejected", False)
+
+        # Skip rejected unless verbose
+        if is_rejected and not verbose:
+            continue
+
+        parts = []
+
+        # Board changes
+        curr_board = state["community_cards"]
+        prev_board = prev_state["community_cards"] if prev_state else []
+        if curr_board != prev_board and curr_board:
+            parts.append(f"Board: {' '.join(curr_board)}")
+
+        # Pot changes
+        curr_pot = state["pot"]
+        prev_pot = prev_state["pot"] if prev_state else None
+        if curr_pot != prev_pot and curr_pot:
+            parts.append(f"Pot: {curr_pot:,}")
+
+        # Player chip changes
+        for i, p in enumerate(state["players"]):
+            prev_chips = prev_state["players"][i]["chips"] if prev_state else None
+            if p["chips"] != prev_chips and p["chips"]:
+                parts.append(f"{p['name']}: {p['chips']:,}")
+
+        if parts:
+            prefix = "[X] " if is_rejected else ""
+            print(f"{prefix}[{state['timestamp_ms']/1000:.1f}s] {' | '.join(parts)}")
+
+        # Only update prev for non-rejected states
+        if not is_rejected:
+            prev_state = state

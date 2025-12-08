@@ -246,11 +246,9 @@ def cmd_extract_frames(args):
 
 
 def cmd_analyze(args):
-    """Analyze video and output game states (every frame)."""
-    from lieutenant_of_poker.analysis import analyze_and_format
-
-    output = analyze_and_format(args.video, args.start, args.end, args.verbose)
-    print(output)
+    """Analyze video and output game states."""
+    from lieutenant_of_poker.analysis import analyze_and_print
+    analyze_and_print(args.video, args.start, args.end, args.verbose)
 
 
 def cmd_export(args):
