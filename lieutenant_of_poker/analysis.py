@@ -11,7 +11,7 @@ from typing import Optional, Callable, List, TypeVar
 
 from .frame_extractor import VideoFrameExtractor
 from .game_state import GameStateExtractor, GameState, PlayerState
-from .first_frame import FirstFrameInfo, ActivePlayer, detect_first_frame_majority
+from .first_frame import FirstFrameInfo, ActivePlayer, detect_first_frame_majority, detect_best_background
 
 T = TypeVar("T")
 
@@ -214,7 +214,6 @@ def analyze_video(
     from .fast_ocr import set_ocr_debug_context
     from .rules_validator import is_complete_frame, validate_transition
 
-    extractor = GameStateExtractor(table_background=config.table_background)
     clear_caches()
 
     states = []
@@ -222,6 +221,7 @@ def analyze_video(
     initial_images = []  # Collect frame images for first_frame detection
     pending_change_buffer = []  # Buffer for valid frames proposing a state change
     players: Optional[List[ActivePlayer]] = None  # Set after first_frame detection
+    extractor: Optional[GameStateExtractor] = None  # Created after background detection
 
     with VideoFrameExtractor(video_path) as video:
         start_ms = config.start_ms
@@ -244,6 +244,14 @@ def analyze_video(
 
                 # When we have enough frames, detect active players and compute initial state
                 if len(initial_images) == initial_frames:
+                    # Auto-detect background from first frame if not explicitly provided
+                    table_background = config.table_background
+                    if table_background is None:
+                        table_background = detect_best_background(initial_images[0])
+
+                    # Create extractor with the detected/configured background
+                    extractor = GameStateExtractor(table_background=table_background)
+
                     # Detect active players from initial frames
                     first_frame_info = detect_first_frame_majority(initial_images)
                     players = first_frame_info.players

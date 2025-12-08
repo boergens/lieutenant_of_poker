@@ -23,6 +23,7 @@ class ViolationType(Enum):
     DUPLICATE_CARDS = auto()
     POT_DECREASED = auto()
     POT_DISAPPEARED = auto()
+    POT_CHIP_MISMATCH = auto()
     STREET_REGRESSION = auto()
     CHIPS_INCREASED_WITHOUT_WIN = auto()
     CHIPS_DECREASED_WITHOUT_POT_INCREASE = auto()
@@ -260,7 +261,9 @@ def _validate_pot(prev: GameState, curr: GameState) -> List[Violation]:
             if prev_chips is not None and curr_chips is not None and curr_chips < prev_chips:
                 total_chip_decrease += prev_chips - curr_chips
 
-    if curr.pot < prev.pot:
+    pot_increase = curr.pot - prev.pot
+
+    if pot_increase < 0:
         violations.append(Violation(
             violation_type=ViolationType.POT_DECREASED,
             message=f"Pot decreased from {prev.pot} to {curr.pot}",
@@ -273,6 +276,13 @@ def _validate_pot(prev: GameState, curr: GameState) -> List[Violation]:
             message=f"Pot changed from {prev.pot} to {curr.pot} without chip decrease",
             previous_value=str(prev.pot),
             current_value=str(curr.pot),
+        ))
+    elif pot_increase != total_chip_decrease:
+        violations.append(Violation(
+            violation_type=ViolationType.POT_CHIP_MISMATCH,
+            message=f"Pot increased by {pot_increase} but chips decreased by {total_chip_decrease}",
+            previous_value=str(total_chip_decrease),
+            current_value=str(pot_increase),
         ))
 
     return violations

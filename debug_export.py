@@ -45,4 +45,4 @@ def debug_export(video_path: str, format: str = "actions"):
 
 
 if __name__ == "__main__":
-    hand, states = debug_export("2.mp4")
+    hand, states = debug_export("gop3_20251203_150622.mp4")

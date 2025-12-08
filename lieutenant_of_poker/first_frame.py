@@ -7,13 +7,17 @@ and hero cards. These don't change during a hand, so detection runs once.
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
 
 from .table_regions import BASE_WIDTH, BASE_HEIGHT, NUM_PLAYERS, Region, detect_table_regions
 from .card_detector import Card
+
+# Path to background library
+BACKGROUND_LIBRARY = Path(__file__).parent / "background_library"
 
 
 @dataclass
@@ -35,6 +39,7 @@ class FirstFrameInfo:
     players: List[ActivePlayer] = field(default_factory=list)
     button_index: Optional[int] = None  # Index into players list
     hero_cards: List[Card] = field(default_factory=list)
+    detected_background: Optional[str] = None  # Path to auto-detected background
 
     @property
     def num_players(self) -> int:
@@ -82,6 +87,81 @@ def _scale_frame(frame: np.ndarray) -> np.ndarray:
         new_h = int(h * scale)
         return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
     return frame
+
+
+def _get_table_sample_region(frame: np.ndarray) -> np.ndarray:
+    """
+    Extract a sample region from the table area for background color matching.
+
+    Samples from the center-left area of the frame where the table felt is
+    typically visible without cards or UI elements.
+    """
+    h, w = frame.shape[:2]
+    # Sample from center-left area (avoiding cards, players, UI)
+    # This region typically shows pure table felt
+    x1 = int(w * 0.1)
+    x2 = int(w * 0.3)
+    y1 = int(h * 0.4)
+    y2 = int(h * 0.6)
+    return frame[y1:y2, x1:x2]
+
+
+def _load_background_library() -> List[Tuple[str, np.ndarray]]:
+    """
+    Load all backgrounds from the background library.
+
+    Returns:
+        List of (path, average_color_bgr) tuples.
+    """
+    backgrounds = []
+    if not BACKGROUND_LIBRARY.exists():
+        return backgrounds
+
+    for bg_path in BACKGROUND_LIBRARY.glob("*.png"):
+        img = cv2.imread(str(bg_path))
+        if img is not None:
+            # Get average color
+            avg_color = np.mean(img, axis=(0, 1))
+            backgrounds.append((str(bg_path), avg_color))
+
+    return backgrounds
+
+
+def detect_best_background(frame: np.ndarray) -> Optional[str]:
+    """
+    Find the best matching background from the library for this frame.
+
+    Compares the table area color in the frame against all backgrounds
+    in the library and returns the path to the closest match.
+
+    Args:
+        frame: BGR image frame from the game.
+
+    Returns:
+        Path to the best matching background image, or None if no library.
+    """
+    frame = _scale_frame(frame)
+
+    # Get sample region from table area
+    sample = _get_table_sample_region(frame)
+    frame_avg_color = np.mean(sample, axis=(0, 1))
+
+    # Load all backgrounds from library
+    backgrounds = _load_background_library()
+    if not backgrounds:
+        return None
+
+    # Find best match by color distance
+    best_path = None
+    best_distance = float('inf')
+
+    for bg_path, bg_color in backgrounds:
+        distance = np.linalg.norm(frame_avg_color - bg_color)
+        if distance < best_distance:
+            best_distance = distance
+            best_path = bg_path
+
+    return best_path
 
 
 def detect_first_frame(frame: np.ndarray) -> FirstFrameInfo:
@@ -232,7 +312,8 @@ def detect_from_video(video_path: str, start_ms: float = 0, num_frames: int = 3)
     Detect static information from a video file using majority voting.
 
     Grabs multiple consecutive frames and uses majority voting for active
-    player detection and button position.
+    player detection and button position. Also auto-detects the best matching
+    table background from the background library.
 
     Args:
         video_path: Path to the video file.
@@ -240,7 +321,7 @@ def detect_from_video(video_path: str, start_ms: float = 0, num_frames: int = 3)
         num_frames: Number of frames to sample for voting (default 3).
 
     Returns:
-        FirstFrameInfo with detected values.
+        FirstFrameInfo with detected values including detected_background.
     """
     from .frame_extractor import VideoFrameExtractor, get_video_info
 
@@ -258,4 +339,9 @@ def detect_from_video(video_path: str, start_ms: float = 0, num_frames: int = 3)
     if not frames:
         return FirstFrameInfo()
 
-    return detect_first_frame_majority(frames, min_valid_frames=min(3, len(frames)))
+    # Auto-detect best matching background from library using first frame
+    detected_bg = detect_best_background(frames[0])
+
+    result = detect_first_frame_majority(frames, min_valid_frames=min(3, len(frames)))
+    result.detected_background = detected_bg
+    return result
