@@ -1,8 +1,8 @@
 """
 Video recording from frame sources.
 
-Provides a simple VideoRecorder that can record frames from any ScreenCapture
-implementation to a video file.
+Provides a simple VideoRecorder that can record frames from ScreenCaptureKitCapture
+to a video file.
 """
 
 import time
@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 from .frame_extractor import FrameInfo
-from .screen_capture import ScreenCapture
+from .screen_capture import ScreenCaptureKitCapture
 
 # Path to the mask file (in package directory)
 MASK_PATH = Path(__file__).parent / "mask.png"
@@ -185,6 +185,11 @@ class VideoRecorder:
                 self.fps,
                 (width, height),
             )
+            if not self._writer.isOpened():
+                print(f"ERROR: Failed to open VideoWriter for {self._recording_path}",
+                      file=__import__('sys').stderr)
+                print(f"  Dimensions: {width}x{height}, FPS: {self.fps}, Codec: {self.codec}",
+                      file=__import__('sys').stderr)
 
         # Buffer frames - only write when buffer is full (delayed by trailing_frames_to_drop)
         if len(self._frame_buffer) == self.trailing_frames_to_drop:
@@ -221,7 +226,7 @@ class RecordingSession:
 
     def __init__(
         self,
-        capture: ScreenCapture,
+        capture: ScreenCaptureKitCapture,
         output_dir: Union[str, Path] = ".",
         fps: int = 10,
         codec: str = "mp4v",

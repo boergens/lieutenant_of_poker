@@ -210,16 +210,12 @@ def main():
         help="Frames per second (default: 10)"
     )
     record_parser.add_argument(
-        "--display", "-D", type=int, default=0,
-        help="Display index to capture (default: 0 = main display)"
-    )
-    record_parser.add_argument(
         "--hotkey", "-H", type=str, default="cmd+shift+r",
         help="Global hotkey to toggle recording (default: cmd+shift+r)"
     )
     record_parser.add_argument(
-        "--prefix", "-p", type=str, default="gop3",
-        help="Filename prefix for recordings (default: gop3)"
+        "--prefix", "-p", type=str, default="poker",
+        help="Filename prefix for recordings (default: poker)"
     )
     record_parser.add_argument(
         "--auto", "-a", action="store_true",
@@ -500,14 +496,16 @@ def cmd_record(args):
         print(get_permission_instructions(), file=sys.stderr)
         sys.exit(1)
 
-    # Initialize screen capture (always use ScreenCaptureKit for fullscreen support)
+    # Initialize screen capture (automatically finds CoinPoker window)
     try:
-        capture = ScreenCaptureKitCapture(
-            capture_display=True,
-            display_id=args.display,
-        )
+        capture = ScreenCaptureKitCapture()
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if capture.window is None:
+        print("Error: Could not find CoinPoker table window.", file=sys.stderr)
+        print("Make sure CoinPoker is running with a table open (not just the lobby).", file=sys.stderr)
         sys.exit(1)
 
     print(f"Capture target: {capture.window}", file=sys.stderr)
@@ -574,7 +572,6 @@ def cmd_record(args):
     hotkey_listener = create_hotkey_listener(args.hotkey, on_hotkey)
 
     print(f"\nReady to record (Ctrl+C to exit)...", file=sys.stderr)
-    print(f"  Display: {args.display}", file=sys.stderr)
     print(f"  FPS: {args.fps}", file=sys.stderr)
     print(f"  Output: {Path(args.output_dir).absolute()}", file=sys.stderr)
     print(f"  Hotkey: {args.hotkey} (toggle recording)", file=sys.stderr)
