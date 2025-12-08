@@ -121,21 +121,30 @@ def _ocr_region(region: np.ndarray, category: str = "other") -> Optional[int]:
     return _parse_amount(text)
 
 
-def extract_pot(
-    frame: np.ndarray,
-    region_detector: "TableRegionDetector",
-) -> Optional[int]:
+def get_pot_region(frame: np.ndarray) -> np.ndarray:
+    """
+    Extract the pot display region from a frame.
+
+    Args:
+        frame: BGR game frame.
+
+    Returns:
+        BGR image of the pot region.
+    """
+    return frame[_POT_Y:_POT_Y + _POT_HEIGHT, _POT_X:_POT_X + _POT_WIDTH]
+
+
+def extract_pot(frame: np.ndarray) -> Optional[int]:
     """
     Extract pot amount from a game frame.
 
     Args:
         frame: BGR game frame.
-        region_detector: Table region detector for this frame.
 
     Returns:
         Pot amount as integer, or None if not detected.
     """
-    pot_region = region_detector.extract_pot(frame)
+    pot_region = get_pot_region(frame)
 
     found, cached = _pot_cache.get(pot_region)
     if found:
@@ -196,11 +205,17 @@ def ocr_chip_region(chip_region: np.ndarray, player_index: int) -> Optional[int]
     return result
 
 
+# Pot region (absolute coordinates)
+_POT_X = 392
+_POT_Y = 94
+_POT_WIDTH = 130
+_POT_HEIGHT = 30
+
 # Player money region parameters (relative to player position)
-_MONEY_OFFSET_X = 24
+_MONEY_OFFSET_X = 12
 _MONEY_OFFSET_Y = -3
 _MONEY_WIDTH = 113
-_MONEY_HEIGHT = 33
+_MONEY_HEIGHT = 23
 
 if TYPE_CHECKING:
     from .first_frame import TableInfo

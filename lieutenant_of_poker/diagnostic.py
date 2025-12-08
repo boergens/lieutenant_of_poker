@@ -66,7 +66,7 @@ def diagnose(
         HERO_RANK_OFFSET, HERO_SUIT_OFFSET, HERO_RANK_SIZE, HERO_SUIT_SIZE,
         HERO_CARD_SPACING, match_hero_cards,
     )
-    from .chip_ocr import get_money_region, extract_player_money
+    from .chip_ocr import get_money_region, extract_player_money, get_pot_region, extract_pot
     from .fast_ocr import preprocess_for_ocr
 
     # Print video info
@@ -128,6 +128,27 @@ def diagnose(
             community_step["error"] = str(e)
             community_step["success"] = False
         steps.append(community_step)
+
+        # --- Pot ---
+        pot_step = {
+            "name": "Pot Detection",
+            "description": "Extracting pot amount",
+            "success": True,
+        }
+        try:
+            pot_region = get_pot_region(frame)
+            pot_amount = extract_pot(frame)
+            pot_step["images"] = [
+                ("Pot Region", _image_to_base64(pot_region)),
+                ("OCR Input", _image_to_base64(preprocess_for_ocr(pot_region))),
+            ]
+            pot_step["ocr_result"] = str(pot_amount) if pot_amount is not None else "(not detected)"
+            pot_step["parsed_result"] = pot_amount
+            pot_step["success"] = pot_amount is not None
+        except Exception as e:
+            pot_step["error"] = str(e)
+            pot_step["success"] = False
+        steps.append(pot_step)
 
         # --- Hero Cards ---
         hero_position = table.positions[-1] if table.positions else None
