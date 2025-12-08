@@ -31,13 +31,6 @@ Tesseract OCR must be installed on the system:
 brew install tesseract  # macOS
 ```
 
-## Task Tracking
+## Notes
 
-This project uses **beads** for issue tracking instead of markdown TODOs or external tools. Key commands:
-- `bd ready` - Find available work
-- `bd create --title="..." --type=task|bug|feature` - Create new issue
-- `bd update <id> --status=in_progress` - Claim work
-- `bd close <id>` - Complete work
-- `bd sync --from-main` - Sync beads from main branch
-- it is possible to break Claude by looking at large images.. please make sure to always check that an image is below a Megabyte first before looking at it
-- make a git commit whenever you close a bead issue
+- It is possible to break Claude by looking at large images - please make sure to always check that an image is below a Megabyte first before looking at it
