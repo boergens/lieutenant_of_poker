@@ -454,3 +454,36 @@ def generate_diagnostic_report(
             "steps_failed": failures,
             "output_path": output_path,
         }
+
+
+def diagnose(
+    video_path: str,
+    output: str = "diagnostic_report.html",
+    frame_number: Optional[int] = None,
+    timestamp_s: Optional[float] = None,
+    open_browser: bool = False,
+) -> None:
+    """Generate diagnostic report and optionally open in browser."""
+    import sys
+    import webbrowser
+    from .frame_extractor import get_video_info
+
+    info = get_video_info(video_path)
+    print(f"Video: {video_path}", file=sys.stderr)
+    print(f"  Resolution: {info['width']}x{info['height']}", file=sys.stderr)
+    print(f"  Duration: {info['duration_seconds']:.1f}s", file=sys.stderr)
+
+    output_path = Path(output)
+    result = generate_diagnostic_report(
+        video_path,
+        output_path,
+        frame_number=frame_number,
+        timestamp_s=timestamp_s,
+    )
+
+    print(f"\nAnalyzing frame {result['frame_number']} ({result['timestamp_ms']/1000:.2f}s)...", file=sys.stderr)
+    print(f"Report generated: {output_path}", file=sys.stderr)
+    print(f"  Steps: {result['steps_succeeded']} succeeded, {result['steps_failed']} failed", file=sys.stderr)
+
+    if open_browser:
+        webbrowser.open(f"file://{output_path.absolute()}")

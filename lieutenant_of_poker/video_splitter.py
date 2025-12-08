@@ -374,3 +374,69 @@ def split_video(
         created_files=created_files,
         failed_files=failed_files,
     )
+
+
+def split_video_by_brightness(
+    video_path: str,
+    output_dir: Optional[str],
+    prefix: Optional[str],
+    threshold: float,
+    consecutive: int,
+    min_duration: float,
+    step: int,
+    dry_run: bool,
+) -> None:
+    """Split video into chunks based on brightness detection (CLI entry point)."""
+    import sys
+    from .frame_extractor import get_video_info
+    from .progress import create_progress
+
+    video_path = Path(video_path)
+    out_dir = Path(output_dir) if output_dir else video_path.parent
+    file_prefix = prefix if prefix else video_path.stem
+
+    info = get_video_info(str(video_path))
+    total_frames = info['frame_count']
+
+    print(f"Analyzing {video_path}...", file=sys.stderr)
+    print(f"  Duration: {info['duration_seconds']:.1f}s", file=sys.stderr)
+    print(f"  Threshold: {threshold}, Consecutive: {consecutive}", file=sys.stderr)
+
+    with create_progress() as progress:
+        task = progress.add_task("Scanning frames", total=total_frames)
+        segments = detect_segments(
+            video_path,
+            threshold=threshold,
+            consecutive_frames=consecutive,
+            step=step,
+            on_progress=lambda c, t: progress.update(task, completed=c),
+        )
+
+    min_ms = min_duration * 1000
+    filtered = [s for s in segments if s.duration_ms >= min_ms]
+
+    print(f"\nDetected {len(segments)} segments ({len(filtered)} >= {min_duration}s):", file=sys.stderr)
+    for i, seg in enumerate(filtered):
+        print(f"  {i+1}. {seg.start_ms/1000:.2f}s - {seg.end_ms/1000:.2f}s ({seg.duration_s:.1f}s)", file=sys.stderr)
+
+    if not filtered:
+        print("\nNo segments found.", file=sys.stderr)
+        return
+
+    if dry_run:
+        print("\nDry run - no files created.", file=sys.stderr)
+        return
+
+    print(f"\nSplitting into {len(filtered)} chunks...", file=sys.stderr)
+
+    def on_chunk(num, total, path):
+        print(f"  Creating {path.name}...", file=sys.stderr, end=" ", flush=True)
+
+    result = split_video(video_path, segments, out_dir, file_prefix, min_duration, on_chunk)
+
+    for _ in result.created_files:
+        print("OK", file=sys.stderr)
+    for _, error in result.failed_files:
+        print(f"FAILED: {error}", file=sys.stderr)
+
+    print(f"\nCreated {len(result.created_files)} chunk(s) in {out_dir}/", file=sys.stderr)

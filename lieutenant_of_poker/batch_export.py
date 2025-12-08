@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .analysis import analyze_video, AnalysisConfig
 from .frame_extractor import get_video_info
-from .first_frame import detect_from_video
+from .first_frame import TableInfo
 from .snowie_export import export_snowie
 from .pokerstars_export import export_pokerstars
 from .human_export import export_human
@@ -27,9 +27,12 @@ def extract_hand_id(filename: str) -> str | None:
     return None
 
 
+from typing import Optional
+
+
 def batch_export(
-    folder: Path,
-    output_dir: Path,
+    folder: str,
+    output_dir: Optional[str],
     fmt: str,
     extension: str,
 ):
@@ -37,21 +40,29 @@ def batch_export(
 
     Args:
         folder: Path to folder containing video files
-        output_dir: Path to output directory for text files
+        output_dir: Path to output directory for text files (None = same as folder)
         fmt: Export format (snowie, pokerstars, human, actions)
         extension: Output file extension
     """
+    folder_path = Path(folder)
+    if not folder_path.is_dir():
+        print(f"Error: {folder} is not a directory", file=sys.stderr)
+        return
+
+    out_path = Path(output_dir) if output_dir else folder_path
+    out_path.mkdir(parents=True, exist_ok=True)
+
     videos = sorted([
-        f for f in folder.iterdir()
+        f for f in folder_path.iterdir()
         if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
     ])
 
     if not videos:
-        print(f"No video files found in {folder}", file=sys.stderr)
+        print(f"No video files found in {folder_path}", file=sys.stderr)
         return
 
-    print(f"Found {len(videos)} video(s) in {folder}", file=sys.stderr)
-    print(f"Output: {output_dir}", file=sys.stderr)
+    print(f"Found {len(videos)} video(s) in {folder_path}", file=sys.stderr)
+    print(f"Output: {out_path}", file=sys.stderr)
     print(f"Format: {fmt}", file=sys.stderr)
     print(file=sys.stderr)
 
@@ -59,13 +70,13 @@ def batch_export(
     config = AnalysisConfig()
 
     for i, video in enumerate(videos, 1):
-        out_file = output_dir / (video.stem + extension)
+        out_file = out_path / (video.stem + extension)
         print(f"[{i}/{len(videos)}] {video.name}", file=sys.stderr, end=" ")
 
         try:
-            first = detect_from_video(str(video), 0)
-            button = first.button_index or 0
-            names = first.player_names
+            table_info = TableInfo.from_video(str(video))
+            button = table_info.button_index or 0
+            names = list(table_info.names)
 
             states = analyze_video(str(video), config)
             if not states:

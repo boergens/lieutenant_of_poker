@@ -6,12 +6,11 @@ extracting frames, and generating reports.
 """
 
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Optional, Callable, List, TypeVar
 
 from .frame_extractor import VideoFrameExtractor
 from .game_state import GameStateExtractor, GameState, PlayerState
-from .first_frame import FirstFrameInfo, ActivePlayer, detect_first_frame_majority
 
 T = TypeVar("T")
 
@@ -209,9 +208,7 @@ def analyze_video(
 
     states = []
     initial_states = []  # Collect first N frames for majority voting
-    initial_images = []  # Collect frame images for first_frame detection
     pending_change_buffer = []  # Buffer for valid frames proposing a state change
-    players: Optional[List[ActivePlayer]] = None  # Set after first_frame detection
     extractor = GameStateExtractor()
 
     with VideoFrameExtractor(video_path) as video:
@@ -229,37 +226,22 @@ def analyze_video(
             # Set OCR debug context for this frame
             set_ocr_debug_context(video_path, frame_info.timestamp_ms)
 
-            # Pool first N frames for first_frame detection and initial state
+            # Extract state for this frame
+            state = extractor.extract(
+                frame_info.image,
+                frame_number=frame_info.frame_number,
+                timestamp_ms=frame_info.timestamp_ms,
+            )
+
+            # Pool first N frames for initial state majority voting
             if current_frame < initial_frames:
-                initial_images.append(frame_info.image)
+                initial_states.append(state)
 
-                # When we have enough frames, detect active players and compute initial state
-                if len(initial_images) == initial_frames:
-                    # Detect active players from initial frames
-                    first_frame_info = detect_first_frame_majority(initial_images)
-                    players = first_frame_info.players
-
-                    # Now extract states with players known
-                    for i, img in enumerate(initial_images):
-                        state = extractor.extract(
-                            img,
-                            frame_number=start_frame + i,
-                            timestamp_ms=start_ms + i * (1000 / video.fps),
-                            players=players,
-                        )
-                        initial_states.append(state)
-
+                # When we have enough frames, compute consolidated initial state
+                if len(initial_states) == initial_frames:
                     consolidated = compute_initial_state(initial_states)
                     states.append(consolidated)
             else:
-                # Extract state for this frame with players
-                state = extractor.extract(
-                    frame_info.image,
-                    frame_number=frame_info.frame_number,
-                    timestamp_ms=frame_info.timestamp_ms,
-                    players=players,
-                )
-
                 # First check: frame must have all values (no None in critical fields)
                 if not is_complete_frame(state):
                     # Invalid frame - discard completely, reset pending buffer
@@ -328,24 +310,64 @@ def analyze_video(
                 )
 
         # Handle edge case: video has fewer frames than initial_frames
-        if initial_images and not states:
-            # Detect active players from what we have
-            first_frame_info = detect_first_frame_majority(
-                initial_images, min_valid_frames=min(3, len(initial_images))
-            )
-            players = first_frame_info.players
-
-            # Extract states with players
-            for i, img in enumerate(initial_images):
-                state = extractor.extract(
-                    img,
-                    frame_number=start_frame + i,
-                    timestamp_ms=start_ms + i * (1000 / video.fps),
-                    players=players,
-                )
-                initial_states.append(state)
-
+        if initial_states and not states:
             consolidated = compute_initial_state(initial_states)
             states.append(consolidated)
 
     return states
+
+
+def analyze_and_format(
+    video_path: str,
+    start_s: float = 0,
+    end_s: Optional[float] = None,
+    verbose: bool = False,
+) -> str:
+    """Analyze video and return formatted output."""
+    from .first_frame import TableInfo
+    from .formatter import format_changes
+
+    table_info = TableInfo.from_video(video_path)
+    config = AnalysisConfig(
+        start_ms=start_s * 1000,
+        end_ms=end_s * 1000 if end_s else None,
+    )
+    states = analyze_video(video_path, config, include_rejected=verbose)
+    return format_changes(states, verbose=verbose, player_names=list(table_info.names))
+
+
+def analyze_and_export(
+    video_path: str,
+    fmt: str = "actions",
+    start_s: float = 0,
+    end_s: Optional[float] = None,
+    button: Optional[int] = None,
+) -> str:
+    """Analyze video and return exported hand history."""
+    from .first_frame import TableInfo
+    from .snowie_export import export_snowie
+    from .pokerstars_export import export_pokerstars
+    from .human_export import export_human
+    from .action_log_export import export_action_log
+
+    table_info = TableInfo.from_video(video_path)
+    button_pos = button if button is not None else (table_info.button_index or 0)
+    player_names = list(table_info.names)
+
+    config = AnalysisConfig(
+        start_ms=start_s * 1000,
+        end_ms=end_s * 1000 if end_s else None,
+    )
+    states = analyze_video(video_path, config)
+
+    if not states:
+        return ""
+
+    if fmt == "snowie":
+        return export_snowie(states, button_pos=button_pos, player_names=player_names)
+    elif fmt == "human":
+        return export_human(states, button_pos=button_pos, player_names=player_names)
+    elif fmt == "actions":
+        return export_action_log(states, button_pos=button_pos, player_names=player_names)
+    else:
+        return export_pokerstars(states, button_pos=button_pos, player_names=player_names)

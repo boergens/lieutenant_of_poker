@@ -164,3 +164,13 @@ def extract_community_card_regions(frame: np.ndarray, num_cards: int = 5) -> Com
             _extract_region(frame, _offset_region(COMMUNITY_LEFT_SUIT_REGION, offset)),
         ))
     return CommunityCardRegions(cards)
+
+
+def clear_library() -> None:
+    """Clear all cached reference images from card libraries."""
+    import sys
+    count = 0
+    for png_file in LIBRARY_DIR.rglob("*.png"):
+        png_file.unlink()
+        count += 1
+    print(f"Cleared {count} card library images", file=sys.stderr)

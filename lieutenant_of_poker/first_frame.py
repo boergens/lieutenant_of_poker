@@ -26,6 +26,12 @@ class TableInfo:
     button_index: Optional[int]
     hero_cards: Tuple[str, ...]
 
+    def __str__(self) -> str:
+        lines = [f"Players: {list(self.names)}"]
+        lines.append(f"Button: {self.button_index}")
+        lines.append(f"Hero cards: {self.hero_cards}")
+        return "\n".join(lines)
+
     # Class constants (internal)
     # Positions are (x, y) of top corner of currency symbol
     _POSITIONS: Tuple[Tuple[int, int], ...] = (

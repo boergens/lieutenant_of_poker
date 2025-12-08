@@ -16,7 +16,7 @@ import pytest
 
 from lieutenant_of_poker.serialization import load_game_states
 from lieutenant_of_poker.snowie_export import export_snowie
-from lieutenant_of_poker.first_frame import detect_from_video
+from lieutenant_of_poker.first_frame import TableInfo
 from lieutenant_of_poker.game_simulator import ShowdownConfig
 
 
@@ -74,9 +74,9 @@ def test_snowie_export(num):
     fixture_path = FIXTURES_DIR / f"video{num}_export_snowie.txt"
 
     # Detect first frame info
-    first = detect_from_video(str(video_path))
-    button_pos = first.button_index if first.button_index is not None else 0
-    player_names = first.player_names
+    table_info = TableInfo.from_video(str(video_path))
+    button_pos = table_info.button_index if table_info.button_index is not None else 0
+    player_names = list(table_info.names)
 
     # Load states and config
     states = load_game_states(states_path)

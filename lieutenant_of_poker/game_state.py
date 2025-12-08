@@ -6,10 +6,7 @@ Combines outputs from all detection modules into a unified GameState object.
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, List, Dict, Set, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .first_frame import ActivePlayer
+from typing import Optional, List, Dict, Set
 
 import numpy as np
 
@@ -127,7 +124,6 @@ class GameStateExtractor:
         frame: np.ndarray,
         frame_number: Optional[int] = None,
         timestamp_ms: Optional[float] = None,
-        players: Optional[List["ActivePlayer"]] = None,
     ) -> GameState:
         """
         Extract complete game state from a video frame.
@@ -136,13 +132,10 @@ class GameStateExtractor:
             frame: BGR image frame from the game.
             frame_number: Optional frame number for tracking.
             timestamp_ms: Optional timestamp in milliseconds.
-            players: Optional list of ActivePlayer with chip regions. If None, processes all seats.
 
         Returns:
             GameState object with all detected information.
         """
-        from .chip_ocr import ocr_chip_region
-
         # Create region detector for this frame
         region_detector = detect_table_regions(frame)
 
@@ -159,25 +152,13 @@ class GameStateExtractor:
 
         state.pot = extract_pot(frame, region_detector)
 
-        if players is not None:
-            # Use provided player list with chip regions
-            hero_index = len(players) - 1
-            for idx, player in enumerate(players):
-                if player.chip_region is not None:
-                    chip_img = player.chip_region.extract(frame)
-                    chips = ocr_chip_region(chip_img, player_index=idx)
-                    if chips is not None:
-                        state.players[idx] = PlayerState(position=idx, chips=chips)
-            if hero_index in state.players:
-                state.hero_chips = state.players[hero_index].chips
-        else:
-            # Legacy path: process all seats by position
-            for position in range(NUM_PLAYERS):
-                chips = extract_player_chips(frame, region_detector, position)
-                if chips is not None:
-                    state.players[position] = PlayerState(position=position, chips=chips)
-            if HERO in state.players:
-                state.hero_chips = state.players[HERO].chips
+        # Process all seats by position
+        for position in range(NUM_PLAYERS):
+            chips = extract_player_chips(frame, region_detector, position)
+            if chips is not None:
+                state.players[position] = PlayerState(position=position, chips=chips)
+        if HERO in state.players:
+            state.hero_chips = state.players[HERO].chips
 
         state.street = state.determine_street()
 

@@ -313,3 +313,21 @@ def get_video_info(video_path: str) -> dict:
             "duration_seconds": video.duration_seconds,
             "frame_count": video.frame_count,
         }
+
+
+def format_video_info(video_path: str, include_players: bool = False) -> str:
+    """Format video information as a string."""
+    info = get_video_info(video_path)
+    lines = [
+        f"Video: {info['path']}",
+        f"  Resolution: {info['width']}x{info['height']}",
+        f"  FPS: {info['fps']:.2f}",
+        f"  Duration: {info['duration_seconds']:.1f}s ({info['duration_seconds']/60:.1f} min)",
+        f"  Total frames: {info['frame_count']:,}",
+    ]
+    if include_players:
+        from .first_frame import TableInfo
+        table_info = TableInfo.from_video(video_path)
+        for line in str(table_info).split('\n'):
+            lines.append(f"  {line}")
+    return "\n".join(lines)

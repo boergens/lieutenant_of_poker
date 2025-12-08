@@ -502,3 +502,125 @@ class RecordingSession:
     def is_running(self) -> bool:
         """Check if capture loop is running."""
         return self._running
+
+
+def run_recording_session(
+    output_dir: str,
+    fps: int,
+    hotkey: str,
+    prefix: str,
+    auto: bool,
+    debug: bool,
+) -> None:
+    """Run an interactive recording session."""
+    import sys
+    from .screen_capture import (
+        ScreenCaptureKitCapture,
+        check_screen_recording_permission,
+        get_permission_instructions,
+    )
+    from .hotkeys import create_hotkey_listener, play_sound
+    from .notifications import OverlayNotifier
+
+    if not check_screen_recording_permission():
+        print("Error: Screen recording permission not granted.", file=sys.stderr)
+        print(get_permission_instructions(), file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        capture = ScreenCaptureKitCapture()
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if capture.window is None:
+        print("Error: Could not find CoinPoker table window.", file=sys.stderr)
+        print("Make sure CoinPoker is running with a table open (not just the lobby).", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Capture target: {capture.window}", file=sys.stderr)
+
+    overlay = OverlayNotifier()
+
+    def on_recording_change(is_recording: bool, path):
+        if is_recording:
+            print(f"\n🔴 Recording started: {path}", file=sys.stderr)
+            play_sound("Blow")
+            overlay.send_message("Recording Started", str(Path(path).name))
+        else:
+            print(f"\n⬜ Recording stopped: {path}", file=sys.stderr)
+            play_sound("Glass")
+            overlay.send_message("Recording Stopped", str(Path(path).name))
+
+    def on_frame_drop(actual_fps: float, target_fps: float):
+        pct = (actual_fps / target_fps) * 100
+        print(f"\n⚠️  Frame drop detected: {actual_fps:.1f}/{target_fps} FPS ({pct:.0f}%)", file=sys.stderr)
+        play_sound("Basso")
+        overlay.send_message("⚠️ Dropping Frames", f"{actual_fps:.1f} FPS (target: {target_fps})")
+
+    def on_debug_stats(stats: dict):
+        rec_indicator = "REC" if stats["is_recording"] else "---"
+        fps_pct = stats["fps_ratio"] * 100
+        cap = stats["capture_ms"]
+        det = stats["detect_ms"]
+        wrt = stats["write_ms"]
+        loop = stats["loop_ms"]
+        drift = stats["sleep_drift_ms"]
+
+        print(f"\n[DEBUG {rec_indicator}] FPS: {stats['actual_fps']:.1f}/{stats['target_fps']} ({fps_pct:.0f}%) | "
+              f"frames: {stats['total_frames']} | overruns: {stats['overruns']}", file=sys.stderr)
+        print(f"  capture: {cap['avg']:.1f}ms avg, {cap['max']:.1f}ms max", file=sys.stderr)
+        if det["count"] > 0:
+            print(f"  detect:  {det['avg']:.1f}ms avg, {det['max']:.1f}ms max", file=sys.stderr)
+        if wrt["count"] > 0:
+            print(f"  write:   {wrt['avg']:.1f}ms avg, {wrt['max']:.1f}ms max", file=sys.stderr)
+        print(f"  loop:    {loop['avg']:.1f}ms avg, {loop['max']:.1f}ms max (target: {1000/fps:.1f}ms)", file=sys.stderr)
+        print(f"  drift:   {drift['avg']:.1f}ms avg, {drift['max']:.1f}ms max", file=sys.stderr)
+
+    session = RecordingSession(
+        capture=capture,
+        output_dir=output_dir,
+        fps=fps,
+        file_prefix=prefix,
+        auto_detect=auto,
+        on_recording_change=on_recording_change if auto else None,
+        on_frame_drop=on_frame_drop,
+        debug=debug,
+        on_debug_stats=on_debug_stats if debug else None,
+    )
+
+    def on_hotkey():
+        is_recording, stopped_path = session.toggle_recording()
+        on_recording_change(is_recording, session._recorder.current_path if is_recording else stopped_path)
+
+    hotkey_listener = create_hotkey_listener(hotkey, on_hotkey)
+
+    print(f"\nReady to record (Ctrl+C to exit)...", file=sys.stderr)
+    print(f"  FPS: {fps}", file=sys.stderr)
+    print(f"  Output: {Path(output_dir).absolute()}", file=sys.stderr)
+    print(f"  Hotkey: {hotkey} (toggle recording)", file=sys.stderr)
+    if auto:
+        if session.auto_detect_available:
+            print(f"  Auto-detect: ENABLED (mask loaded)", file=sys.stderr)
+        else:
+            print(f"  Auto-detect: FAILED (mask.png not found)", file=sys.stderr)
+    if debug:
+        print(f"  Debug: ENABLED (stats every 5s)", file=sys.stderr)
+    print(f"\nPress {hotkey} to start/stop recording...", file=sys.stderr)
+
+    try:
+        session.start()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if hotkey_listener:
+            hotkey_listener.stop()
+        session.stop()
+
+        print(f"\nSession ended.", file=sys.stderr)
+        if session.recordings:
+            print(f"Recordings saved ({len(session.recordings)}):", file=sys.stderr)
+            for rec in session.recordings:
+                print(f"  - {rec}", file=sys.stderr)
+        else:
+            print("No recordings made.", file=sys.stderr)
