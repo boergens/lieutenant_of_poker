@@ -2,10 +2,11 @@
 Fast OCR module for digit recognition.
 
 Uses two approaches:
-- Tesseract for pot detection (works great on larger text)
+- PaddleOCR for pot detection (works great on larger text)
 - Matched filter convolution for player chips (better for smaller text)
 """
 
+import logging
 import threading
 from pathlib import Path
 
@@ -15,9 +16,15 @@ from PIL import Image
 import tesserocr
 from scipy.signal import convolve2d, find_peaks
 
-# Tesseract API for pot OCR
+# Suppress PaddleOCR's verbose logging
+logging.getLogger("ppocr").setLevel(logging.WARNING)
+
+# PaddleOCR instance (lazy loaded)
+_paddle_ocr = None
+_paddle_lock = threading.Lock()
+
+# Tesseract API for name OCR (keep for names which PaddleOCR isn't great at)
 _tess_lock = threading.Lock()
-_tess_api = None
 _tess_name_api = None
 _DISALLOWED_NAME_CHARS = __import__('re').compile(r'[^A-Za-z0-9_]')
 
@@ -30,28 +37,24 @@ _ocr_debug_dir: Path | None = None
 _ocr_debug_context: dict[str, str] = {}  # source, timestamp
 
 
-def _get_tess_api() -> tesserocr.PyTessBaseAPI:
-    """Get or create the shared tesseract API instance."""
-    global _tess_api
-    if _tess_api is None:
-        _tess_api = tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_LINE)
-        _tess_api.SetVariable("tessedit_char_whitelist", "0123456789,.")
-    return _tess_api
+def _get_paddle_ocr():
+    """Get or create the shared PaddleOCR instance."""
+    global _paddle_ocr
+    if _paddle_ocr is None:
+        from paddleocr import PaddleOCR
+        _paddle_ocr = PaddleOCR(
+            use_angle_cls=False,
+            lang="en",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+        )
+    return _paddle_ocr
 
 
-def _preprocess_for_tesseract(image: np.ndarray) -> np.ndarray:
-    """Prepare image for tesseract OCR."""
-    if len(image.shape) == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Invert - tesseract works better with dark text on light background
-    image = 255 - image
-    # Boost contrast
-    image = np.where(image > 200, 255, image).astype(np.uint8)
-    return image
-
-
-# Public alias for diagnostic module
-preprocess_for_ocr = _preprocess_for_tesseract
+def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
+    """Prepare image for OCR - just inversion."""
+    # Invert - OCR works better with dark text on light background
+    return 255 - image
 
 
 def _get_filters() -> np.ndarray:
@@ -99,11 +102,27 @@ def _get_numbers_matched_filter(image: np.ndarray) -> np.ndarray:
     return args[peaks]
 
 
-def _get_numbers_tesseract(image: np.ndarray) -> str:
-    """Detect digits using tesseract OCR."""
-    with _tess_lock:
-        _get_tess_api().SetImage(Image.fromarray(_preprocess_for_tesseract(image)))
-        return _get_tess_api().GetUTF8Text().strip()
+def _get_numbers_paddle(image: np.ndarray) -> str:
+    """Detect digits using PaddleOCR."""
+    if image is None or image.size == 0:
+        return ""
+
+    image = preprocess_for_ocr(image)
+
+    with _paddle_lock:
+        ocr = _get_paddle_ocr()
+        result = ocr.predict(image)
+
+    if not result:
+        return ""
+
+    # Extract text from result - new API returns list of dicts
+    texts = []
+    for item in result:
+        if isinstance(item, dict) and "rec_texts" in item:
+            texts.extend(item["rec_texts"])
+
+    return " ".join(texts)
 
 
 def enable_ocr_debug(directory: Path | str) -> None:
@@ -140,16 +159,16 @@ def ocr_digits(image: np.ndarray, category: str = "other") -> str:
 
     Args:
         image: BGR or grayscale numpy array.
-        category: Category - "pot" uses tesseract, others use matched filter.
+        category: Category - "pot" uses PaddleOCR, others use matched filter.
 
     Returns:
         Recognized text string of digits.
     """
     import secrets
 
-    # Use tesseract for pot and money, matched filter for players
+    # Use PaddleOCR for pot and money, matched filter for players
     if category in ("pot", "money"):
-        result = _get_numbers_tesseract(image)
+        result = _get_numbers_paddle(image)
     else:
         digits = _get_numbers_matched_filter(image)
         result = "".join(str(d) for d in digits)
@@ -198,7 +217,7 @@ def ocr_name(image: np.ndarray) -> str | None:
     Returns:
         Recognized name string, or None if too short.
     """
-    processed = _preprocess_for_tesseract(image)
+    processed = preprocess_for_ocr(image)
 
     with _tess_lock:
         api = _get_tess_name_api()

@@ -12,9 +12,6 @@ import numpy as np
 
 from .fast_ocr import ocr_digits
 
-if TYPE_CHECKING:
-    from .table_regions import TableRegionDetector
-
 
 def _image_fingerprint(image: np.ndarray) -> bytes:
     """Create a fingerprint of an image for cache lookup."""
@@ -74,9 +71,10 @@ def clear_caches() -> None:
 
 def _parse_amount(text: str) -> Optional[int]:
     """
-    Parse a numeric amount from OCR text.
+    Parse a numeric amount from OCR text, returning cents.
 
-    Handles formats like "1,120", "2720", "1.5K", "2M".
+    Handles formats like "1,120", "2720", "1.5K", "2M", "0.12", "2.16".
+    Returns value in cents (e.g., "2.16" -> 216).
     """
     if not text:
         return None
@@ -97,12 +95,18 @@ def _parse_amount(text: str) -> Optional[int]:
         multiplier = 1000000
         text = text[:-1]
 
-    text = text.replace(',', '').replace(' ', '').replace('.', '')
-    digits = ''.join(c for c in text if c.isdigit())
+    # Remove commas and spaces
+    text = text.replace(',', '').replace(' ', '')
 
-    if digits:
+    # Parse as float to handle decimals, then convert to cents
+    # Keep only digits and decimal point
+    cleaned = ''.join(c for c in text if c.isdigit() or c == '.')
+
+    if cleaned:
         try:
-            return int(digits) * multiplier
+            value = float(cleaned) * multiplier
+            # Convert to cents (multiply by 100)
+            return int(round(value * 100))
         except ValueError:
             pass
 
@@ -152,56 +156,6 @@ def extract_pot(frame: np.ndarray) -> Optional[int]:
 
     result = _ocr_region(pot_region, category="pot")
     _pot_cache.put(pot_region, result)
-    return result
-
-
-def extract_player_chips(
-    frame: np.ndarray,
-    region_detector: "TableRegionDetector",
-    position: int,
-) -> Optional[int]:
-    """
-    Extract a player's chip count from a game frame.
-
-    Args:
-        frame: BGR game frame.
-        region_detector: Table region detector for this frame.
-        position: Player seat index (0-4).
-
-    Returns:
-        Chip count as integer, or None if not detected.
-    """
-    chip_region = region_detector.extract_player_chips(frame, position)
-    cache = _get_player_cache(position)
-
-    found, cached = cache.get(chip_region)
-    if found:
-        return cached
-
-    result = _ocr_region(chip_region, category="player")
-    cache.put(chip_region, result)
-    return result
-
-
-def ocr_chip_region(chip_region: np.ndarray, player_index: int) -> Optional[int]:
-    """
-    OCR a chip region image directly.
-
-    Args:
-        chip_region: BGR image of the chip/money display area.
-        player_index: Player index for caching (0..n-1).
-
-    Returns:
-        Chip count as integer, or None if not detected.
-    """
-    cache = _get_player_cache(player_index)
-
-    found, cached = cache.get(chip_region)
-    if found:
-        return cached
-
-    result = _ocr_region(chip_region, category="player")
-    cache.put(chip_region, result)
     return result
 
 
