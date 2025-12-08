@@ -408,7 +408,8 @@ def _render_step(step: DiagnosticStep) -> str:
 def generate_diagnostic_report(
     video_path: str,
     output_path: Path,
-    timestamp_s: float = 0,
+    frame_number: Optional[int] = None,
+    timestamp_s: Optional[float] = None,
 ) -> dict:
     """
     Generate a diagnostic report for a specific frame.
@@ -416,6 +417,7 @@ def generate_diagnostic_report(
     Args:
         video_path: Path to the video file.
         output_path: Path for the HTML report.
+        frame_number: Frame number to analyze (takes precedence over timestamp_s).
         timestamp_s: Timestamp in seconds.
 
     Returns:
@@ -429,7 +431,10 @@ def generate_diagnostic_report(
     hero_position = table_info.positions[-1] if table_info.positions else None
 
     with VideoFrameExtractor(video_path) as video:
-        frame_info = video.get_frame_at_timestamp(timestamp_s * 1000)
+        if frame_number is not None:
+            frame_info = video.get_frame_at(frame_number)
+        else:
+            frame_info = video.get_frame_at_timestamp((timestamp_s or 0) * 1000)
 
         if frame_info is None:
             raise ValueError("Could not read frame")
