@@ -30,17 +30,19 @@ class ScreenCaptureKitCapture:
     """
     Screen capture using ScreenCaptureKit (macOS 12.3+).
 
-    Automatically finds and captures the CoinPoker table window (not the lobby).
+    Can capture a specific window by ID, or auto-detect a CoinPoker table.
     """
 
-    def __init__(self):
+    def __init__(self, window_id: Optional[int] = None):
         """
         Initialize ScreenCaptureKit capture.
 
-        Automatically finds and captures the CoinPoker table window.
+        Args:
+            window_id: Specific window ID to capture. If None, auto-detects CoinPoker table.
         """
         self._frame_count = 0
         self._start_time: Optional[float] = None
+        self._target_window_id = window_id
 
         # These will be set when we get shareable content
         self._sc_display = None
@@ -97,50 +99,51 @@ class ScreenCaptureKitCapture:
 
         self._sc_display = displays[0]
 
-        # Find CoinPoker table window (not lobby)
-        # Must be large enough to be an actual table (not a toolbar/notification)
-        MIN_TABLE_WIDTH = 800
-        MIN_TABLE_HEIGHT = 600
+        # Find target window
+        if self._target_window_id is not None:
+            # Find specific window by ID
+            for window in windows:
+                if window.windowID() == self._target_window_id:
+                    self._sc_window = window
+                    break
+        else:
+            # Auto-detect: find CoinPoker table window (not lobby)
+            MIN_TABLE_WIDTH = 800
+            MIN_TABLE_HEIGHT = 600
 
-        for window in windows:
-            app = window.owningApplication()
-            app_name = app.applicationName() if app else ""
-            app_name = app_name or ""
-            title = window.title() or ""
-            frame = window.frame()
-            width = int(frame.size.width)
-            height = int(frame.size.height)
+            for window in windows:
+                app = window.owningApplication()
+                app_name = app.applicationName() if app else ""
+                app_name = app_name or ""
+                title = window.title() or ""
+                frame = window.frame()
+                width = int(frame.size.width)
+                height = int(frame.size.height)
 
-            # Skip small windows (toolbars, notifications, etc.)
-            if width < MIN_TABLE_WIDTH or height < MIN_TABLE_HEIGHT:
-                continue
+                if width < MIN_TABLE_WIDTH or height < MIN_TABLE_HEIGHT:
+                    continue
 
-            # Look for CoinPoker window that's not the lobby
-            if title.startswith("CoinPoker") and title != "CoinPoker - Lobby":
-                self._sc_window = window
-                break
-            if app_name.startswith("CoinPoker") and not title.endswith("Lobby"):
-                self._sc_window = window
-                break
+                if title.startswith("CoinPoker") and title != "CoinPoker - Lobby":
+                    self._sc_window = window
+                    break
+                if app_name.startswith("CoinPoker") and not title.endswith("Lobby"):
+                    self._sc_window = window
+                    break
 
         # Create content filter
         if self._sc_window:
-            # Capture specific window
             self._content_filter = SCK.SCContentFilter.alloc().initWithDesktopIndependentWindow_(
                 self._sc_window
             )
         else:
-            # No CoinPoker window found - leave content_filter as None
             return
 
         # Create stream configuration
         self._stream_config = SCK.SCStreamConfiguration.alloc().init()
-
-        # Set to window's actual dimensions to capture at native resolution
         window_frame = self._sc_window.frame()
         self._stream_config.setWidth_(int(window_frame.size.width))
         self._stream_config.setHeight_(int(window_frame.size.height))
-        self._stream_config.setShowsCursor_(False)  # No cursor in capture
+        self._stream_config.setShowsCursor_(False)
         self._stream_config.setPixelFormat_(0x42475241)  # kCVPixelFormatType_32BGRA
 
     def list_windows(self) -> list[WindowInfo]:
@@ -294,6 +297,65 @@ class ScreenCaptureKitCapture:
                 ),
             )
         return None
+
+
+def get_candidate_windows(min_width: int = 800, min_height: int = 600) -> list[WindowInfo]:
+    """
+    Get list of windows that could be capture targets.
+
+    Args:
+        min_width: Minimum window width.
+        min_height: Minimum window height.
+
+    Returns:
+        List of WindowInfo for windows meeting size requirements.
+    """
+    import threading
+
+    try:
+        import ScreenCaptureKit as SCK
+    except ImportError:
+        return []
+
+    event = threading.Event()
+    result = {"content": None}
+
+    def completion_handler(content, error):
+        result["content"] = content
+        event.set()
+
+    SCK.SCShareableContent.getShareableContentWithCompletionHandler_(completion_handler)
+
+    if not event.wait(timeout=5.0):
+        return []
+
+    content = result["content"]
+    if content is None:
+        return []
+
+    candidates = []
+    for sc_window in content.windows():
+        frame = sc_window.frame()
+        width = int(frame.size.width)
+        height = int(frame.size.height)
+
+        if width < min_width or height < min_height:
+            continue
+
+        app = sc_window.owningApplication()
+        app_name = app.applicationName() if app else ""
+        title = sc_window.title() or ""
+
+        candidates.append(
+            WindowInfo(
+                window_id=sc_window.windowID(),
+                title=title,
+                owner_name=app_name or "",
+                bounds=(int(frame.origin.x), int(frame.origin.y), width, height),
+            )
+        )
+
+    return candidates
 
 
 def check_screen_recording_permission() -> bool:

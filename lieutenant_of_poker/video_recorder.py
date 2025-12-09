@@ -99,6 +99,7 @@ def run_recording_session(
         ScreenCaptureKitCapture,
         check_screen_recording_permission,
         get_permission_instructions,
+        get_candidate_windows,
     )
     from .hotkeys import create_hotkey_listener, play_sound
     from .notifications import OverlayNotifier
@@ -108,18 +109,44 @@ def run_recording_session(
         print(get_permission_instructions(), file=sys.stderr)
         sys.exit(1)
 
+    # Get candidate windows and let user choose
+    candidates = get_candidate_windows()
+    if not candidates:
+        print("Error: No suitable windows found.", file=sys.stderr)
+        print("Make sure you have a window open that's at least 800x600.", file=sys.stderr)
+        sys.exit(1)
+
+    print("\nAvailable windows:", file=sys.stderr)
+    for i, win in enumerate(candidates, 1):
+        print(f"  {i}. {win}", file=sys.stderr)
+
+    if len(candidates) == 1:
+        selected = candidates[0]
+        print(f"\nAuto-selecting only available window.", file=sys.stderr)
+    else:
+        print(f"\nSelect window [1-{len(candidates)}]: ", file=sys.stderr, end="", flush=True)
+        try:
+            choice = input().strip()
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(candidates):
+                print("Invalid selection.", file=sys.stderr)
+                sys.exit(1)
+            selected = candidates[idx]
+        except (ValueError, EOFError):
+            print("Invalid selection.", file=sys.stderr)
+            sys.exit(1)
+
     try:
-        capture = ScreenCaptureKitCapture()
+        capture = ScreenCaptureKitCapture(window_id=selected.window_id)
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     if capture.window is None:
-        print("Error: Could not find CoinPoker table window.", file=sys.stderr)
-        print("Make sure CoinPoker is running with a table open (not just the lobby).", file=sys.stderr)
+        print("Error: Failed to capture selected window.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Capture target: {capture.window}", file=sys.stderr)
+    print(f"\nCapture target: {capture.window}", file=sys.stderr)
 
     # Setup
     overlay = OverlayNotifier()
