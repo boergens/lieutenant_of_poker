@@ -2,28 +2,23 @@
 
 import io
 
-from .export import PREFLOP, FLOP, TURN, RIVER, reconstruct_hand, calculate_pot
-from .action_detector import PlayerAction
+# Street constants
+PREFLOP = "preflop"
+FLOP = "flop"
+TURN = "turn"
+RIVER = "river"
+
+# Action constants
+FOLD = "fold"
+CHECK = "check"
+CALL = "call"
+RAISE = "raise"
+BET = "bet"
+ALL_IN = "all_in"
 
 
-def export_human(
-    states: list[dict],
-    button_pos: int | None = None,
-    player_names: list[str] | None = None,
-) -> str:
-    """Export game states to human-readable format. Auto-detects button if not specified."""
-    hero_cards = []
-    for state in states:
-        if state.get("hero_cards"):
-            hero_cards = state["hero_cards"]
-            break
-    hand = reconstruct_hand(states, player_names or [], button_pos, hero_cards)
-    if not hand:
-        return "No hand data."
-    return _format_human(hand)
-
-
-def _format_human(hand: dict) -> str:
+def format_human(hand: dict) -> str:
+    """Format a hand dict in human-readable format."""
     output = io.StringIO()
     f = output
 
@@ -87,7 +82,7 @@ def _format_human(hand: dict) -> str:
         f.write("Hero folded\n")
     elif hand["opponents_folded"]:
         f.write("Opponents folded\n")
-    f.write(f"Final pot: ${calculate_pot(hand)}\n")
+    f.write(f"Final pot: ${hand['pot']}\n")
 
     return output.getvalue()
 
@@ -99,17 +94,17 @@ def _write_actions(f, actions: list[dict]):
 
     for a in actions:
         act = a["action"]
-        if act == PlayerAction.FOLD:
+        if act == FOLD:
             f.write(f"  {a['player_name']} folds\n")
-        elif act == PlayerAction.CHECK:
+        elif act == CHECK:
             f.write(f"  {a['player_name']} checks\n")
-        elif act == PlayerAction.CALL:
+        elif act == CALL:
             f.write(f"  {a['player_name']} calls ${a['amount']}\n")
-        elif act == PlayerAction.RAISE:
+        elif act == RAISE:
             f.write(f"  {a['player_name']} raises to ${a['amount']}\n")
-        elif act == PlayerAction.BET:
+        elif act == BET:
             f.write(f"  {a['player_name']} bets ${a['amount']}\n")
-        elif act == PlayerAction.ALL_IN:
+        elif act == ALL_IN:
             f.write(f"  {a['player_name']} is all-in for ${a['amount']}\n")
         else:
             f.write(f"  {a['player_name']} unknown action\n")

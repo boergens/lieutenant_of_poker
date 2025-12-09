@@ -2,29 +2,23 @@
 
 import io
 
-from .export import PREFLOP, FLOP, TURN, RIVER, reconstruct_hand, calculate_pot
-from .action_detector import PlayerAction
+# Street constants
+PREFLOP = "preflop"
+FLOP = "flop"
+TURN = "turn"
+RIVER = "river"
+
+# Action constants
+FOLD = "fold"
+CHECK = "check"
+CALL = "call"
+RAISE = "raise"
+BET = "bet"
+ALL_IN = "all_in"
 
 
-def export_pokerstars(
-    states: list[dict],
-    button_pos: int = 0,
-    player_names: list[str] | None = None,
-    hand_id: str | None = None,
-) -> str:
-    """Export game states to PokerStars format."""
-    hero_cards = []
-    for state in states:
-        if state.get("hero_cards"):
-            hero_cards = state["hero_cards"]
-            break
-    hand = reconstruct_hand(states, player_names or [], button_pos, hero_cards)
-    if not hand:
-        return ""
-    return _format_pokerstars(hand, hand_id or "00000000")
-
-
-def _format_pokerstars(hand: dict, hand_id: str) -> str:
+def format_pokerstars(hand: dict, hand_id: str = "00000000") -> str:
+    """Format a hand dict in PokerStars format."""
     output = io.StringIO()
     f = output
 
@@ -79,7 +73,7 @@ def _format_pokerstars(hand: dict, hand_id: str) -> str:
 
     # Summary
     f.write("*** SUMMARY ***\n")
-    f.write(f"Total pot ${calculate_pot(hand)}\n")
+    f.write(f"Total pot ${hand['pot']}\n")
 
     board_cards = list(hand["flop_cards"]) if hand["flop_cards"] else []
     if hand["turn_card"]:
@@ -97,16 +91,16 @@ def _format_action(action: dict) -> str:
     name = action["player_name"]
     act = action["action"]
     amount = action["amount"]
-    if act == PlayerAction.FOLD:
+    if act == FOLD:
         return f"{name}: folds"
-    elif act == PlayerAction.CHECK:
+    elif act == CHECK:
         return f"{name}: checks"
-    elif act == PlayerAction.CALL:
+    elif act == CALL:
         return f"{name}: calls ${amount}" if amount else f"{name}: calls"
-    elif act == PlayerAction.RAISE:
+    elif act == RAISE:
         return f"{name}: raises to ${amount}" if amount else f"{name}: raises"
-    elif act == PlayerAction.BET:
+    elif act == BET:
         return f"{name}: bets ${amount}" if amount else f"{name}: bets"
-    elif act == PlayerAction.ALL_IN:
+    elif act == ALL_IN:
         return f"{name}: raises to ${amount} and is all-in" if amount else f"{name}: is all-in"
     return f"{name}: unknown action"

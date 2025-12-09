@@ -1,27 +1,23 @@
 """Export hand history as a simple chronological action log."""
 
-from .export import PREFLOP, FLOP, TURN, RIVER, reconstruct_hand
-from .action_detector import PlayerAction
+# Street constants
+PREFLOP = "preflop"
+FLOP = "flop"
+TURN = "turn"
+RIVER = "river"
+
+# Action constants
+FOLD = "fold"
+CHECK = "check"
+CALL = "call"
+RAISE = "raise"
+BET = "bet"
+ALL_IN = "all_in"
+UNCALLED_BET = "uncalled_bet"
 
 
-def export_action_log(
-    states: list[dict],
-    button_pos: int | None = None,
-    player_names: list[str] | None = None,
-) -> str:
-    """Export game states as a simple chronological action log."""
-    hero_cards = []
-    for state in states:
-        if state.get("hero_cards"):
-            hero_cards = state["hero_cards"]
-            break
-    hand = reconstruct_hand(states, player_names or [], button_pos, hero_cards)
-    if not hand:
-        return "No hand data."
-    return _format_action_log(hand)
-
-
-def _format_action_log(hand: dict) -> str:
+def format_action_log(hand: dict) -> str:
+    """Format a hand dict as a simple chronological action log."""
     lines = []
 
     # Blinds
@@ -64,19 +60,19 @@ def _format_action_log(hand: dict) -> str:
 
 def _format_action(a: dict) -> str:
     act = a["action"]
-    if act == PlayerAction.FOLD:
+    if act == FOLD:
         return f"{a['player_name']} folds"
-    elif act == PlayerAction.CHECK:
+    elif act == CHECK:
         return f"{a['player_name']} checks"
-    elif act == PlayerAction.CALL:
+    elif act == CALL:
         return f"{a['player_name']} calls ${a['amount']}"
-    elif act == PlayerAction.RAISE:
+    elif act == RAISE:
         return f"{a['player_name']} raises to ${a['amount']}"
-    elif act == PlayerAction.BET:
+    elif act == BET:
         return f"{a['player_name']} bets ${a['amount']}"
-    elif act == PlayerAction.ALL_IN:
+    elif act == ALL_IN:
         return f"{a['player_name']} goes all-in ${a['amount']}"
-    elif act == PlayerAction.UNCALLED_BET:
+    elif act == UNCALLED_BET:
         return f"Uncalled bet (${a['amount']}) returned to {a['player_name']}"
     else:
         return f"{a['player_name']} acts"

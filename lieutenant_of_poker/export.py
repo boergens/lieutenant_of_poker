@@ -7,8 +7,6 @@ Shared data structures and reconstruction logic used by all exporters.
 from datetime import datetime
 from typing import Any
 
-from lieutenant_of_poker.action_detector import PlayerAction
-
 
 # Street constants
 PREFLOP = "preflop"
@@ -16,6 +14,15 @@ FLOP = "flop"
 TURN = "turn"
 RIVER = "river"
 STREETS = [PREFLOP, FLOP, TURN, RIVER]
+
+# Action constants
+FOLD = "fold"
+CHECK = "check"
+CALL = "call"
+RAISE = "raise"
+BET = "bet"
+ALL_IN = "all_in"
+UNCALLED_BET = "uncalled_bet"
 
 # Common blind structures: (small_blind, big_blind)
 BLIND_STRUCTURES = [
@@ -63,14 +70,9 @@ def calculate_pot(hand: dict) -> int:
     total = hand["small_blind"] + hand["big_blind"]
     for street_actions in hand["actions"].values():
         for action in street_actions:
-            if action["action"] in (
-                PlayerAction.BET,
-                PlayerAction.RAISE,
-                PlayerAction.CALL,
-                PlayerAction.ALL_IN,
-            ):
+            if action["action"] in (BET, RAISE, CALL, ALL_IN):
                 total += action["amount"] or 0
-            elif action["action"] == PlayerAction.UNCALLED_BET:
+            elif action["action"] == UNCALLED_BET:
                 total -= action["amount"] or 0
     return total
 
@@ -105,19 +107,12 @@ def make_hand_history() -> dict:
     }
 
 
-def reconstruct_hand(
-    states: list[dict],
-    players: list[str],
-    button_pos: int,
-    hero_cards: list,
-) -> dict | None:
+def reconstruct_hand(states: list[dict], table) -> dict | None:
     """Reconstruct a hand history from a sequence of game state observations.
 
     Args:
         states: List of game state dicts representing the hand progression
-        players: Ordered list of player names by seat position
-        button_pos: Button position (index into player list)
-        hero_cards: Hero's hole cards
+        table: TableInfo with player names, button position, hero cards
 
     Returns:
         Hand history dict if reconstruction succeeds, None otherwise
@@ -127,6 +122,10 @@ def reconstruct_hand(
     """
     if not states:
         return None
+
+    players = list(table.names)
+    button_pos = table.button_index or 0
+    hero_cards = list(table.hero_cards)
 
     initial, final = states[0], states[-1]
 
@@ -284,9 +283,9 @@ def reconstruct_hand(
                     new_total = contributions.get(name, 0) + movement["amount"]
 
                     if new_total > current_bet:
-                        action_type = PlayerAction.BET if current_bet == 0 else PlayerAction.RAISE
+                        action_type = BET if current_bet == 0 else RAISE
                     else:
-                        action_type = PlayerAction.CALL
+                        action_type = CALL
 
                     action = {"player_name": name, "action": action_type, "amount": movement["amount"]}
                     actions_list.append(action)
@@ -304,10 +303,10 @@ def reconstruct_hand(
                     # This player acted before the actor - infer check or fold
                     to_call = current_bet - contributions.get(name, 0)
                     if to_call > 0:
-                        actions_list.append({"player_name": name, "action": PlayerAction.FOLD, "amount": 0})
+                        actions_list.append({"player_name": name, "action": FOLD, "amount": 0})
                         players_in_hand = [p for p in players_in_hand if p != name]
                     else:
-                        actions_list.append({"player_name": name, "action": PlayerAction.CHECK, "amount": 0})
+                        actions_list.append({"player_name": name, "action": CHECK, "amount": 0})
                     current_pos = (pos + 1) % len(players)
 
         # After all movements, close out remaining players
@@ -321,11 +320,11 @@ def reconstruct_hand(
                     continue
                 to_call = current_bet - contributions.get(name, 0)
                 if to_call > 0:
-                    actions_list.append({"player_name": name, "action": PlayerAction.FOLD, "amount": 0})
+                    actions_list.append({"player_name": name, "action": FOLD, "amount": 0})
                     players_in_hand = [p for p in players_in_hand if p != name]
                 elif name not in contributions:
                     # Player hasn't acted yet and doesn't owe anything - they check
-                    actions_list.append({"player_name": name, "action": PlayerAction.CHECK, "amount": 0})
+                    actions_list.append({"player_name": name, "action": CHECK, "amount": 0})
 
     # BB option: if action limped to BB preflop, BB gets option to check/raise
     # Count BB's voluntary actions (exclude the forced blind post which is first 2 actions)
@@ -333,9 +332,9 @@ def reconstruct_hand(
         a for a in hand["actions"][PREFLOP][2:]  # Skip SB and BB blind posts
         if a["player_name"] == bb_name
     ]
-    bb_folded_preflop = any(a["action"] == PlayerAction.FOLD for a in bb_voluntary_actions)
+    bb_folded_preflop = any(a["action"] == FOLD for a in bb_voluntary_actions)
     if not bb_folded_preflop and not bb_voluntary_actions and hand["flop_cards"]:
-        hand["actions"][PREFLOP].append({"player_name": bb_name, "action": PlayerAction.CHECK, "amount": 0})
+        hand["actions"][PREFLOP].append({"player_name": bb_name, "action": CHECK, "amount": 0})
 
     # Calculate uncalled bet BEFORE removing synthetic blinds
     # Skip the blind posts (first 2 preflop actions) - blinds are mandatory,
@@ -361,11 +360,11 @@ def reconstruct_hand(
         player = a["player_name"]
         amount = a["amount"] or 0
 
-        if a["action"] in (PlayerAction.BET, PlayerAction.RAISE):
+        if a["action"] in (BET, RAISE):
             contributions[player] = contributions.get(player, 0) + amount
             last_bettor = player
             last_bet_total = contributions[player]
-        elif a["action"] == PlayerAction.CALL:
+        elif a["action"] == CALL:
             contributions[player] = contributions.get(player, 0) + amount
 
     # Find max contribution from players other than last_bettor
@@ -382,7 +381,7 @@ def reconstruct_hand(
             for street in reversed(STREETS):
                 if hand["actions"][street]:
                     hand["actions"][street].append(
-                        {"player_name": last_bettor, "action": PlayerAction.UNCALLED_BET, "amount": uncalled_amount}
+                        {"player_name": last_bettor, "action": UNCALLED_BET, "amount": uncalled_amount}
                     )
                     break
 
@@ -396,10 +395,13 @@ def reconstruct_hand(
     hand["opponents_folded"] = len(players_in_hand) == 1 and hero_player_name in players_in_hand
     hand["hero_folded"] = hero_player_name not in players_in_hand
 
+    # Calculate final pot
+    hand["pot"] = calculate_pot(hand)
+
     # Set winner if everyone folded
     if len(players_in_hand) == 1:
         hand["winner"] = players_in_hand[0]
-        hand["payout"] = calculate_pot(hand) - uncalled_amount
+        hand["payout"] = hand["pot"] - uncalled_amount
 
     return hand
 
@@ -424,25 +426,26 @@ def export_video(
     """
     from .analysis import analyze_video
     from .first_frame import TableInfo
-    from .snowie_export import export_snowie
-    from .pokerstars_export import export_pokerstars
-    from .human_export import export_human
-    from .action_log_export import export_action_log
+    from .snowie_export import format_snowie
+    from .pokerstars_export import format_pokerstars
+    from .human_export import format_human
+    from .action_log_export import format_action_log
 
     table = TableInfo.from_video(video_path)
-    if button is None:
-        button = table.button_index or 0
-    names = list(table.names)
 
     states = analyze_video(video_path, max_rake_pct=max_rake_pct)
     if not states:
         return None
 
+    hand = reconstruct_hand(states, table)
+    if not hand:
+        return None
+
     if fmt == "snowie":
-        return export_snowie(states, button, names)
+        return format_snowie(hand)
     elif fmt == "human":
-        return export_human(states, button, names)
+        return format_human(hand)
     elif fmt == "actions":
-        return export_action_log(states, button, names)
+        return format_action_log(hand)
     else:
-        return export_pokerstars(states, button, names)
+        return format_pokerstars(hand)

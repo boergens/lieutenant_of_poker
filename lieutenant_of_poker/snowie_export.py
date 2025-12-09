@@ -3,40 +3,31 @@
 import io
 import random
 
-from .export import PREFLOP, FLOP, TURN, RIVER, reconstruct_hand, calculate_pot
-from .action_detector import PlayerAction
 from .game_simulator import ShowdownConfig, pick_winner, make_showdown_config
 
+# Street constants
+PREFLOP = "preflop"
+FLOP = "flop"
+TURN = "turn"
+RIVER = "river"
 
-def export_snowie(
-    states: list[dict],
-    button_pos: int | None = None,
-    player_names: list[str] | None = None,
-    showdown: ShowdownConfig | None = None,
-    hand_id: str | None = None,
-) -> str:
-    """Export game states to Snowie format.
+# Action constants
+FOLD = "fold"
+CHECK = "check"
+CALL = "call"
+UNCALLED_BET = "uncalled_bet"
+
+
+def format_snowie(hand: dict, hand_id: str | None = None, showdown: ShowdownConfig | None = None) -> str:
+    """Format a hand dict in Snowie format.
 
     Args:
-        states: Game states to export
-        button_pos: Button position (auto-detected if not specified)
-        player_names: List of player names
-        showdown: Showdown configuration with opponent cards for deterministic output.
+        hand: Hand history dict from reconstruct_hand
         hand_id: Optional hand ID (random 8-digit number if not provided)
+        showdown: Showdown configuration with opponent cards for deterministic output.
     """
-    hero_cards = []
-    for state in states:
-        if state.get("hero_cards"):
-            hero_cards = state["hero_cards"]
-            break
-    hand = reconstruct_hand(states, player_names or [], button_pos, hero_cards)
-    if not hand:
-        return ""
     hid = hand_id or str(random.randint(10000000, 99999999))
-    return _format_snowie(hand, hid, showdown)
 
-
-def _format_snowie(hand: dict, hand_id: str, showdown: ShowdownConfig | None) -> str:
     output = io.StringIO()
     f = output
 
@@ -53,7 +44,7 @@ def _format_snowie(hand: dict, hand_id: str, showdown: ShowdownConfig | None) ->
     f.write(f"Date: {hand['timestamp'].strftime('%d/%m/%Y')}\n")
     f.write("TimeZone: GMT\n")
     f.write(f"Time: {hand['timestamp'].strftime('%H:%M:%S')}\n")
-    f.write(f"GameId:{hand_id}\n")
+    f.write(f"GameId:{hid}\n")
     f.write("GameType:NoLimit\n")
     f.write("GameCurrency: $\n")
     f.write(f"SmallBlindStake: {hand['small_blind']}\n")
@@ -116,11 +107,11 @@ def _format_snowie(hand: dict, hand_id: str, showdown: ShowdownConfig | None) ->
 def _write_actions(f, actions: list[dict]):
     for a in actions:
         act = a["action"]
-        if act == PlayerAction.FOLD:
+        if act == FOLD:
             f.write(f"Move: {a['player_name']} folds 0\n")
-        elif act in (PlayerAction.CHECK, PlayerAction.CALL):
+        elif act in (CHECK, CALL):
             f.write(f"Move: {a['player_name']} call_check {a['amount'] or 0}\n")
-        elif act == PlayerAction.UNCALLED_BET:
+        elif act == UNCALLED_BET:
             f.write(f"uncalled_bet: {a['player_name']} {a['amount'] or 0}\n")
         else:
             f.write(f"Move: {a['player_name']} raise_bet {a['amount'] or 0}\n")
@@ -129,7 +120,7 @@ def _write_actions(f, actions: list[dict]):
 def _write_hero_all_in(f, hand: dict, hero_name: str, opponents: list[dict]):
     for p in opponents:
         f.write(f"Move: {p['name']} folds 0\n")
-    f.write(f"Winner: {hero_name} {calculate_pot(hand):.2f}\n")
+    f.write(f"Winner: {hero_name} {hand['pot']:.2f}\n")
 
 
 def _write_fold_winner(f, hand: dict):
@@ -143,7 +134,7 @@ def _write_showdown(f, hand: dict, hero_name: str, opponents: list[dict], showdo
     folded_players = set()
     for street_actions in hand["actions"].values():
         for a in street_actions:
-            if a["action"] == PlayerAction.FOLD:
+            if a["action"] == FOLD:
                 folded_players.add(a["player_name"])
 
     # Active opponents (didn't fold)
@@ -188,4 +179,4 @@ def _write_showdown(f, hand: dict, hero_name: str, opponents: list[dict], showdo
         winner = showdown.force_winner
     else:
         winner, _ = pick_winner(all_hands, community)
-    f.write(f"Winner: {winner} {calculate_pot(hand):.2f}\n")
+    f.write(f"Winner: {winner} {hand['pot']:.2f}\n")
