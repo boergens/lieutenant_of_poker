@@ -2,7 +2,7 @@
 
 from lieutenant_of_poker.analysis import analyze_video
 from lieutenant_of_poker.frame_extractor import get_video_info
-from lieutenant_of_poker.first_frame import detect_from_video
+from lieutenant_of_poker.first_frame import TableInfo
 from lieutenant_of_poker.action_log_export import export_action_log
 from lieutenant_of_poker.export import reconstruct_hand
 
@@ -16,9 +16,9 @@ def debug_export(video_path: str, format: str = "actions"):
     print(f"  Duration: {info['duration_seconds']:.1f}s, FPS: {info['fps']}")
 
     # Detect button and players from first frame
-    first = detect_from_video(video_path, 0)
-    button_pos = first.button_index if first.button_index is not None else 0
-    players = first.player_names
+    table = TableInfo.from_video(video_path)
+    button_pos = table.button_index if table.button_index is not None else 0
+    players = list(table.names)
     print(f"  Button: {button_pos}")
     print(f"  Players: {players}")
 
@@ -29,8 +29,8 @@ def debug_export(video_path: str, format: str = "actions"):
     # Find hero cards from states
     hero_cards = []
     for state in states:
-        if state.hero_cards:
-            hero_cards = state.hero_cards
+        if state.get("hero_cards"):
+            hero_cards = state["hero_cards"]
             break
 
     # Reconstruct hand (this is where actions are built)
@@ -44,4 +44,4 @@ def debug_export(video_path: str, format: str = "actions"):
 
 
 if __name__ == "__main__":
-    hand, states = debug_export("gop3_20251203_150622.mp4")
+    hand, states = debug_export("testvid.mp4")
