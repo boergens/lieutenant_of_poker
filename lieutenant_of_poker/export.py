@@ -170,7 +170,26 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
     prev_state = states[0]
 
     for state in states[1:]:
-        # Determine street from community cards
+        # Detect chip movements by comparing player stacks directly
+        # (Don't rely on pot change since rake can reduce the pot)
+        # NOTE: We record chip movements BEFORE updating the street, so if
+        # cards appear and chips change in the same frame, the action is
+        # attributed to the previous street (action happened, then cards dealt)
+        for i, curr_p in enumerate(state["players"]):
+            if i < len(prev_state["players"]) and i < len(players):
+                prev_p = prev_state["players"][i]
+                chip_change = (prev_p["chips"] or 0) - (curr_p["chips"] or 0)
+                if chip_change > 0:
+                    name = players[i]
+                    is_all_in = curr_p["chips"] == 0
+                    movement = {
+                        "player_name": name,
+                        "amount": chip_change,
+                        "is_all_in": is_all_in,
+                    }
+                    chip_movements[current_street].append(movement)
+
+        # Determine street from community cards (after recording chip movements)
         num_cards = len(state.get("community_cards", []))
         if num_cards >= 5:
             new_street = RIVER
@@ -189,22 +208,6 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
             elif new_street == RIVER and num_cards >= 5:
                 hand["river_card"] = state["community_cards"][4]
             current_street = new_street
-
-        # Detect chip movements by comparing player stacks directly
-        # (Don't rely on pot change since rake can reduce the pot)
-        for i, curr_p in enumerate(state["players"]):
-            if i < len(prev_state["players"]) and i < len(players):
-                prev_p = prev_state["players"][i]
-                chip_change = (prev_p["chips"] or 0) - (curr_p["chips"] or 0)
-                if chip_change > 0:
-                    name = players[i]
-                    is_all_in = curr_p["chips"] == 0
-                    movement = {
-                        "player_name": name,
-                        "amount": chip_change,
-                        "is_all_in": is_all_in,
-                    }
-                    chip_movements[current_street].append(movement)
 
         prev_state = state
 
