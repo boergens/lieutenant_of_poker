@@ -13,6 +13,8 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
+from ._positions import SEAT_POSITIONS as _SEAT_POSITIONS
+
 
 @dataclass(frozen=True)
 class TableInfo:
@@ -33,16 +35,6 @@ class TableInfo:
         return "\n".join(lines)
 
     # Class constants (internal)
-    # Positions are (x, y) of top corner of currency symbol
-    _POSITIONS: Tuple[Tuple[int, int], ...] = (
-        (632, 155),   # Seat 0: top center
-        (1153, 257),  # Seat 1: top right
-        (1166, 535),  # Seat 2: right
-        (846, 710),   # Seat 3: bottom right
-        (418, 710),   # Seat 4: bottom left
-        (124, 535),   # Seat 5: left
-        (151, 257),   # Seat 6: top left
-    )
     _NAME_WIDTH: int = 140
     _NAME_HEIGHT: int = 30
     _HERO_NAME: str = "kevinLAS"
@@ -70,13 +62,13 @@ class TableInfo:
             return cls(names=(), positions=(), button_index=None, hero_cards=())
 
         # Collect votes for each position
-        position_votes = {i: [] for i in range(len(cls._POSITIONS))}
+        position_votes = {i: [] for i in range(len(_SEAT_POSITIONS))}
         button_votes = []
         hero_cards = ()
 
         for frame in frames:
             # OCR each position
-            for i, (pos_x, pos_y) in enumerate(cls._POSITIONS):
+            for i, (pos_x, pos_y) in enumerate(_SEAT_POSITIONS):
                 x = pos_x
                 y = pos_y - cls._NAME_HEIGHT
                 region = frame[y:y + cls._NAME_HEIGHT, x:x + cls._NAME_WIDTH]
@@ -101,7 +93,7 @@ class TableInfo:
                 # Most common name for this position
                 name = Counter(votes).most_common(1)[0][0]
                 names.append(name)
-                positions.append(cls._POSITIONS[i])
+                positions.append(_SEAT_POSITIONS[i])
 
         # Find hero and rotate
         if names:

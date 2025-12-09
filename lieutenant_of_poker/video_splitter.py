@@ -11,10 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from .frame_extractor import VideoFrameExtractor
-from .video_recorder import BrightnessDetector
-from .table_regions import BASE_WIDTH, BASE_HEIGHT
-
 # 100 memorable animal names for chunk identification
 ANIMAL_NAMES = [
     "antelope", "badger", "beaver", "bison", "bobcat",
@@ -339,20 +335,12 @@ def split_video(
         if on_chunk:
             on_chunk(chunk_num, len(filtered), output_file)
 
-        # Scale to target resolution (BASE_WIDTH x BASE_HEIGHT)
-        # Using scale filter that maintains aspect ratio and pads if needed
-        scale_filter = (
-            f"scale={BASE_WIDTH}:{BASE_HEIGHT}:force_original_aspect_ratio=decrease,"
-            f"pad={BASE_WIDTH}:{BASE_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
-        )
-
         cmd = [
             "ffmpeg",
             "-y",  # Overwrite output
             "-ss", str(segment.start_ms / 1000),  # Start time in seconds
             "-i", str(video_path),
             "-t", str(segment.duration_s),  # Duration
-            "-vf", scale_filter,  # Scale to target resolution
             "-c:v", "libx264",  # Re-encode with H.264
             "-preset", "fast",  # Encoding speed
             "-crf", "18",  # Quality (lower = better, 18 is visually lossless)

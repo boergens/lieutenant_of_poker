@@ -5,140 +5,28 @@ Provides a simple VideoRecorder that can record frames from ScreenCaptureKitCapt
 to a video file.
 """
 
+import sys
 import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Optional, Union
 
 import cv2
-import numpy as np
 
 from .frame_extractor import FrameInfo
-from .screen_capture import ScreenCaptureKitCapture
-
-# Path to the mask file (in package directory)
-MASK_PATH = Path(__file__).parent / "mask.png"
-
-
-class BrightnessDetector:
-    """
-    Detects recording start/stop based on brightness in a masked region.
-
-    Uses a mask image to define the region of interest. When the average
-    brightness in that region crosses a threshold for consecutive frames,
-    it triggers start/stop events.
-    """
-
-    def __init__(
-        self,
-        mask_path: Path = MASK_PATH,
-        threshold: float = 250.0,
-        consecutive_frames: int = 3,
-    ):
-        """
-        Initialize the brightness detector.
-
-        Args:
-            mask_path: Path to the mask image (grayscale PNG).
-            threshold: Brightness threshold (0-255).
-            consecutive_frames: Number of consecutive frames needed to trigger.
-        """
-        self.threshold = threshold
-        self.consecutive_frames = consecutive_frames
-        self._mask: Optional[np.ndarray] = None
-        self._mask_cache: dict[tuple[int, int], np.ndarray] = {}  # Cache resized masks
-        self._brightness_history: deque = deque(maxlen=consecutive_frames)
-        self._is_bright = False
-
-        # Load mask
-        if mask_path.exists():
-            mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-            if mask_img is not None:
-                # Normalize to binary mask (0 or 1)
-                self._mask = (mask_img > 127).astype(np.uint8)
-
-    @property
-    def is_available(self) -> bool:
-        """Check if mask was loaded successfully."""
-        return self._mask is not None
-
-    def check_frame(self, frame: FrameInfo) -> Optional[bool]:
-        """
-        Check a frame for brightness trigger.
-
-        Args:
-            frame: The captured frame.
-
-        Returns:
-            True if should start recording, False if should stop, None if no change.
-        """
-        if self._mask is None:
-            return None
-
-        image = frame.image
-        frame_shape = (image.shape[0], image.shape[1])
-
-        # Get cached mask for this frame size, or resize and cache
-        if frame_shape in self._mask_cache:
-            mask = self._mask_cache[frame_shape]
-        elif self._mask.shape[:2] == frame_shape:
-            mask = self._mask
-        else:
-            mask = cv2.resize(self._mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
-            self._mask_cache[frame_shape] = mask
-
-        # Convert to grayscale if needed
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
-
-        # Calculate average brightness in masked region
-        masked_pixels = gray[mask > 0]
-        if len(masked_pixels) == 0:
-            return None
-
-        avg_brightness = np.mean(masked_pixels)
-        self._brightness_history.append(avg_brightness)
-
-        # Need enough history
-        if len(self._brightness_history) < self.consecutive_frames:
-            return None
-
-        # Check if all recent frames are above/below threshold
-        all_bright = all(b > self.threshold for b in self._brightness_history)
-        all_dark = all(b <= self.threshold for b in self._brightness_history)
-
-        # Trigger on state change
-        if all_bright and not self._is_bright:
-            self._is_bright = True
-            return True  # Start recording
-        elif all_dark and self._is_bright:
-            self._is_bright = False
-            return False  # Stop recording
-
-        return None
+from ._detection import detect_hero_cards
 
 
 class VideoRecorder:
     """
     Records frames to a video file.
 
-    Can be used standalone or composed with other components.
     Buffers the last few frames so they can be discarded when recording stops
     (useful when stop is triggered by detecting something in those frames).
     """
 
     def __init__(self, fps: int = 10, codec: str = "mp4v", trailing_frames_to_drop: int = 3):
-        """
-        Initialize the recorder.
-
-        Args:
-            fps: Frames per second for output video.
-            codec: FourCC codec code (default: 'mp4v' for .mp4).
-            trailing_frames_to_drop: Number of trailing frames to discard on stop.
-        """
         self.fps = fps
         self.codec = codec
         self.trailing_frames_to_drop = trailing_frames_to_drop
@@ -154,13 +42,10 @@ class VideoRecorder:
         self._recording_path = Path(output_path)
         self._frame_count = 0
         self._frame_buffer.clear()
-        # Writer is lazily initialized on first frame (need dimensions)
 
     def stop(self) -> Optional[Path]:
         """Stop recording and return the output path. Discards buffered trailing frames."""
-        # Discard buffered frames (don't write them)
         self._frame_buffer.clear()
-
         if self._writer is not None:
             self._writer.release()
             self._writer = None
@@ -180,328 +65,25 @@ class VideoRecorder:
             height, width = image.shape[:2]
             fourcc = cv2.VideoWriter_fourcc(*self.codec)
             self._writer = cv2.VideoWriter(
-                str(self._recording_path),
-                fourcc,
-                self.fps,
-                (width, height),
+                str(self._recording_path), fourcc, self.fps, (width, height)
             )
             if not self._writer.isOpened():
-                print(f"ERROR: Failed to open VideoWriter for {self._recording_path}",
-                      file=__import__('sys').stderr)
-                print(f"  Dimensions: {width}x{height}, FPS: {self.fps}, Codec: {self.codec}",
-                      file=__import__('sys').stderr)
+                print(f"ERROR: Failed to open VideoWriter for {self._recording_path}", file=sys.stderr)
 
-        # Buffer frames - only write when buffer is full (delayed by trailing_frames_to_drop)
+        # Buffer frames - only write when buffer is full
         if len(self._frame_buffer) == self.trailing_frames_to_drop:
-            # Write the oldest buffered frame
-            oldest_image = self._frame_buffer[0]
-            self._writer.write(oldest_image)
+            self._writer.write(self._frame_buffer[0])
             self._frame_count += 1
 
-        # Add current frame to buffer
         self._frame_buffer.append(image.copy())
 
     @property
     def is_recording(self) -> bool:
-        """Check if currently recording."""
         return self._recording_path is not None
 
     @property
-    def frame_count(self) -> int:
-        """Number of frames written."""
-        return self._frame_count
-
-    @property
     def current_path(self) -> Optional[Path]:
-        """Path to current recording, if any."""
         return self._recording_path
-
-
-class RecordingSession:
-    """
-    A complete recording session with capture and recording.
-
-    Provides a simple interface for the 'just record' use case.
-    """
-
-    def __init__(
-        self,
-        capture: ScreenCaptureKitCapture,
-        output_dir: Union[str, Path] = ".",
-        fps: int = 10,
-        codec: str = "mp4v",
-        file_prefix: str = "recording",
-        auto_detect: bool = False,
-        on_recording_change: Optional[Callable[[bool, Optional[Path]], None]] = None,
-        on_frame_drop: Optional[Callable[[float, float], None]] = None,
-        frame_drop_threshold: float = 0.75,
-        frame_drop_cooldown: float = 5.0,
-        debug: bool = False,
-        on_debug_stats: Optional[Callable[[dict], None]] = None,
-        debug_interval: float = 5.0,
-    ):
-        """
-        Initialize a recording session.
-
-        Args:
-            capture: Screen capture implementation to use.
-            output_dir: Directory to save recordings.
-            fps: Frames per second.
-            codec: Video codec.
-            file_prefix: Prefix for auto-generated filenames.
-            auto_detect: Enable automatic recording based on mask brightness.
-            on_recording_change: Callback when recording starts/stops.
-                                 Args: (is_recording, path_if_stopped)
-            on_frame_drop: Callback when frame drops are detected.
-                          Args: (actual_fps, target_fps)
-            frame_drop_threshold: FPS ratio below which to trigger notification (0.75 = 75%).
-            frame_drop_cooldown: Seconds between frame drop notifications.
-            debug: Enable debug timing instrumentation.
-            on_debug_stats: Callback for debug stats output.
-                           Args: (stats_dict)
-            debug_interval: Seconds between debug stats output.
-        """
-        self.capture = capture
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.fps = fps
-        self.file_prefix = file_prefix
-        self.on_recording_change = on_recording_change
-        self.on_frame_drop = on_frame_drop
-        self.frame_drop_threshold = frame_drop_threshold
-        self.frame_drop_cooldown = frame_drop_cooldown
-        self.debug = debug
-        self.on_debug_stats = on_debug_stats
-        self.debug_interval = debug_interval
-
-        self._recorder = VideoRecorder(fps=fps, codec=codec)
-        self._running = False
-        self._recordings: list[Path] = []
-
-        # Frame drop tracking
-        self._frame_times: deque = deque(maxlen=30)  # Track last 30 frame times
-        self._last_frame_drop_notification: float = 0.0
-
-        # Auto-detection
-        self._detector: Optional[BrightnessDetector] = None
-        if auto_detect:
-            self._detector = BrightnessDetector()
-            if not self._detector.is_available:
-                self._detector = None
-
-        # Debug timing stats
-        self._debug_capture_times: deque = deque(maxlen=100)
-        self._debug_detect_times: deque = deque(maxlen=100)
-        self._debug_write_times: deque = deque(maxlen=100)
-        self._debug_loop_times: deque = deque(maxlen=100)
-        self._debug_sleep_drifts: deque = deque(maxlen=100)
-        self._debug_last_stats_time: float = 0.0
-        self._debug_overruns: int = 0
-        self._debug_total_frames: int = 0
-
-    @property
-    def auto_detect_available(self) -> bool:
-        """Check if auto-detection is available."""
-        return self._detector is not None
-
-    def _check_frame_drops(self) -> None:
-        """Check for frame drops and notify if needed."""
-        if self.on_frame_drop is None or len(self._frame_times) < 10:
-            return
-
-        # Calculate actual FPS from recent frame times
-        if len(self._frame_times) < 2:
-            return
-
-        frame_times = list(self._frame_times)
-        total_time = frame_times[-1] - frame_times[0]
-        if total_time <= 0:
-            return
-
-        actual_fps = (len(frame_times) - 1) / total_time
-
-        # Check if we're dropping frames (below threshold of target FPS)
-        fps_ratio = actual_fps / self.fps
-        if fps_ratio < self.frame_drop_threshold:
-            # Check cooldown
-            now = time.time()
-            if now - self._last_frame_drop_notification >= self.frame_drop_cooldown:
-                self._last_frame_drop_notification = now
-                self.on_frame_drop(actual_fps, self.fps)
-
-    def toggle_recording(self) -> tuple[bool, Optional[Path]]:
-        """
-        Toggle recording on/off.
-
-        Returns:
-            Tuple of (is_now_recording, path_if_just_stopped)
-        """
-        if self._recorder.is_recording:
-            path = self._recorder.stop()
-            if path:
-                self._recordings.append(path)
-            return False, path
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = self.output_dir / f"{self.file_prefix}_{timestamp}.mp4"
-            self._recorder.start(filename)
-            return True, None
-
-    def _start_recording(self) -> Path:
-        """Start a new recording and return the path."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = self.output_dir / f"{self.file_prefix}_{timestamp}.mp4"
-        self._recorder.start(filename)
-        return filename
-
-    def _stop_recording(self) -> Optional[Path]:
-        """Stop recording and return the path."""
-        path = self._recorder.stop()
-        if path:
-            self._recordings.append(path)
-        return path
-
-    def _compute_debug_stats(self) -> dict:
-        """Compute debug statistics from collected timing data."""
-        def stats_for_deque(d: deque) -> dict:
-            if not d:
-                return {"avg": 0, "min": 0, "max": 0, "count": 0}
-            values = list(d)
-            return {
-                "avg": sum(values) / len(values),
-                "min": min(values),
-                "max": max(values),
-                "count": len(values),
-            }
-
-        # Calculate actual FPS
-        actual_fps = 0.0
-        if len(self._frame_times) >= 2:
-            frame_times = list(self._frame_times)
-            total_time = frame_times[-1] - frame_times[0]
-            if total_time > 0:
-                actual_fps = (len(frame_times) - 1) / total_time
-
-        return {
-            "actual_fps": actual_fps,
-            "target_fps": self.fps,
-            "fps_ratio": actual_fps / self.fps if self.fps > 0 else 0,
-            "capture_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_capture_times).items()},
-            "detect_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_detect_times).items()},
-            "write_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_write_times).items()},
-            "loop_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_loop_times).items()},
-            "sleep_drift_ms": {k: v * 1000 for k, v in stats_for_deque(self._debug_sleep_drifts).items()},
-            "overruns": self._debug_overruns,
-            "total_frames": self._debug_total_frames,
-            "is_recording": self._recorder.is_recording,
-        }
-
-    def _output_debug_stats(self) -> None:
-        """Output debug stats if enabled and interval has passed."""
-        if not self.debug or self.on_debug_stats is None:
-            return
-
-        now = time.time()
-        if now - self._debug_last_stats_time >= self.debug_interval:
-            self._debug_last_stats_time = now
-            stats = self._compute_debug_stats()
-            self.on_debug_stats(stats)
-
-    def start(self) -> None:
-        """Start the capture loop (blocking)."""
-        self._running = True
-        self._frame_times.clear()
-        self._last_frame_drop_notification = 0.0
-        self._debug_last_stats_time = time.time()
-        self._debug_overruns = 0
-        self._debug_total_frames = 0
-        interval = 1.0 / self.fps
-
-        while self._running:
-            loop_start = time.time()
-
-            # Track frame time for drop detection
-            self._frame_times.append(loop_start)
-            self._debug_total_frames += 1
-
-            # --- Capture timing ---
-            capture_start = time.time()
-            frame = self.capture.capture_frame()
-            if self.debug:
-                self._debug_capture_times.append(time.time() - capture_start)
-
-            if frame is not None:
-                # --- Detection timing ---
-                if self._detector is not None:
-                    detect_start = time.time()
-                    trigger = self._detector.check_frame(frame)
-                    if self.debug:
-                        self._debug_detect_times.append(time.time() - detect_start)
-
-                    if trigger is True and not self._recorder.is_recording:
-                        path = self._start_recording()
-                        if self.on_recording_change:
-                            self.on_recording_change(True, path)
-                    elif trigger is False and self._recorder.is_recording:
-                        path = self._stop_recording()
-                        if self.on_recording_change:
-                            self.on_recording_change(False, path)
-
-                # --- Write timing ---
-                if self._recorder.is_recording:
-                    write_start = time.time()
-                    self._recorder.write_frame(frame)
-                    if self.debug:
-                        self._debug_write_times.append(time.time() - write_start)
-
-            # Check for frame drops (only while recording)
-            if self._recorder.is_recording:
-                self._check_frame_drops()
-
-            # --- Loop timing and sleep ---
-            elapsed = time.time() - loop_start
-            if self.debug:
-                self._debug_loop_times.append(elapsed)
-
-            sleep_time = interval - elapsed
-            if sleep_time > 0:
-                sleep_start = time.time()
-                time.sleep(sleep_time)
-                if self.debug:
-                    actual_sleep = time.time() - sleep_start
-                    drift = actual_sleep - sleep_time
-                    self._debug_sleep_drifts.append(drift)
-            else:
-                # Loop overrun - we're behind schedule
-                if self.debug:
-                    self._debug_overruns += 1
-
-            # Output debug stats periodically
-            self._output_debug_stats()
-
-    def stop(self) -> None:
-        """Stop the capture loop."""
-        self._running = False
-        # Stop any active recording
-        if self._recorder.is_recording:
-            path = self._recorder.stop()
-            if path:
-                self._recordings.append(path)
-
-    @property
-    def is_recording(self) -> bool:
-        """Check if currently recording."""
-        return self._recorder.is_recording
-
-    @property
-    def recordings(self) -> list[Path]:
-        """List of completed recordings."""
-        return self._recordings.copy()
-
-    @property
-    def is_running(self) -> bool:
-        """Check if capture loop is running."""
-        return self._running
 
 
 def run_recording_session(
@@ -513,7 +95,6 @@ def run_recording_session(
     debug: bool,
 ) -> None:
     """Run an interactive recording session."""
-    import sys
     from .screen_capture import (
         ScreenCaptureKitCapture,
         check_screen_recording_permission,
@@ -540,9 +121,36 @@ def run_recording_session(
 
     print(f"Capture target: {capture.window}", file=sys.stderr)
 
+    # Setup
     overlay = OverlayNotifier()
+    recorder = VideoRecorder(fps=fps)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    recordings: list[Path] = []
 
-    def on_recording_change(is_recording: bool, path):
+    # Auto-detection state
+    auto_consecutive = 3
+    auto_history: deque = deque(maxlen=auto_consecutive)
+    auto_cards_visible = False
+
+    # Frame drop tracking
+    frame_times: deque = deque(maxlen=30)
+    last_frame_drop_notification = 0.0
+    frame_drop_threshold = 0.75
+    frame_drop_cooldown = 5.0
+
+    # Debug stats
+    debug_capture_times: deque = deque(maxlen=100)
+    debug_detect_times: deque = deque(maxlen=100)
+    debug_write_times: deque = deque(maxlen=100)
+    debug_loop_times: deque = deque(maxlen=100)
+    debug_sleep_drifts: deque = deque(maxlen=100)
+    debug_last_stats_time = time.time()
+    debug_overruns = 0
+    debug_total_frames = 0
+    debug_interval = 5.0
+
+    def notify_recording_change(is_recording: bool, path):
         if is_recording:
             print(f"\n🔴 Recording started: {path}", file=sys.stderr)
             play_sound("Blow")
@@ -552,75 +160,153 @@ def run_recording_session(
             play_sound("Glass")
             overlay.send_message("Recording Stopped", str(Path(path).name))
 
-    def on_frame_drop(actual_fps: float, target_fps: float):
-        pct = (actual_fps / target_fps) * 100
-        print(f"\n⚠️  Frame drop detected: {actual_fps:.1f}/{target_fps} FPS ({pct:.0f}%)", file=sys.stderr)
-        play_sound("Basso")
-        overlay.send_message("⚠️ Dropping Frames", f"{actual_fps:.1f} FPS (target: {target_fps})")
+    def start_recording() -> Path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = output_path / f"{prefix}_{timestamp}.mp4"
+        recorder.start(filename)
+        return filename
 
-    def on_debug_stats(stats: dict):
-        rec_indicator = "REC" if stats["is_recording"] else "---"
-        fps_pct = stats["fps_ratio"] * 100
-        cap = stats["capture_ms"]
-        det = stats["detect_ms"]
-        wrt = stats["write_ms"]
-        loop = stats["loop_ms"]
-        drift = stats["sleep_drift_ms"]
+    def stop_recording() -> Optional[Path]:
+        path = recorder.stop()
+        if path:
+            recordings.append(path)
+        return path
 
-        print(f"\n[DEBUG {rec_indicator}] FPS: {stats['actual_fps']:.1f}/{stats['target_fps']} ({fps_pct:.0f}%) | "
-              f"frames: {stats['total_frames']} | overruns: {stats['overruns']}", file=sys.stderr)
-        print(f"  capture: {cap['avg']:.1f}ms avg, {cap['max']:.1f}ms max", file=sys.stderr)
-        if det["count"] > 0:
-            print(f"  detect:  {det['avg']:.1f}ms avg, {det['max']:.1f}ms max", file=sys.stderr)
-        if wrt["count"] > 0:
-            print(f"  write:   {wrt['avg']:.1f}ms avg, {wrt['max']:.1f}ms max", file=sys.stderr)
-        print(f"  loop:    {loop['avg']:.1f}ms avg, {loop['max']:.1f}ms max (target: {1000/fps:.1f}ms)", file=sys.stderr)
-        print(f"  drift:   {drift['avg']:.1f}ms avg, {drift['max']:.1f}ms max", file=sys.stderr)
-
-    session = RecordingSession(
-        capture=capture,
-        output_dir=output_dir,
-        fps=fps,
-        file_prefix=prefix,
-        auto_detect=auto,
-        on_recording_change=on_recording_change if auto else None,
-        on_frame_drop=on_frame_drop,
-        debug=debug,
-        on_debug_stats=on_debug_stats if debug else None,
-    )
+    def toggle_recording() -> tuple[bool, Optional[Path]]:
+        if recorder.is_recording:
+            return False, stop_recording()
+        else:
+            return True, start_recording()
 
     def on_hotkey():
-        is_recording, stopped_path = session.toggle_recording()
-        on_recording_change(is_recording, session._recorder.current_path if is_recording else stopped_path)
+        is_recording, path = toggle_recording()
+        notify_recording_change(is_recording, recorder.current_path if is_recording else path)
 
     hotkey_listener = create_hotkey_listener(hotkey, on_hotkey)
 
     print(f"\nReady to record (Ctrl+C to exit)...", file=sys.stderr)
     print(f"  FPS: {fps}", file=sys.stderr)
-    print(f"  Output: {Path(output_dir).absolute()}", file=sys.stderr)
+    print(f"  Output: {output_path.absolute()}", file=sys.stderr)
     print(f"  Hotkey: {hotkey} (toggle recording)", file=sys.stderr)
     if auto:
-        if session.auto_detect_available:
-            print(f"  Auto-detect: ENABLED (mask loaded)", file=sys.stderr)
-        else:
-            print(f"  Auto-detect: FAILED (mask.png not found)", file=sys.stderr)
+        print(f"  Auto-detect: ENABLED (hero card detection)", file=sys.stderr)
     if debug:
         print(f"  Debug: ENABLED (stats every 5s)", file=sys.stderr)
     print(f"\nPress {hotkey} to start/stop recording...", file=sys.stderr)
 
+    running = True
+    interval = 1.0 / fps
+
     try:
-        session.start()
+        while running:
+            loop_start = time.time()
+            frame_times.append(loop_start)
+            debug_total_frames += 1
+
+            # Capture
+            capture_start = time.time()
+            frame = capture.capture_frame()
+            if debug:
+                debug_capture_times.append(time.time() - capture_start)
+
+            if frame is not None:
+                # Auto-detection
+                if auto:
+                    detect_start = time.time()
+                    cards_found = detect_hero_cards(frame.image)
+                    auto_history.append(cards_found)
+                    if debug:
+                        debug_detect_times.append(time.time() - detect_start)
+
+                    if len(auto_history) >= auto_consecutive:
+                        all_have_cards = all(auto_history)
+                        all_no_cards = not any(auto_history)
+
+                        if all_have_cards and not auto_cards_visible:
+                            auto_cards_visible = True
+                            path = start_recording()
+                            notify_recording_change(True, path)
+                        elif all_no_cards and auto_cards_visible:
+                            auto_cards_visible = False
+                            path = stop_recording()
+                            notify_recording_change(False, path)
+
+                # Write frame
+                if recorder.is_recording:
+                    write_start = time.time()
+                    recorder.write_frame(frame)
+                    if debug:
+                        debug_write_times.append(time.time() - write_start)
+
+            # Frame drop check
+            if recorder.is_recording and len(frame_times) >= 10:
+                ft = list(frame_times)
+                total_time = ft[-1] - ft[0]
+                if total_time > 0:
+                    actual_fps = (len(ft) - 1) / total_time
+                    if actual_fps / fps < frame_drop_threshold:
+                        now = time.time()
+                        if now - last_frame_drop_notification >= frame_drop_cooldown:
+                            last_frame_drop_notification = now
+                            pct = (actual_fps / fps) * 100
+                            print(f"\n⚠️  Frame drop: {actual_fps:.1f}/{fps} FPS ({pct:.0f}%)", file=sys.stderr)
+                            play_sound("Basso")
+                            overlay.send_message("⚠️ Dropping Frames", f"{actual_fps:.1f} FPS")
+
+            # Loop timing
+            elapsed = time.time() - loop_start
+            if debug:
+                debug_loop_times.append(elapsed)
+
+            sleep_time = interval - elapsed
+            if sleep_time > 0:
+                sleep_start = time.time()
+                time.sleep(sleep_time)
+                if debug:
+                    debug_sleep_drifts.append(time.time() - sleep_start - sleep_time)
+            elif debug:
+                debug_overruns += 1
+
+            # Debug stats output
+            if debug and time.time() - debug_last_stats_time >= debug_interval:
+                debug_last_stats_time = time.time()
+                ft = list(frame_times)
+                actual_fps = (len(ft) - 1) / (ft[-1] - ft[0]) if len(ft) >= 2 and ft[-1] > ft[0] else 0
+                rec = "REC" if recorder.is_recording else "---"
+
+                def avg_max(d):
+                    return (sum(d) / len(d) * 1000, max(d) * 1000) if d else (0, 0)
+
+                cap_avg, cap_max = avg_max(debug_capture_times)
+                det_avg, det_max = avg_max(debug_detect_times)
+                wrt_avg, wrt_max = avg_max(debug_write_times)
+                loop_avg, loop_max = avg_max(debug_loop_times)
+                drift_avg, drift_max = avg_max(debug_sleep_drifts)
+
+                print(f"\n[DEBUG {rec}] FPS: {actual_fps:.1f}/{fps} ({actual_fps/fps*100:.0f}%) | "
+                      f"frames: {debug_total_frames} | overruns: {debug_overruns}", file=sys.stderr)
+                print(f"  capture: {cap_avg:.1f}ms avg, {cap_max:.1f}ms max", file=sys.stderr)
+                if debug_detect_times:
+                    print(f"  detect:  {det_avg:.1f}ms avg, {det_max:.1f}ms max", file=sys.stderr)
+                if debug_write_times:
+                    print(f"  write:   {wrt_avg:.1f}ms avg, {wrt_max:.1f}ms max", file=sys.stderr)
+                print(f"  loop:    {loop_avg:.1f}ms avg, {loop_max:.1f}ms max (target: {1000/fps:.1f}ms)", file=sys.stderr)
+                print(f"  drift:   {drift_avg:.1f}ms avg, {drift_max:.1f}ms max", file=sys.stderr)
+
     except KeyboardInterrupt:
         pass
     finally:
         if hotkey_listener:
             hotkey_listener.stop()
-        session.stop()
+        if recorder.is_recording:
+            path = recorder.stop()
+            if path:
+                recordings.append(path)
 
         print(f"\nSession ended.", file=sys.stderr)
-        if session.recordings:
-            print(f"Recordings saved ({len(session.recordings)}):", file=sys.stderr)
-            for rec in session.recordings:
+        if recordings:
+            print(f"Recordings saved ({len(recordings)}):", file=sys.stderr)
+            for rec in recordings:
                 print(f"  - {rec}", file=sys.stderr)
         else:
             print("No recordings made.", file=sys.stderr)

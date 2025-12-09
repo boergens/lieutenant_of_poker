@@ -195,7 +195,7 @@ def main():
     )
     record_parser.add_argument(
         "--auto", "-a", action="store_true",
-        help="Auto-detect recording start/stop based on mask brightness"
+        help="Auto-detect recording start/stop based on hero card visibility"
     )
     record_parser.add_argument(
         "--debug", action="store_true",
