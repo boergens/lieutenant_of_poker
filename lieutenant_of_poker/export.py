@@ -17,6 +17,46 @@ TURN = "turn"
 RIVER = "river"
 STREETS = [PREFLOP, FLOP, TURN, RIVER]
 
+# Common blind structures: (small_blind, big_blind)
+BLIND_STRUCTURES = [
+    (1, 2),
+    (2, 5),
+    (5, 10),
+    (10, 20),
+    (15, 30),
+    (20, 40),
+    (25, 50),
+    (50, 100),
+    (75, 150),
+    (100, 200),
+    (150, 300),
+    (200, 400),
+    (250, 500),
+    (300, 600),
+    (400, 800),
+    (500, 1000),
+]
+
+
+def derive_blinds(pot: int) -> tuple[int, int]:
+    """Derive small and big blind from initial pot size.
+
+    Finds the blind structure where SB + BB equals the pot,
+    or falls back to assuming pot = SB + BB with BB = 2*SB.
+    """
+    if not pot:
+        return 10, 20
+
+    # Check known blind structures
+    for sb, bb in BLIND_STRUCTURES:
+        if sb + bb == pot:
+            return sb, bb
+
+    # Fallback: assume BB = 2*SB, so pot = 3*SB
+    sb = pot // 3
+    bb = sb * 2
+    return sb, bb
+
 
 def calculate_pot(hand: dict) -> int:
     """Calculate pot from actions (blinds + all bets/calls/raises minus uncalled)."""
@@ -90,9 +130,8 @@ def reconstruct_hand(
 
     initial, final = states[0], states[-1]
 
-    # Derive blinds from initial pot (assumes SB + BB + antes = pot)
-    small_blind = (initial["pot"] or 60) // 3
-    big_blind = small_blind * 2
+    # Derive blinds from initial pot
+    small_blind, big_blind = derive_blinds(initial["pot"])
 
     if not players:
         return None
