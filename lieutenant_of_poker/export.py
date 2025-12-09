@@ -190,21 +190,21 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
                 hand["river_card"] = state["community_cards"][4]
             current_street = new_street
 
-        pot_change = (state["pot"] or 0) - (prev_state["pot"] or 0)
-        if pot_change > 0:
-            for i, curr_p in enumerate(state["players"]):
-                if i < len(prev_state["players"]) and i < len(players):
-                    prev_p = prev_state["players"][i]
-                    chip_change = (prev_p["chips"] or 0) - (curr_p["chips"] or 0)
-                    if chip_change > 0:
-                        name = players[i]
-                        is_all_in = curr_p["chips"] == 0
-                        movement = {
-                            "player_name": name,
-                            "amount": chip_change,
-                            "is_all_in": is_all_in,
-                        }
-                        chip_movements[current_street].append(movement)
+        # Detect chip movements by comparing player stacks directly
+        # (Don't rely on pot change since rake can reduce the pot)
+        for i, curr_p in enumerate(state["players"]):
+            if i < len(prev_state["players"]) and i < len(players):
+                prev_p = prev_state["players"][i]
+                chip_change = (prev_p["chips"] or 0) - (curr_p["chips"] or 0)
+                if chip_change > 0:
+                    name = players[i]
+                    is_all_in = curr_p["chips"] == 0
+                    movement = {
+                        "player_name": name,
+                        "amount": chip_change,
+                        "is_all_in": is_all_in,
+                    }
+                    chip_movements[current_street].append(movement)
 
         prev_state = state
 
