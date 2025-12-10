@@ -236,7 +236,7 @@ def diagnose(
                     name = table.names[i] if i < len(table.names) else f"Player {i}"
                     pos = table.positions[i]
 
-                    money_region = get_money_region(frame, table, i)
+                    money_region = get_money_region(frame, pos)
                     amount = extract_player_money(frame, table, i)
 
                     substep = {

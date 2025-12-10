@@ -24,47 +24,6 @@ BET = "bet"
 ALL_IN = "all_in"
 UNCALLED_BET = "uncalled_bet"
 
-# Common blind structures: (small_blind, big_blind)
-BLIND_STRUCTURES = [
-    (1, 2),
-    (2, 5),
-    (5, 10),
-    (10, 20),
-    (15, 30),
-    (20, 40),
-    (25, 50),
-    (50, 100),
-    (75, 150),
-    (100, 200),
-    (150, 300),
-    (200, 400),
-    (250, 500),
-    (300, 600),
-    (400, 800),
-    (500, 1000),
-]
-
-
-def derive_blinds(pot: int) -> tuple[int, int]:
-    """Derive small and big blind from initial pot size.
-
-    Finds the blind structure where SB + BB equals the pot,
-    or falls back to assuming pot = SB + BB with BB = 2*SB.
-    """
-    if not pot:
-        return 10, 20
-
-    # Check known blind structures
-    for sb, bb in BLIND_STRUCTURES:
-        if sb + bb == pot:
-            return sb, bb
-
-    # Fallback: assume BB = 2*SB, so pot = 3*SB
-    sb = pot // 3
-    bb = sb * 2
-    return sb, bb
-
-
 def calculate_pot(hand: dict) -> int:
     """Calculate pot from actions (blinds + all bets/calls/raises minus uncalled)."""
     total = hand["small_blind"] + hand["big_blind"]
@@ -129,18 +88,17 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
 
     initial, final = states[0], states[-1]
 
-    # Derive blinds from initial pot
-    small_blind, big_blind = derive_blinds(initial["pot"])
-
     if not players:
         return None
 
-    # Calculate blind positions first (heads-up: button = SB)
-    if len(players) == 2:
-        sb_idx, bb_idx = button_pos, (button_pos + 1) % 2
-    else:
-        sb_idx = (button_pos + 1) % len(players)
-        bb_idx = (button_pos + 2) % len(players)
+    # Determine blind positions and amounts from detected blinds
+    # blind_amounts is indexed same as players (after hero rotation)
+    blind_positions = [(i, b) for i, b in enumerate(table.blind_amounts) if b is not None]
+
+    # Sort by amount to identify SB (smaller) and BB (larger)
+    blind_positions.sort(key=lambda x: x[1])
+    sb_idx, small_blind = blind_positions[0]
+    bb_idx, big_blind = blind_positions[1]
 
     # Build player info list
     # Add blinds back since initial state shows chips AFTER posting

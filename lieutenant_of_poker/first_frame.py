@@ -8,12 +8,61 @@ and hero cards. These don't change during a hand, so detection runs once.
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
 
 from ._positions import SEAT_POSITIONS as _SEAT_POSITIONS
+from ._positions import BLIND_POSITIONS as _BLIND_POSITIONS
+
+
+# Load blind indicator templates on module import
+_BLIND_TEMPLATES: List[np.ndarray] = []
+_TEMPLATES_DIR = Path(__file__).parent / "assets" / "blind_templates"
+for _template_path in sorted(_TEMPLATES_DIR.glob("blind_debug_seat*.png")):
+    _template = cv2.imread(str(_template_path))
+    if _template is not None:
+        _BLIND_TEMPLATES.append(_template)
+
+
+def _has_blind_indicator(frame: np.ndarray, pos: Tuple[int, int], threshold: float = 0.8) -> bool:
+    """
+    Check if a blind indicator is present at the given position.
+
+    Compares a 10x10 region at pos against known blind indicator templates.
+
+    Args:
+        frame: BGR game frame.
+        pos: (x, y) coordinates of the blind indicator position.
+        threshold: Minimum match score (0-1) to consider a match.
+
+    Returns:
+        True if a blind indicator is detected, False otherwise.
+    """
+    if not _BLIND_TEMPLATES:
+        return True  # No templates loaded, assume blind present
+
+    px, py = pos
+    height, width = frame.shape[:2]
+
+    # Bounds check
+    if px < 0 or py < 0 or px + 10 > width or py + 10 > height:
+        return False
+
+    region = frame[py:py + 10, px:px + 10]
+
+    if region.shape != (10, 10, 3):
+        return False
+
+    # Check against each template
+    for template in _BLIND_TEMPLATES:
+        result = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
+        score = result[0, 0]
+        if score >= threshold:
+            return True
+
+    return False
 
 
 @dataclass(frozen=True)
@@ -27,11 +76,19 @@ class TableInfo:
     positions: Tuple[Tuple[int, int], ...]
     button_index: Optional[int]
     hero_cards: Tuple[str, ...]
+    # Blind amounts detected at each seat (None if no blind at that seat)
+    # Indexed by position in the names/positions tuples
+    blind_amounts: Tuple[Optional[int], ...]
 
     def __str__(self) -> str:
         lines = [f"Players: {list(self.names)}"]
         lines.append(f"Button: {self.button_index}")
         lines.append(f"Hero cards: {self.hero_cards}")
+        # Show detected blinds
+        blinds = [(i, b) for i, b in enumerate(self.blind_amounts) if b is not None]
+        if blinds:
+            blind_strs = [f"{self.names[i]}: {b}" for i, b in blinds]
+            lines.append(f"Blinds: {', '.join(blind_strs)}")
         return "\n".join(lines)
 
     # Class constants (internal)
@@ -46,6 +103,7 @@ class TableInfo:
         from .frame_extractor import VideoFrameExtractor
         from .card_matcher import match_hero_cards
         from .fast_ocr import ocr_name
+        from .chip_ocr import extract_money_at
 
         # Load dealer button template
         dealer_template = cv2.imread(str(Path(__file__).parent / "dealer.png"))
@@ -59,7 +117,7 @@ class TableInfo:
                     frames.append(frame_info.image)
 
         if not frames:
-            return cls(names=(), positions=(), button_index=None, hero_cards=())
+            return cls(names=(), positions=(), button_index=None, hero_cards=(), blind_amounts=())
 
         # Collect votes for each position
         position_votes = {i: [] for i in range(len(_SEAT_POSITIONS))}
@@ -86,14 +144,29 @@ class TableInfo:
                     button_votes.append(button_center)
 
         # Majority vote: position is active if detected in 2+ frames
+        # Track seat indices for blind position mapping
         names = []
         positions = []
+        seat_indices = []  # Original seat index for each active player
         for i, votes in position_votes.items():
             if len(votes) >= 2:
                 # Most common name for this position
                 name = Counter(votes).most_common(1)[0][0]
                 names.append(name)
                 positions.append(_SEAT_POSITIONS[i])
+                seat_indices.append(i)
+
+        # Extract blind amounts from first frame only (no consensus)
+        # Only extract if blind indicator is present (matches template)
+        blind_amounts_by_seat = []
+        first_frame = frames[0]
+        for seat_idx in seat_indices:
+            blind_pos = _BLIND_POSITIONS[seat_idx]
+            if blind_pos is not None and _has_blind_indicator(first_frame, blind_pos):
+                amount = extract_money_at(first_frame, blind_pos)
+                blind_amounts_by_seat.append(amount)
+            else:
+                blind_amounts_by_seat.append(None)
 
         # Find hero and rotate
         if names:
@@ -103,6 +176,7 @@ class TableInfo:
             )
             names = names[hero_idx + 1:] + names[:hero_idx + 1]
             positions = positions[hero_idx + 1:] + positions[:hero_idx + 1]
+            blind_amounts_by_seat = blind_amounts_by_seat[hero_idx + 1:] + blind_amounts_by_seat[:hero_idx + 1]
 
         # Now detect hero cards using hero's position
         hero_cards = ()
@@ -130,4 +204,5 @@ class TableInfo:
             positions=tuple(positions),
             button_index=button_index,
             hero_cards=hero_cards,
+            blind_amounts=tuple(blind_amounts_by_seat),
         )

@@ -177,21 +177,19 @@ if TYPE_CHECKING:
 
 def get_money_region(
     frame: np.ndarray,
-    table: "TableInfo",
-    player_index: int,
+    pos: Tuple[int, int],
 ) -> np.ndarray:
     """
-    Extract the money display region for a player.
+    Extract the money display region at a given position.
 
     Args:
         frame: BGR game frame.
-        table: TableInfo with player positions.
-        player_index: Player index (0 to len(table.positions)-1).
+        pos: (x, y) coordinates (same format as SEAT_POSITIONS).
 
     Returns:
         BGR image of the money region.
     """
-    px, py = table.positions[player_index]
+    px, py = pos
     x = px + _MONEY_OFFSET_X
     y = py + _MONEY_OFFSET_Y
 
@@ -200,6 +198,28 @@ def get_money_region(
     y = max(0, min(y, height - _MONEY_HEIGHT))
 
     return frame[y:y + _MONEY_HEIGHT, x:x + _MONEY_WIDTH]
+
+
+def extract_money_at(
+    frame: np.ndarray,
+    pos: Tuple[int, int],
+) -> Optional[int]:
+    """
+    Extract money amount from a game frame at the given position.
+
+    Args:
+        frame: BGR game frame.
+        pos: (x, y) coordinates (same format as SEAT_POSITIONS).
+
+    Returns:
+        Money amount as integer, or None if not detected.
+    """
+    region = get_money_region(frame, pos)
+
+    if region.size == 0:
+        return None
+
+    return _ocr_region(region, category="money")
 
 
 def extract_player_money(
@@ -218,7 +238,8 @@ def extract_player_money(
     Returns:
         Money amount as integer, or None if not detected.
     """
-    money_region = get_money_region(frame, table, player_index)
+    pos = table.positions[player_index]
+    money_region = get_money_region(frame, pos)
 
     if money_region.size == 0:
         return None

@@ -82,13 +82,9 @@ def main():
 
     # info command
     info_parser = subparsers.add_parser(
-        "info", help="Show video information"
+        "info", help="Show video and table information"
     )
     info_parser.add_argument("video", help="Path to video file")
-    info_parser.add_argument(
-        "--players", "-p", action="store_true",
-        help="Detect and display player names from first frame"
-    )
 
     # diagnose command
     diagnose_parser = subparsers.add_parser(
@@ -226,8 +222,8 @@ def main():
                 print("No valid states found.", file=sys.stderr)
 
         elif args.command == "info":
-            from lieutenant_of_poker.frame_extractor import format_video_info
-            print(format_video_info(args.video, args.players))
+            from lieutenant_of_poker.info import format_info
+            print(format_info(args.video))
 
         elif args.command == "diagnose":
             from lieutenant_of_poker.diagnostic import diagnose

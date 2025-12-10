@@ -14,3 +14,16 @@ SEAT_POSITIONS = (
     (124, 535),   # Seat 5: left
     (151, 257),   # Seat 6: top left
 )
+
+# Blind indicator positions - where blind amounts appear next to each seat
+# None means no blind position known for that seat
+# Same offset applies as for player money (_MONEY_OFFSET_X, _MONEY_OFFSET_Y)
+BLIND_POSITIONS: tuple[tuple[int, int] | None, ...] = (
+    (643, 249),   # Seat 0: top center
+    (964, 295),   # Seat 1: top right
+    None,         # Seat 2: right (unknown)
+    (857, 572),   # Seat 3: bottom right
+    None,         # Seat 4: bottom left (unknown)
+    None,         # Seat 5: left (unknown)
+    None,         # Seat 6: top left (unknown)
+)
