@@ -233,3 +233,51 @@ def ocr_name(image: np.ndarray) -> str | None:
         return None
 
     return text
+
+
+# Name region constants (match TableInfo in first_frame.py)
+_NAME_WIDTH = 140
+_NAME_HEIGHT = 30
+
+
+def get_name_region(image: np.ndarray, pos: tuple[int, int]) -> np.ndarray | None:
+    """
+    Extract the name region at a seat position.
+
+    Args:
+        image: The frame image (BGR).
+        pos: (x, y) seat position coordinates.
+
+    Returns:
+        Name region image or None if out of bounds.
+    """
+    pos_x, pos_y = pos
+    x = pos_x
+    y = pos_y - _NAME_HEIGHT
+
+    # Bounds check
+    if y < 0 or x < 0:
+        return None
+    if y + _NAME_HEIGHT > image.shape[0] or x + _NAME_WIDTH > image.shape[1]:
+        return None
+
+    return image[y:y + _NAME_HEIGHT, x:x + _NAME_WIDTH]
+
+
+def ocr_name_at_position(image: np.ndarray, pos: tuple[int, int]) -> str | None:
+    """
+    Extract player name at a seat position.
+
+    The name region is located above the seat position coordinates.
+
+    Args:
+        image: The frame image (BGR).
+        pos: (x, y) seat position coordinates.
+
+    Returns:
+        Detected name string or None.
+    """
+    region = get_name_region(image, pos)
+    if region is None:
+        return None
+    return ocr_name(region)

@@ -264,6 +264,43 @@ def diagnose(
                 money_step["success"] = False
             steps.append(money_step)
 
+        # --- Hero Detection (for splitter) ---
+        from ._detection import detect_hero_cards
+        from .fast_ocr import ocr_name_at_position, get_name_region
+        from ._positions import SEAT_POSITIONS
+        detection_step = {
+            "name": "Hero Detection (Splitter)",
+            "description": "Would this frame be recognized as active by the video splitter?",
+            "substeps": [],
+            "success": True,
+        }
+        try:
+            is_active = detect_hero_cards(frame)
+            detection_step["parsed_result"] = "YES - Hero detected" if is_active else "NO - Hero not detected"
+            detection_step["success"] = is_active
+
+            # Show name region for all seat positions
+            for i, pos in enumerate(SEAT_POSITIONS):
+                name_region = get_name_region(frame, pos)
+                detected_name = ocr_name_at_position(frame, pos)
+
+                substep = {
+                    "name": f"Seat {i}",
+                    "description": f"Position ({pos[0]}, {pos[1]})",
+                    "parsed_result": detected_name if detected_name else "(not detected)",
+                    "success": detected_name is not None,
+                }
+                if name_region is not None:
+                    substep["images"] = [
+                        ("Name Region", _image_to_base64(name_region)),
+                        ("OCR Input", _image_to_base64(preprocess_for_ocr(name_region))),
+                    ]
+                detection_step["substeps"].append(substep)
+        except Exception as e:
+            detection_step["error"] = str(e)
+            detection_step["success"] = False
+        steps.append(detection_step)
+
         # --- Render HTML ---
         template_dir = Path(__file__).parent / "templates"
         env = Environment(loader=FileSystemLoader(template_dir))

@@ -113,9 +113,9 @@ def main():
         "clear-library", help="Clear all cached reference images from card libraries"
     )
 
-    # split command - split video by brightness detection
+    # split command - split video by hero card detection
     split_parser = subparsers.add_parser(
-        "split", help="Split video into chunks based on screen on/off detection"
+        "split", help="Split video into chunks based on hero card detection"
     )
     split_parser.add_argument("video", help="Path to video file")
     split_parser.add_argument(
@@ -127,24 +127,8 @@ def main():
         help="Filename prefix for chunks (default: input filename)"
     )
     split_parser.add_argument(
-        "--threshold", "-t", type=float, default=250.0,
-        help="Brightness threshold 0-255 (default: 250)"
-    )
-    split_parser.add_argument(
-        "--consecutive", "-c", type=int, default=3,
-        help="Consecutive frames needed to trigger (default: 3)"
-    )
-    split_parser.add_argument(
         "--dry-run", "-n", action="store_true",
         help="Show detected segments without creating files"
-    )
-    split_parser.add_argument(
-        "--min-duration", "-m", type=float, default=1.0,
-        help="Minimum segment duration in seconds (default: 1.0)"
-    )
-    split_parser.add_argument(
-        "--step", "-s", type=int, default=2,
-        help="Process every Nth frame for detection (default: 2, use 1 for all frames)"
     )
 
     # batch-export command
@@ -234,11 +218,8 @@ def main():
             run_recording_session(args.output_dir, args.fps, args.hotkey, args.prefix, args.auto, args.debug)
 
         elif args.command == "split":
-            from lieutenant_of_poker.video_splitter import split_video_by_brightness
-            split_video_by_brightness(
-                args.video, args.output_dir, args.prefix, args.threshold,
-                args.consecutive, args.min_duration, args.step, args.dry_run,
-            )
+            from lieutenant_of_poker.video_splitter import split_video_by_hero
+            split_video_by_hero(args.video, args.output_dir, args.prefix, args.dry_run)
 
         elif args.command == "batch-export":
             from lieutenant_of_poker.batch_export import batch_export
