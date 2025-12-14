@@ -73,6 +73,10 @@ def main():
         help="Output format (default: actions)"
     )
     export_parser.add_argument(
+        "--output", "-o", default=None,
+        help="Output file path (default: print to stdout)"
+    )
+    export_parser.add_argument(
         "--rake", "-r", type=float, default=0.10,
         help="Max rake as percentage of pot (default: 0.10, use 0 to disable)"
     )
@@ -198,7 +202,11 @@ def main():
             from lieutenant_of_poker.export import export_video
             output = export_video(args.video, args.format, args.rake)
             if output:
-                print(output)
+                if args.output:
+                    Path(args.output).write_text(output)
+                    print(f"Export written to {args.output}", file=sys.stderr)
+                else:
+                    print(output)
             else:
                 print("No valid states found.", file=sys.stderr)
 
