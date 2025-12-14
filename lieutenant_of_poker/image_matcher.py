@@ -99,6 +99,7 @@ def match_image(
 
     library = _load_library(library_dir)
     if not library:
+        _save_unmatched(image, library_dir)
         return None
 
     normalized = _normalize(image)
