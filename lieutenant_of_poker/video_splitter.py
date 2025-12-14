@@ -108,8 +108,7 @@ def split_video(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Pick animal name for this session and get date
-    animal = pick_animal(output_dir)
+    # Get date
     date_str = datetime.now().strftime("%Y%m%d")
 
     created_files = []
@@ -117,6 +116,8 @@ def split_video(
 
     for i, segment in enumerate(segments):
         chunk_num = i + 1
+        # Pick a unique animal name for each chunk
+        animal = pick_animal(output_dir)
         # Format: prefix_date_num_animal.mp4
         output_file = output_dir / f"{prefix}_{date_str}_{chunk_num:03d}_{animal}.mp4"
 
