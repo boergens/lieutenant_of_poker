@@ -27,6 +27,7 @@ UNCALLED_BET = "uncalled_bet"
 def calculate_pot(hand: dict) -> int:
     """Calculate pot from actions (blinds + all bets/calls/raises minus uncalled)."""
     total = hand["small_blind"] + hand["big_blind"]
+    total += sum(db["amount"] for db in hand.get("dead_blinds", []))
     for street_actions in hand["actions"].values():
         for action in street_actions:
             if action["action"] in (BET, RAISE, CALL, ALL_IN):
@@ -43,6 +44,7 @@ def make_hand_history() -> dict:
         "timestamp": datetime.now(),
         "small_blind": 10,
         "big_blind": 20,
+        "dead_blinds": [],  # List of {"seat": idx, "amount": int}
         "players": [],
         "button_seat": 0,
         "sb_seat": 0,
@@ -91,14 +93,27 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
     if not players:
         return None
 
-    # Determine blind positions and amounts from detected blinds
-    # blind_amounts is indexed same as players (after hero rotation)
-    blind_positions = [(i, b) for i, b in enumerate(table.blind_amounts) if b is not None]
+    # Determine blind positions from button (not by amount)
+    # SB is left of button, BB is left of SB
+    num_players = len(players)
+    if num_players == 2:
+        # Heads-up: button posts SB
+        sb_idx = button_pos
+        bb_idx = (button_pos + 1) % num_players
+    else:
+        sb_idx = (button_pos + 1) % num_players
+        bb_idx = (button_pos + 2) % num_players
 
-    # Sort by amount to identify SB (smaller) and BB (larger)
-    blind_positions.sort(key=lambda x: x[1])
-    sb_idx, small_blind = blind_positions[0]
-    bb_idx, big_blind = blind_positions[1]
+    # Get blind amounts from detected blinds, matching by position
+    blind_by_seat = {i: b for i, b in enumerate(table.blind_amounts) if b is not None}
+    small_blind = blind_by_seat.get(sb_idx, 0)
+    big_blind = blind_by_seat.get(bb_idx, 0)
+
+    # Any other detected blinds are dead blinds
+    dead_blinds = []
+    for seat, amount in blind_by_seat.items():
+        if seat not in (sb_idx, bb_idx):
+            dead_blinds.append({"seat": seat, "amount": amount})
 
     # Build player info list
     # Add blinds back since initial state shows chips AFTER posting
@@ -109,11 +124,18 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
             chips += small_blind
         elif i == bb_idx:
             chips += big_blind
+        else:
+            # Check for dead blind
+            for db in dead_blinds:
+                if db["seat"] == i:
+                    chips += db["amount"]
+                    break
         player_infos.append({"name": name, "chips": chips, "position": i})
 
     hand = make_hand_history()
     hand["small_blind"] = small_blind
     hand["big_blind"] = big_blind
+    hand["dead_blinds"] = dead_blinds
     hand["players"] = player_infos
     hand["button_seat"] = button_pos
     hand["sb_seat"] = sb_idx
@@ -169,11 +191,9 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
 
         prev_state = state
 
-    # Add blind posts as chip movements at start of preflop
+    # Player names for blind positions
     sb_name = players[sb_idx]
     bb_name = players[bb_idx]
-    chip_movements[PREFLOP].insert(0, {"player_name": bb_name, "amount": big_blind, "is_all_in": False})
-    chip_movements[PREFLOP].insert(0, {"player_name": sb_name, "amount": small_blind, "is_all_in": False})
 
     # players_in_hand: who hasn't folded (may include all-in players)
     players_in_hand = list(players)
@@ -214,12 +234,26 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
         actions_list = hand["actions"][street]
         street_movements = chip_movements[street]
 
-        # Contributions this street (starts empty, built from movements)
-        contributions: dict[str, int] = {}
-        current_bet = 0
-
-        # First player to act (SB for all streets - preflop has blind posts first)
-        first_to_act_idx = sb_idx
+        # Initialize contributions and current_bet for this street
+        if street == PREFLOP:
+            # Preflop: blinds are already in, start with their contributions
+            contributions: dict[str, int] = {
+                sb_name: small_blind,
+                bb_name: big_blind,
+            }
+            # Add dead blinds to contributions
+            for db in dead_blinds:
+                poster_name = players[db["seat"]]
+                contributions[poster_name] = db["amount"]
+            current_bet = big_blind
+            # Preflop action starts UTG (left of BB)
+            first_to_act_idx = (bb_idx + 1) % num_players
+        else:
+            # Postflop: fresh start
+            contributions = {}
+            current_bet = 0
+            # Postflop action starts left of button
+            first_to_act_idx = (button_pos + 1) % num_players
 
         # Current position in the rotation (index into players list)
         current_pos = first_to_act_idx
@@ -288,21 +322,16 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
                     actions_list.append({"player_name": name, "action": CHECK, "amount": 0})
 
     # BB option: if action limped to BB preflop, BB gets option to check/raise
-    # Count BB's voluntary actions (exclude the forced blind post which is first 2 actions)
-    bb_voluntary_actions = [
-        a for a in hand["actions"][PREFLOP][2:]  # Skip SB and BB blind posts
-        if a["player_name"] == bb_name
-    ]
-    bb_folded_preflop = any(a["action"] == FOLD for a in bb_voluntary_actions)
-    if not bb_folded_preflop and not bb_voluntary_actions and hand["flop_cards"]:
+    bb_actions = [a for a in hand["actions"][PREFLOP] if a["player_name"] == bb_name]
+    bb_folded_preflop = any(a["action"] == FOLD for a in bb_actions)
+    if not bb_folded_preflop and not bb_actions and hand["flop_cards"]:
         hand["actions"][PREFLOP].append({"player_name": bb_name, "action": CHECK, "amount": 0})
 
-    # Calculate uncalled bet BEFORE removing synthetic blinds
-    # Skip the blind posts (first 2 preflop actions) - blinds are mandatory,
-    # not voluntary bets, so they don't count as "uncalled" if everyone folds.
-    # But include their contribution amounts for proper totaling.
+    # Calculate uncalled bet
+    # Blinds are mandatory, not voluntary bets, so they don't count as "uncalled"
+    # if everyone folds. But include their contribution amounts for proper totaling.
     all_actions = (
-        hand["actions"][PREFLOP][2:] +  # Skip blind posts
+        hand["actions"][PREFLOP] +
         hand["actions"][FLOP] +
         hand["actions"][TURN] +
         hand["actions"][RIVER]
@@ -314,6 +343,10 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
         sb_name: small_blind,
         bb_name: big_blind,
     }
+    # Include dead blinds in contributions
+    for db in dead_blinds:
+        poster_name = players[db["seat"]]
+        contributions[poster_name] = db["amount"]
     last_bettor: str | None = None
     last_bet_total = 0
 
@@ -346,9 +379,6 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
                     )
                     break
 
-    # Remove the synthetic blind posts from preflop actions
-    del hand["actions"][PREFLOP][:2]
-
     # Determine outcome
     # Hero is always the last player in the list
     hero_player_name = players[-1]
@@ -370,7 +400,6 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
 def export_video(
     video_path: str,
     fmt: str,
-    button: int | None = None,
     max_rake_pct: float = 0.10,
 ) -> str | None:
     """
@@ -379,7 +408,6 @@ def export_video(
     Args:
         video_path: Path to the video file.
         fmt: Export format (pokerstars, snowie, human, actions).
-        button: Button position override (None = auto-detect).
         max_rake_pct: Maximum rake as percentage of pot (default 10%, 0 to disable).
 
     Returns:

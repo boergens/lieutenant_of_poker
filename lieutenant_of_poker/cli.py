@@ -73,10 +73,6 @@ def main():
         help="Output format (default: actions)"
     )
     export_parser.add_argument(
-        "--button", "-b", type=int, default=None,
-        help="Button position (0=SEAT_1, 1=SEAT_2, 2=SEAT_3, 3=SEAT_4, 4=hero). Auto-detected if not specified."
-    )
-    export_parser.add_argument(
         "--rake", "-r", type=float, default=0.10,
         help="Max rake as percentage of pot (default: 0.10, use 0 to disable)"
     )
@@ -200,7 +196,7 @@ def main():
 
         elif args.command == "export":
             from lieutenant_of_poker.export import export_video
-            output = export_video(args.video, args.format, args.button, args.rake)
+            output = export_video(args.video, args.format, args.rake)
             if output:
                 print(output)
             else:
