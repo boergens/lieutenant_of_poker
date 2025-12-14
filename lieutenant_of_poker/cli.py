@@ -48,9 +48,10 @@ def main():
         "--end-ms", "-e", type=float, default=None, help="End timestamp in milliseconds (default: end of video)"
     )
 
-    # analyze command
+    # analyze command (with 'analyse' as British English alias)
     analyze_parser = subparsers.add_parser(
-        "analyze", help="Analyze video and extract game states (every frame)"
+        "analyze", aliases=["analyse"],
+        help="Analyze video and extract game states (every frame)"
     )
     analyze_parser.add_argument("video", help="Path to video file")
     analyze_parser.add_argument(
