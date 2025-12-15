@@ -133,17 +133,17 @@ def _ocr_region(region: np.ndarray, category: str, no_currency: bool) -> Optiona
     return _parse_amount(text, no_currency)
 
 
-def get_pot_region(frame: np.ndarray) -> np.ndarray:
-    """
-    Extract the pot display region from a frame.
+# Money region parameters (relative to position)
+_MONEY_OFFSET_X = 12
+_MONEY_OFFSET_Y = -3
+_MONEY_WIDTH = 113
+_MONEY_HEIGHT = 23
 
-    Args:
-        frame: BGR game frame.
+# Offset adjustment when no currency symbol is present
+_NO_CURRENCY_SHIFT = -15
 
-    Returns:
-        BGR image of the pot region.
-    """
-    return frame[_POT_Y:_POT_Y + _POT_HEIGHT, _POT_X:_POT_X + _POT_WIDTH]
+# Pot position (base position for get_money_region)
+_POT_POS = (380, 97)
 
 
 def extract_pot(frame: np.ndarray, no_currency: bool) -> Optional[int]:
@@ -152,12 +152,12 @@ def extract_pot(frame: np.ndarray, no_currency: bool) -> Optional[int]:
 
     Args:
         frame: BGR game frame.
-        no_currency: If True, don't multiply by 100.
+        no_currency: If True, shift region left and don't multiply by 100.
 
     Returns:
         Pot amount as integer, or None if not detected.
     """
-    pot_region = get_pot_region(frame)
+    pot_region = get_money_region(frame, _POT_POS, no_currency)
 
     found, cached = _pot_cache.get(pot_region)
     if found:
@@ -166,22 +166,6 @@ def extract_pot(frame: np.ndarray, no_currency: bool) -> Optional[int]:
     result = _ocr_region(pot_region, category="pot", no_currency=no_currency)
     _pot_cache.put(pot_region, result)
     return result
-
-
-# Pot region (absolute coordinates)
-_POT_X = 392
-_POT_Y = 94
-_POT_WIDTH = 130
-_POT_HEIGHT = 30
-
-# Player money region parameters (relative to player position)
-_MONEY_OFFSET_X = 12
-_MONEY_OFFSET_Y = -3
-_MONEY_WIDTH = 113
-_MONEY_HEIGHT = 23
-
-# Offset adjustment when no currency symbol is present
-_NO_CURRENCY_SHIFT = -30
 
 if TYPE_CHECKING:
     from .first_frame import TableInfo

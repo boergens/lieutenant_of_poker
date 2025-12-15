@@ -66,7 +66,7 @@ def diagnose(
         HERO_RANK_OFFSET, HERO_SUIT_OFFSET, HERO_RANK_SIZE, HERO_SUIT_SIZE,
         HERO_CARD_SPACING, match_hero_cards,
     )
-    from .chip_ocr import get_money_region, extract_player_money, get_pot_region, extract_pot
+    from .chip_ocr import get_money_region, extract_player_money, extract_pot, _POT_POS
     from .fast_ocr import preprocess_for_ocr
 
     # Print video info
@@ -136,7 +136,7 @@ def diagnose(
             "success": True,
         }
         try:
-            pot_region = get_pot_region(frame)
+            pot_region = get_money_region(frame, _POT_POS, no_currency=table.no_currency)
             pot_amount = extract_pot(frame, no_currency=table.no_currency)
             pot_step["images"] = [
                 ("Pot Region", _image_to_base64(pot_region)),
