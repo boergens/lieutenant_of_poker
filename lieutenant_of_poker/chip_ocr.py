@@ -171,6 +171,9 @@ _MONEY_OFFSET_Y = -3
 _MONEY_WIDTH = 113
 _MONEY_HEIGHT = 23
 
+# Offset adjustment when no currency symbol is present
+_NO_CURRENCY_SHIFT = -10
+
 if TYPE_CHECKING:
     from .first_frame import TableInfo
 
@@ -178,6 +181,7 @@ if TYPE_CHECKING:
 def get_money_region(
     frame: np.ndarray,
     pos: Tuple[int, int],
+    no_currency: bool = False,
 ) -> np.ndarray:
     """
     Extract the money display region at a given position.
@@ -185,12 +189,15 @@ def get_money_region(
     Args:
         frame: BGR game frame.
         pos: (x, y) coordinates (same format as SEAT_POSITIONS).
+        no_currency: If True, shift region left (no currency symbol present).
 
     Returns:
         BGR image of the money region.
     """
     px, py = pos
     x = px + _MONEY_OFFSET_X
+    if no_currency:
+        x += _NO_CURRENCY_SHIFT
     y = py + _MONEY_OFFSET_Y
 
     height, width = frame.shape[:2]
@@ -203,6 +210,7 @@ def get_money_region(
 def extract_money_at(
     frame: np.ndarray,
     pos: Tuple[int, int],
+    no_currency: bool = False,
 ) -> Optional[int]:
     """
     Extract money amount from a game frame at the given position.
@@ -210,11 +218,12 @@ def extract_money_at(
     Args:
         frame: BGR game frame.
         pos: (x, y) coordinates (same format as SEAT_POSITIONS).
+        no_currency: If True, shift region left (no currency symbol present).
 
     Returns:
         Money amount as integer, or None if not detected.
     """
-    region = get_money_region(frame, pos)
+    region = get_money_region(frame, pos, no_currency=no_currency)
 
     if region.size == 0:
         return None
@@ -232,14 +241,14 @@ def extract_player_money(
 
     Args:
         frame: BGR game frame.
-        table: TableInfo with player positions.
+        table: TableInfo with player positions and no_currency flag.
         player_index: Player index (0 to len(table.positions)-1).
 
     Returns:
         Money amount as integer, or None if not detected.
     """
     pos = table.positions[player_index]
-    money_region = get_money_region(frame, pos)
+    money_region = get_money_region(frame, pos, no_currency=table.no_currency)
 
     if money_region.size == 0:
         return None

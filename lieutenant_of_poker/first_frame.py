@@ -79,6 +79,8 @@ class TableInfo:
     # Blind amounts detected at each seat (None if no blind at that seat)
     # Indexed by position in the names/positions tuples
     blind_amounts: Tuple[Optional[int], ...]
+    # True if no currency symbol was detected (money boxes shifted left)
+    no_currency: bool
 
     def __str__(self) -> str:
         lines = [f"Players: {list(self.names)}"]
@@ -89,6 +91,8 @@ class TableInfo:
         if blinds:
             blind_strs = [f"{self.names[i]}: {b}" for i, b in blinds]
             lines.append(f"Blinds: {', '.join(blind_strs)}")
+        if self.no_currency:
+            lines.append("Currency: none (shifted left)")
         return "\n".join(lines)
 
     # Class constants (internal)
@@ -117,7 +121,7 @@ class TableInfo:
                     frames.append(frame_info.image)
 
         if not frames:
-            return cls(names=(), positions=(), button_index=None, hero_cards=(), blind_amounts=())
+            raise ValueError(f"Could not extract any frames from video: {video_path}")
 
         # Collect votes for each position
         position_votes = {i: [] for i in range(len(_SEAT_POSITIONS))}
@@ -156,14 +160,24 @@ class TableInfo:
                 positions.append(_SEAT_POSITIONS[i])
                 seat_indices.append(i)
 
-        # Extract blind amounts from first frame only (no consensus)
-        # Only extract if blind indicator is present (matches template)
-        blind_amounts_by_seat = []
+        # Check if any blind indicator is found at known positions
+        # If none found, switch to no-currency mode (shift money boxes left)
         first_frame = frames[0]
+        any_blind_found = False
         for seat_idx in seat_indices:
             blind_pos = _BLIND_POSITIONS[seat_idx]
             if blind_pos is not None and _has_blind_indicator(first_frame, blind_pos):
-                amount = extract_money_at(first_frame, blind_pos)
+                any_blind_found = True
+                break
+        no_currency = not any_blind_found
+
+        # Extract blind amounts from first frame only (no consensus)
+        # Only extract if blind indicator is present (matches template)
+        blind_amounts_by_seat = []
+        for seat_idx in seat_indices:
+            blind_pos = _BLIND_POSITIONS[seat_idx]
+            if blind_pos is not None and _has_blind_indicator(first_frame, blind_pos):
+                amount = extract_money_at(first_frame, blind_pos, no_currency=no_currency)
                 blind_amounts_by_seat.append(amount)
             else:
                 blind_amounts_by_seat.append(None)
@@ -205,4 +219,5 @@ class TableInfo:
             button_index=button_index,
             hero_cards=hero_cards,
             blind_amounts=tuple(blind_amounts_by_seat),
+            no_currency=no_currency,
         )
