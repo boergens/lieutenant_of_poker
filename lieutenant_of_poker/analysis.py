@@ -162,7 +162,7 @@ def analyze_video(
 
             # Extract all data from frame
             community = [c for c in match_community_cards(frame) if c]
-            pot = extract_pot(frame)
+            pot = extract_pot(frame, no_currency=table.no_currency)
 
             player_chips = []
             for i in range(len(table.names)):

@@ -65,6 +65,45 @@ def _has_blind_indicator(frame: np.ndarray, pos: Tuple[int, int], threshold: flo
     return False
 
 
+def _is_empty_felt(frame: np.ndarray, pos: Tuple[int, int], region_size: int = 20) -> bool:
+    """
+    Check if a region is empty poker felt (uniform green).
+
+    Args:
+        frame: BGR game frame.
+        pos: (x, y) coordinates to check.
+        region_size: Size of region to check.
+
+    Returns:
+        True if region is uniform green (empty felt), False if it has content.
+    """
+    px, py = pos
+    height, width = frame.shape[:2]
+
+    # Bounds check
+    if px < 0 or py < 0 or px + region_size > width or py + region_size > height:
+        return True  # Out of bounds, treat as empty
+
+    region = frame[py:py + region_size, px:px + region_size]
+
+    # Check color variance - empty felt should be very uniform
+    # Convert to HSV for better green detection
+    hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+
+    # Check if mostly green (hue around 60-90 for green felt)
+    h, s, v = cv2.split(hsv)
+    mean_h = np.mean(h)
+    std_h = np.std(h)
+    std_s = np.std(s)
+    std_v = np.std(v)
+
+    # Empty felt: green hue, low variance across all channels
+    is_green = 30 < mean_h < 80
+    is_uniform = std_h < 10 and std_s < 20 and std_v < 20
+
+    return is_green and is_uniform
+
+
 @dataclass(frozen=True)
 class TableInfo:
     """
@@ -91,8 +130,7 @@ class TableInfo:
         if blinds:
             blind_strs = [f"{self.names[i]}: {b}" for i, b in blinds]
             lines.append(f"Blinds: {', '.join(blind_strs)}")
-        if self.no_currency:
-            lines.append("Currency: none (shifted left)")
+        lines.append(f"Currency: {'none' if self.no_currency else 'detected'}")
         return "\n".join(lines)
 
     # Class constants (internal)
@@ -172,12 +210,23 @@ class TableInfo:
         no_currency = not any_blind_found
 
         # Extract blind amounts from first frame only (no consensus)
-        # Only extract if blind indicator is present (matches template)
+        # Currency mode: only extract if blind indicator template matches
+        # No-currency mode: extract if region is not empty felt
         blind_amounts_by_seat = []
         for seat_idx in seat_indices:
             blind_pos = _BLIND_POSITIONS[seat_idx]
-            if blind_pos is not None and _has_blind_indicator(first_frame, blind_pos):
-                amount = extract_money_at(first_frame, blind_pos, no_currency=no_currency)
+            if blind_pos is None:
+                blind_amounts_by_seat.append(None)
+            elif no_currency:
+                # No currency: check if region has content (not empty felt)
+                if not _is_empty_felt(first_frame, blind_pos):
+                    amount = extract_money_at(first_frame, blind_pos, no_currency=True)
+                    blind_amounts_by_seat.append(amount)
+                else:
+                    blind_amounts_by_seat.append(None)
+            elif _has_blind_indicator(first_frame, blind_pos):
+                # Currency mode: use template matching
+                amount = extract_money_at(first_frame, blind_pos, no_currency=False)
                 blind_amounts_by_seat.append(amount)
             else:
                 blind_amounts_by_seat.append(None)

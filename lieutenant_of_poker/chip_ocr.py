@@ -69,12 +69,16 @@ def clear_caches() -> None:
     _ocr_calls = 0
 
 
-def _parse_amount(text: str) -> Optional[int]:
+def _parse_amount(text: str, no_currency: bool) -> Optional[int]:
     """
-    Parse a numeric amount from OCR text, returning cents.
+    Parse a numeric amount from OCR text.
 
     Handles formats like "1,120", "2720", "1.5K", "2M", "0.12", "2.16".
-    Returns value in cents (e.g., "2.16" -> 216).
+
+    Args:
+        text: OCR text to parse.
+        no_currency: If False, multiply by 100 to convert to cents.
+                     If True, return raw integer value.
     """
     if not text:
         return None
@@ -98,22 +102,26 @@ def _parse_amount(text: str) -> Optional[int]:
     # Remove commas and spaces
     text = text.replace(',', '').replace(' ', '')
 
-    # Parse as float to handle decimals, then convert to cents
+    # Parse as float to handle decimals
     # Keep only digits and decimal point
     cleaned = ''.join(c for c in text if c.isdigit() or c == '.')
 
     if cleaned:
         try:
             value = float(cleaned) * multiplier
-            # Convert to cents (multiply by 100)
-            return int(round(value * 100))
+            if no_currency:
+                # No currency mode: return raw integer
+                return int(round(value))
+            else:
+                # Currency mode: convert to cents (multiply by 100)
+                return int(round(value * 100))
         except ValueError:
             pass
 
     return None
 
 
-def _ocr_region(region: np.ndarray, category: str = "other") -> Optional[int]:
+def _ocr_region(region: np.ndarray, category: str, no_currency: bool) -> Optional[int]:
     """Extract amount from a region using matched filter OCR."""
     global _ocr_calls
 
@@ -122,7 +130,7 @@ def _ocr_region(region: np.ndarray, category: str = "other") -> Optional[int]:
 
     _ocr_calls += 1
     text = ocr_digits(region, category=category)
-    return _parse_amount(text)
+    return _parse_amount(text, no_currency)
 
 
 def get_pot_region(frame: np.ndarray) -> np.ndarray:
@@ -138,12 +146,13 @@ def get_pot_region(frame: np.ndarray) -> np.ndarray:
     return frame[_POT_Y:_POT_Y + _POT_HEIGHT, _POT_X:_POT_X + _POT_WIDTH]
 
 
-def extract_pot(frame: np.ndarray) -> Optional[int]:
+def extract_pot(frame: np.ndarray, no_currency: bool) -> Optional[int]:
     """
     Extract pot amount from a game frame.
 
     Args:
         frame: BGR game frame.
+        no_currency: If True, don't multiply by 100.
 
     Returns:
         Pot amount as integer, or None if not detected.
@@ -154,7 +163,7 @@ def extract_pot(frame: np.ndarray) -> Optional[int]:
     if found:
         return cached
 
-    result = _ocr_region(pot_region, category="pot")
+    result = _ocr_region(pot_region, category="pot", no_currency=no_currency)
     _pot_cache.put(pot_region, result)
     return result
 
@@ -172,7 +181,7 @@ _MONEY_WIDTH = 113
 _MONEY_HEIGHT = 23
 
 # Offset adjustment when no currency symbol is present
-_NO_CURRENCY_SHIFT = -10
+_NO_CURRENCY_SHIFT = -30
 
 if TYPE_CHECKING:
     from .first_frame import TableInfo
@@ -181,7 +190,7 @@ if TYPE_CHECKING:
 def get_money_region(
     frame: np.ndarray,
     pos: Tuple[int, int],
-    no_currency: bool = False,
+    no_currency: bool,
 ) -> np.ndarray:
     """
     Extract the money display region at a given position.
@@ -210,7 +219,7 @@ def get_money_region(
 def extract_money_at(
     frame: np.ndarray,
     pos: Tuple[int, int],
-    no_currency: bool = False,
+    no_currency: bool,
 ) -> Optional[int]:
     """
     Extract money amount from a game frame at the given position.
@@ -218,7 +227,7 @@ def extract_money_at(
     Args:
         frame: BGR game frame.
         pos: (x, y) coordinates (same format as SEAT_POSITIONS).
-        no_currency: If True, shift region left (no currency symbol present).
+        no_currency: If True, shift region left and don't multiply by 100.
 
     Returns:
         Money amount as integer, or None if not detected.
@@ -228,7 +237,7 @@ def extract_money_at(
     if region.size == 0:
         return None
 
-    return _ocr_region(region, category="money")
+    return _ocr_region(region, category="money", no_currency=no_currency)
 
 
 def extract_player_money(
@@ -258,6 +267,6 @@ def extract_player_money(
     if found:
         return cached
 
-    result = _ocr_region(money_region, category="money")
+    result = _ocr_region(money_region, category="money", no_currency=table.no_currency)
     cache.put(money_region, result)
     return result

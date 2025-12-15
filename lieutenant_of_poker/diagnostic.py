@@ -137,7 +137,7 @@ def diagnose(
         }
         try:
             pot_region = get_pot_region(frame)
-            pot_amount = extract_pot(frame)
+            pot_amount = extract_pot(frame, no_currency=table.no_currency)
             pot_step["images"] = [
                 ("Pot Region", _image_to_base64(pot_region)),
                 ("OCR Input", _image_to_base64(preprocess_for_ocr(pot_region))),
@@ -236,7 +236,7 @@ def diagnose(
                     name = table.names[i] if i < len(table.names) else f"Player {i}"
                     pos = table.positions[i]
 
-                    money_region = get_money_region(frame, pos)
+                    money_region = get_money_region(frame, pos, no_currency=table.no_currency)
                     amount = extract_player_money(frame, table, i)
 
                     substep = {
