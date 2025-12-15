@@ -1,28 +1,34 @@
 GameStart
 PokerClient: ExportFormat
-Date: 03/12/2025
+Date: 15/12/2025
 TimeZone: GMT
-Time: 08:45:33
-GameId:00000000
+Time: 07:01:28
+GameId:56050913
 GameType:NoLimit
 GameCurrency: $
-SmallBlindStake: 20
-BigBlindStake: 40
+SmallBlindStake: 2
+BigBlindStake: 5
 AnteStake: 0
 TableName: Governor of Poker
-Max number of players: 4
-MyPlayerName: kevin4637565
-DealerPosition: 0
-Seat 0 Nav 780
-Seat 1 Victor 2380
-Seat 2 player699561 2820
-Seat 3 kevin4637565 9020
-SmallBlind: Victor 20
-BigBlind: player699561 40
-Dealt Cards: [8dKd]
-Move: kevin4637565 folds 0
-Move: Nav folds 0
-Move: Victor folds 0
-Winner: player699561 60.00
+Max number of players: 7
+MyPlayerName: kevinLAS
+DealerPosition: 2
+Seat 0 lurSuk 500
+Seat 1 TheCricket_9 510
+Seat 2 Mgkr 647
+Seat 3 TincmeeO 1181102
+Seat 4 TIGERIBZ_LJ 181105
+Seat 5 WtzN8r_9 441
+Seat 6 kevinLAS 449
+SmallBlind: TincmeeO 2
+BigBlind: TIGERIBZ_LJ 5
+Dealt Cards: [9c2h]
+Move: WtzN8r_9 folds 0
+Move: kevinLAS folds 0
+Move: lurSuk folds 0
+Move: TheCricket_9 folds 0
+Move: Mgkr folds 0
+Move: TincmeeO folds 0
+Winner: TIGERIBZ_LJ 7.00
 GameEnd
 

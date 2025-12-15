@@ -4,20 +4,14 @@ Regression tests for hand history export.
 Tests auto-discover fixtures in tests/fixtures/ directory.
 Each fixture consists of:
   - {n}.mp4 - video file
-  - video{n}_states.json - saved game states
   - video{n}_export_snowie.txt - expected snowie output
-  - video{n}_config.json (optional) - showdown config for deterministic output
 """
 
-import json
 from pathlib import Path
 
 import pytest
 
-from lieutenant_of_poker.serialization import load_game_states
-from lieutenant_of_poker.snowie_export import export_snowie
-from lieutenant_of_poker.first_frame import TableInfo
-from lieutenant_of_poker.game_simulator import ShowdownConfig
+from lieutenant_of_poker.export import export_video
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -30,34 +24,20 @@ def discover_fixtures():
         if not video.stem.isdigit():
             continue
         num = int(video.stem)
-        states = FIXTURES_DIR / f"video{num}_states.json"
         snowie = FIXTURES_DIR / f"video{num}_export_snowie.txt"
-        if states.exists() and snowie.exists():
+        if snowie.exists():
             fixtures.append(num)
     return fixtures
 
 
-def load_showdown_config(num: int):
-    """Load showdown config from JSON file if it exists."""
-    config_path = FIXTURES_DIR / f"video{num}_config.json"
-    if not config_path.exists():
-        return None, None, None
-
-    data = json.loads(config_path.read_text())
-    showdown = ShowdownConfig(
-        opponent_cards=data.get("opponent_cards", {}),
-        force_winner=data.get("force_winner"),
-    )
-    hand_id = data.get("hand_id")
-    table_background = data.get("table_background")
-    return showdown, hand_id, table_background
-
-
 def normalize_snowie_export(text: str) -> str:
-    """Normalize snowie export text for comparison (remove timestamps)."""
+    """Normalize snowie export text for comparison.
+
+    Removes variable fields like dates, times, and game IDs.
+    """
     lines = []
     for line in text.strip().split("\n"):
-        if line.startswith(("Date:", "Time:", "TimeZone:")):
+        if line.startswith(("Date:", "Time:", "TimeZone:", "GameId:")):
             continue
         lines.append(line)
     return "\n".join(lines)
@@ -70,21 +50,12 @@ FIXTURE_NUMS = discover_fixtures()
 def test_snowie_export(num):
     """Test snowie export matches saved fixture."""
     video_path = FIXTURES_DIR / f"{num}.mp4"
-    states_path = FIXTURES_DIR / f"video{num}_states.json"
     fixture_path = FIXTURES_DIR / f"video{num}_export_snowie.txt"
 
-    # Detect first frame info
-    table_info = TableInfo.from_video(str(video_path))
-    button_pos = table_info.button_index if table_info.button_index is not None else 0
-    player_names = list(table_info.names)
+    # Generate export using high-level API
+    actual = export_video(str(video_path), "snowie")
+    assert actual is not None, f"export_video returned None for {video_path}"
 
-    # Load states and config
-    states = load_game_states(states_path)
-    showdown, hand_id, _table_background = load_showdown_config(num)
-
-    # Generate and compare
-    actual = export_snowie(states, button_pos=button_pos, player_names=player_names,
-                           showdown=showdown, hand_id=hand_id)
     expected = fixture_path.read_text()
 
     actual = normalize_snowie_export(actual)

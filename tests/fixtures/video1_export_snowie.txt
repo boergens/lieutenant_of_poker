@@ -1,38 +1,34 @@
 GameStart
 PokerClient: ExportFormat
-Date: 03/12/2025
+Date: 15/12/2025
 TimeZone: GMT
-Time: 09:51:14
-GameId:00000000
+Time: 07:01:23
+GameId:91320364
 GameType:NoLimit
 GameCurrency: $
-SmallBlindStake: 20
-BigBlindStake: 40
+SmallBlindStake: 2
+BigBlindStake: 5
 AnteStake: 0
 TableName: Governor of Poker
-Max number of players: 5
-MyPlayerName: kevin4637565
-DealerPosition: 4
-Seat 0 Nav 3740
-Seat 1 Luvdeniseouly 3000
-Seat 2 Victor 2420
-Seat 3 player699561 2860
-Seat 4 kevin4637565 2980
-SmallBlind: Nav 20
-BigBlind: Luvdeniseouly 40
-Dealt Cards: [AdKh]
-Move: Victor call_check 40
-Move: player699561 call_check 40
-Move: kevin4637565 raise_bet 2980
-Move: Nav call_check 2960
-Move: Luvdeniseouly call_check 2960
-Move: Victor folds 0
-Move: player699561 folds 0
-Move: Nav call_check 20
-FLOP Community Cards:[6c Ac 3s]
-TURN Community Cards:[6c Ac 3s 2d]
-Showdown: kevin4637565 [Ad Kh]
-Showdown: Nav [Ah 6d]
-Showdown: Luvdeniseouly [7c 9c]
-Winner: Nav 9060.00
+Max number of players: 7
+MyPlayerName: kevinLAS
+DealerPosition: 1
+Seat 0 lurSuk 500
+Seat 1 TheCricket_J 510
+Seat 2 Mgkr 649
+Seat 3 Tincmee 2305
+Seat 4 TIGERIBZ_J 647
+Seat 5 WtzNer 441
+Seat 6 kevinLAS 449
+SmallBlind: Mgkr 2
+BigBlind: Tincmee 5
+Dealt Cards: [Jc4c]
+Move: TIGERIBZ_J folds 0
+Move: WtzNer folds 0
+Move: kevinLAS folds 0
+Move: lurSuk folds 0
+Move: TheCricket_J folds 0
+Move: Mgkr folds 0
+Winner: Tincmee 7.00
 GameEnd
+
