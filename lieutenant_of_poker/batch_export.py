@@ -1,30 +1,13 @@
 """Batch export hand histories from a folder of videos."""
 
-import re
 import sys
 from pathlib import Path
 from typing import Optional
 
-from .analysis import analyze_video
-from .first_frame import TableInfo
-from .snowie_export import export_snowie
-from .pokerstars_export import export_pokerstars
-from .human_export import export_human
-from .action_log_export import export_action_log
+from .export import export_video
 
 
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
-
-# Matches gop3_YYYYMMDD_HHMMSS format
-TIMESTAMP_PATTERN = re.compile(r'_(\d{8})_(\d{6})')
-
-
-def extract_hand_id(filename: str) -> str | None:
-    """Extract hand ID from filename like gop3_20251203_095609.mp4 -> 20251203095609."""
-    match = TIMESTAMP_PATTERN.search(filename)
-    if match:
-        return match.group(1) + match.group(2)
-    return None
 
 
 def batch_export(
@@ -72,27 +55,10 @@ def batch_export(
         print(f"[{i}/{len(videos)}] {video.name}", file=sys.stderr, end=" ")
 
         try:
-            table_info = TableInfo.from_video(str(video))
-            button = table_info.button_index or 0
-            names = list(table_info.names)
-
-            states = analyze_video(str(video), max_rake_pct=max_rake_pct)
-            if not states:
-                print("-> no hands", file=sys.stderr)
-                continue
-
-            if fmt == "snowie":
-                hand_id = extract_hand_id(video.name)
-                output = export_snowie(states, button, names, hand_id=hand_id)
-            elif fmt == "human":
-                output = export_human(states, button, names)
-            elif fmt == "actions":
-                output = export_action_log(states, button, names)
-            else:
-                output = export_pokerstars(states, button, names)
+            output = export_video(str(video), fmt, max_rake_pct)
 
             if not output:
-                print("-> empty", file=sys.stderr)
+                print("-> no hands", file=sys.stderr)
                 continue
 
             out_file.write_text(output)

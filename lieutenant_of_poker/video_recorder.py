@@ -118,7 +118,8 @@ def run_recording_session(
 
     print("\nAvailable windows:", file=sys.stderr)
     for i, win in enumerate(candidates, 1):
-        print(f"  {i}. {win}", file=sys.stderr)
+        width, height = win.bounds[2], win.bounds[3]
+        print(f"  {i}. {win.owner_name}: {win.title} (video: {width}x{height})", file=sys.stderr)
 
     if len(candidates) == 1:
         selected = candidates[0]
@@ -135,6 +136,50 @@ def run_recording_session(
         except (ValueError, EOFError):
             print("Invalid selection.", file=sys.stderr)
             sys.exit(1)
+
+    # Check window dimensions - wait for user to resize if needed
+    target_width, target_height = 1342, 960
+    current_width, current_height = selected.bounds[2], selected.bounds[3]
+
+    if current_width != target_width or current_height != target_height:
+        print(f"\nWindow size: {current_width}x{current_height}", file=sys.stderr)
+        print(f"Expected size: {target_width}x{target_height}", file=sys.stderr)
+        print(f"\nPlease resize the window manually. Waiting for correct size...", file=sys.stderr)
+
+        stable_start = None
+        stable_duration = 1.0  # seconds window must stay at correct size
+
+        while True:
+            time.sleep(0.2)
+            # Re-fetch window info
+            updated_windows = get_candidate_windows(min_width=100, min_height=100)
+            current_win = None
+            for w in updated_windows:
+                if w.window_id == selected.window_id:
+                    current_win = w
+                    break
+
+            if current_win is None:
+                print("\rWindow closed or not found.", file=sys.stderr)
+                sys.exit(1)
+
+            current_width, current_height = current_win.bounds[2], current_win.bounds[3]
+
+            if current_width == target_width and current_height == target_height:
+                if stable_start is None:
+                    stable_start = time.time()
+                elapsed = time.time() - stable_start
+                remaining = stable_duration - elapsed
+                if remaining <= 0:
+                    print(f"\r{current_width}x{current_height} - Correct! Proceeding...          ", file=sys.stderr)
+                    break
+                else:
+                    print(f"\r{current_width}x{current_height} - Correct! Hold for {remaining:.1f}s...   ", file=sys.stderr, end="", flush=True)
+            else:
+                stable_start = None
+                print(f"\r{current_width}x{current_height} (need {target_width}x{target_height})   ", file=sys.stderr, end="", flush=True)
+
+        print(file=sys.stderr)  # newline after the loop
 
     try:
         capture = ScreenCaptureKitCapture(window_id=selected.window_id)

@@ -65,6 +65,9 @@ def format_snowie(hand: dict, hand_id: str | None = None, showdown: ShowdownConf
 
     f.write(f"SmallBlind: {sb['name']} {hand['small_blind']}\n")
     f.write(f"BigBlind: {bb['name']} {hand['big_blind']}\n")
+    for db in hand.get("dead_blinds", []):
+        poster = hand["players"][db["seat"]]
+        f.write(f"DeadBlind: {poster['name']} {db['amount']}\n")
 
     if hand["hero_cards"]:
         f.write(f"Dealt Cards: [{''.join(hand['hero_cards'])}]\n")
