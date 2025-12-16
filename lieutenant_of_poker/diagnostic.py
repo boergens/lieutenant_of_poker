@@ -324,6 +324,7 @@ def diagnose(
 
             # --- Blind Detection (First Frame) ---
             from .first_frame import detect_blinds
+            from .chip_ocr import get_money_region
 
             blind_step = {
                 "name": "Blind Detection (First Frame)",
@@ -347,10 +348,18 @@ def diagnose(
                     substep["description"] = f"Position {r['position']}"
                     substep["match_info"] = f"Template: {r['template_score']:.3f}, Empty: {r['is_empty_felt']}, Indicator: {r['has_indicator']}"
 
+                    images = []
                     if r["region"] is not None:
-                        substep["images"] = [
-                            ("Blind Region (10x10)", _image_to_base64(r["region"])),
-                        ]
+                        images.append(("Blind Region (10x10)", _image_to_base64(r["region"])))
+
+                    # Add the OCR region used for amount extraction
+                    ocr_region = get_money_region(frame, r["position"], no_currency=no_currency)
+                    if ocr_region is not None and ocr_region.size > 0:
+                        images.append(("OCR Region", _image_to_base64(ocr_region)))
+                        images.append(("OCR Input", _image_to_base64(preprocess_for_ocr(ocr_region))))
+
+                    if images:
+                        substep["images"] = images
 
                     if r["amount"] is not None:
                         substep["parsed_result"] = f"Amount: {r['amount']}"
