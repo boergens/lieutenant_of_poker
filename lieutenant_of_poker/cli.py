@@ -194,7 +194,7 @@ def main():
             from lieutenant_of_poker.frame_extractor import extract_frames
             extract_frames(args.video, Path(args.output_dir), args.format, args.start_ms, args.end_ms)
 
-        elif args.command == "analyze":
+        elif args.command in ("analyze", "analyse"):
             from lieutenant_of_poker.analysis import analyze_and_print
             analyze_and_print(args.video, args.verbose, args.rake)
 
