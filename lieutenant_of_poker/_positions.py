@@ -23,7 +23,7 @@ BLIND_POSITIONS: tuple[tuple[int, int] | None, ...] = (
     (964, 295),   # Seat 1: top right
     (977, 480),   # Seat 2: right
     (857, 572),   # Seat 3: bottom right
-    None,         # Seat 4: bottom left (unknown)
-    None,         # Seat 5: left (unknown)
+    (430, 572),   # Seat 4: bottom left
+    (336, 480),   # Seat 5: left
     (363, 295),   # Seat 6: top left
 )
