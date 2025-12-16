@@ -86,7 +86,7 @@ def _parse_amount(text: str, no_currency: bool) -> Optional[int]:
     text = text.strip().upper()
 
     # OCR sometimes reads action text instead of chip amount
-    if any(word in text for word in ("BLIND", "FOLD", "ANTE", "SMALL")):
+    if any(word in text for word in ("BLIND", "OLD", "ANTE", "SMALL")):
         return None
 
     # Common OCR mistakes
