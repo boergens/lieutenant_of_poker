@@ -264,6 +264,52 @@ def diagnose(
                 money_step["success"] = False
             steps.append(money_step)
 
+        # --- Blind Detection (First Frame) ---
+        # Only show when no specific timestamp was requested (analyzing frame 0)
+        if frame_number is None and timestamp_s is None:
+            from .first_frame import detect_blinds
+
+            blind_step = {
+                "name": "Blind Detection (First Frame)",
+                "description": "Detecting blind indicators at seat positions",
+                "substeps": [],
+                "success": True,
+            }
+
+            no_currency, blind_results = detect_blinds(frame, list(range(7)))
+
+            for r in blind_results:
+                substep = {
+                    "name": f"Seat {r['seat_index']}",
+                    "success": r["amount"] is not None,
+                }
+
+                if r["position"] is None:
+                    substep["description"] = "No blind position defined"
+                    substep["parsed_result"] = "(skipped)"
+                else:
+                    substep["description"] = f"Position {r['position']}"
+                    substep["match_info"] = f"Template: {r['template_score']:.3f}, Empty: {r['is_empty_felt']}, Indicator: {r['has_indicator']}"
+
+                    if r["region"] is not None:
+                        substep["images"] = [
+                            ("Blind Region (10x10)", _image_to_base64(r["region"])),
+                        ]
+
+                    if r["amount"] is not None:
+                        substep["parsed_result"] = f"Amount: {r['amount']}"
+                    elif r["has_indicator"]:
+                        substep["parsed_result"] = "Indicator found, no amount"
+                    elif not r["is_empty_felt"]:
+                        substep["parsed_result"] = "Content found, no amount"
+                    else:
+                        substep["parsed_result"] = "Empty"
+
+                blind_step["substeps"].append(substep)
+
+            blind_step["parsed_result"] = f"Currency: {'none' if no_currency else 'detected'}"
+            steps.append(blind_step)
+
         # --- Hero Detection (for splitter) ---
         from ._detection import detect_hero_cards
         from .fast_ocr import ocr_name_at_position, get_name_region

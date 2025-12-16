@@ -25,6 +25,11 @@ for _template_path in sorted(_TEMPLATES_DIR.glob("blind_debug_seat*.png")):
     if _template is not None:
         _BLIND_TEMPLATES.append(_template)
 
+# Load active seat templates (card back pattern shown for non-hero active players)
+_ASSETS_DIR = Path(__file__).parent / "assets"
+_ACTIVE_SEAT_LEFT = cv2.imread(str(_ASSETS_DIR / "active_seat_left.png"))
+_ACTIVE_SEAT_RIGHT = cv2.imread(str(_ASSETS_DIR / "active_seat_right.png"))
+
 
 def _has_blind_indicator(frame: np.ndarray, pos: Tuple[int, int], threshold: float = 0.8) -> bool:
     """
@@ -104,6 +109,103 @@ def _is_empty_felt(frame: np.ndarray, pos: Tuple[int, int], region_size: int = 2
     return is_green and is_uniform
 
 
+def _get_template_score(frame: np.ndarray, pos: Tuple[int, int]) -> float:
+    """Get best template match score for a blind indicator at position."""
+    if not _BLIND_TEMPLATES:
+        return 0.0
+
+    px, py = pos
+    height, width = frame.shape[:2]
+
+    if px < 0 or py < 0 or px + 10 > width or py + 10 > height:
+        return 0.0
+
+    region = frame[py:py + 10, px:px + 10]
+    if region.shape != (10, 10, 3):
+        return 0.0
+
+    best_score = 0.0
+    for template in _BLIND_TEMPLATES:
+        result = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
+        score = result[0, 0]
+        if score > best_score:
+            best_score = score
+    return best_score
+
+
+def detect_blinds(frame: np.ndarray, seat_indices: List[int]) -> tuple[bool, List[dict]]:
+    """
+    Detect blinds at specified seat positions.
+
+    Args:
+        frame: BGR game frame.
+        seat_indices: List of seat indices to check.
+
+    Returns:
+        Tuple of (no_currency, results) where results is a list of dicts with:
+        seat_index, position, region, template_score, is_empty_felt, has_indicator, amount
+    """
+    from .chip_ocr import extract_money_at
+
+    # First pass: check if any blind indicator found (determines currency mode)
+    any_indicator = False
+    for seat_idx in seat_indices:
+        blind_pos = _BLIND_POSITIONS[seat_idx]
+        if blind_pos is not None and _has_blind_indicator(frame, blind_pos):
+            any_indicator = True
+            break
+
+    no_currency = not any_indicator
+
+    results = []
+    for seat_idx in seat_indices:
+        blind_pos = _BLIND_POSITIONS[seat_idx]
+
+        if blind_pos is None:
+            results.append({
+                "seat_index": seat_idx,
+                "position": None,
+                "region": None,
+                "template_score": 0.0,
+                "is_empty_felt": True,
+                "has_indicator": False,
+                "amount": None,
+            })
+            continue
+
+        px, py = blind_pos
+        height, width = frame.shape[:2]
+
+        # Extract 10x10 region
+        region = None
+        if 0 <= px and 0 <= py and px + 10 <= width and py + 10 <= height:
+            region = frame[py:py + 10, px:px + 10]
+
+        template_score = _get_template_score(frame, blind_pos)
+        is_empty = _is_empty_felt(frame, blind_pos)
+        has_indicator = _has_blind_indicator(frame, blind_pos)
+
+        # Extract amount based on currency mode
+        amount = None
+        if no_currency:
+            if not is_empty:
+                amount = extract_money_at(frame, blind_pos, no_currency=True)
+        elif has_indicator:
+            amount = extract_money_at(frame, blind_pos, no_currency=False)
+
+        results.append({
+            "seat_index": seat_idx,
+            "position": blind_pos,
+            "region": region,
+            "template_score": template_score,
+            "is_empty_felt": is_empty,
+            "has_indicator": has_indicator,
+            "amount": amount,
+        })
+
+    return no_currency, results
+
+
 @dataclass(frozen=True)
 class TableInfo:
     """
@@ -161,14 +263,20 @@ class TableInfo:
         if not frames:
             raise ValueError(f"Could not extract any frames from video: {video_path}")
 
-        # Collect votes for each position
-        position_votes = {i: [] for i in range(len(_SEAT_POSITIONS))}
+        # Detect active seats using card pattern matching
+        from .card_matcher import is_seat_active
+        first_frame = frames[0]
+        active_seats = [i for i, pos in enumerate(_SEAT_POSITIONS) if is_seat_active(first_frame, pos)]
+
+        # Collect name votes for active positions
+        position_votes = {i: [] for i in active_seats}
         button_votes = []
         hero_cards = ()
 
         for frame in frames:
-            # OCR each position
-            for i, (pos_x, pos_y) in enumerate(_SEAT_POSITIONS):
+            # OCR each active position
+            for i in active_seats:
+                pos_x, pos_y = _SEAT_POSITIONS[i]
                 x = pos_x
                 y = pos_y - cls._NAME_HEIGHT
                 region = frame[y:y + cls._NAME_HEIGHT, x:x + cls._NAME_WIDTH]
@@ -185,51 +293,24 @@ class TableInfo:
                     button_center = (max_loc[0] + tw // 2, max_loc[1] + th // 2)
                     button_votes.append(button_center)
 
-        # Majority vote: position is active if detected in 2+ frames
-        # Track seat indices for blind position mapping
+        # Build player list from active seats
         names = []
         positions = []
-        seat_indices = []  # Original seat index for each active player
-        for i, votes in position_votes.items():
-            if len(votes) >= 2:
-                # Most common name for this position
+        seat_indices = []
+        for i in active_seats:
+            votes = position_votes[i]
+            if votes:
                 name = Counter(votes).most_common(1)[0][0]
-                names.append(name)
-                positions.append(_SEAT_POSITIONS[i])
-                seat_indices.append(i)
-
-        # Check if any blind indicator is found at known positions
-        # If none found, switch to no-currency mode (shift money boxes left)
-        first_frame = frames[0]
-        any_blind_found = False
-        for seat_idx in seat_indices:
-            blind_pos = _BLIND_POSITIONS[seat_idx]
-            if blind_pos is not None and _has_blind_indicator(first_frame, blind_pos):
-                any_blind_found = True
-                break
-        no_currency = not any_blind_found
-
-        # Extract blind amounts from first frame only (no consensus)
-        # Currency mode: only extract if blind indicator template matches
-        # No-currency mode: extract if region is not empty felt
-        blind_amounts_by_seat = []
-        for seat_idx in seat_indices:
-            blind_pos = _BLIND_POSITIONS[seat_idx]
-            if blind_pos is None:
-                blind_amounts_by_seat.append(None)
-            elif no_currency:
-                # No currency: check if region has content (not empty felt)
-                if not _is_empty_felt(first_frame, blind_pos):
-                    amount = extract_money_at(first_frame, blind_pos, no_currency=True)
-                    blind_amounts_by_seat.append(amount)
-                else:
-                    blind_amounts_by_seat.append(None)
-            elif _has_blind_indicator(first_frame, blind_pos):
-                # Currency mode: use template matching
-                amount = extract_money_at(first_frame, blind_pos, no_currency=False)
-                blind_amounts_by_seat.append(amount)
             else:
-                blind_amounts_by_seat.append(None)
+                name = f"Player_{i}"
+            names.append(name)
+            positions.append(_SEAT_POSITIONS[i])
+            seat_indices.append(i)
+
+        # Detect blinds using first frame
+        first_frame = frames[0]
+        no_currency, blind_results = detect_blinds(first_frame, seat_indices)
+        blind_amounts_by_seat = [r["amount"] for r in blind_results]
 
         # Find hero and rotate
         if names:

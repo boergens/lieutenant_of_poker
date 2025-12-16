@@ -9,12 +9,18 @@ Suits: h (hearts), d (diamonds), c (clubs), s (spades)
 from pathlib import Path
 from typing import Optional
 
+import cv2
 import numpy as np
 
 from .image_matcher import match_image
 
 # Library locations
 LIBRARY_DIR = Path(__file__).parent / "card_library"
+ASSETS_DIR = Path(__file__).parent / "assets"
+
+# Load active seat templates (card back pattern for non-hero active players)
+_ACTIVE_SEAT_LEFT = cv2.imread(str(ASSETS_DIR / "active_seat_left.png"))
+_ACTIVE_SEAT_RIGHT = cv2.imread(str(ASSETS_DIR / "active_seat_right.png"))
 COMMUNITY_LIBRARY = "community"
 HERO_LIBRARY = "hero"
 
@@ -103,6 +109,55 @@ def match_hero_cards(frame: np.ndarray, hero_position: tuple[int, int]) -> list[
         _match_card(left_rank, left_suit, HERO_LIBRARY),
         _match_card(right_rank, right_suit, HERO_LIBRARY),
     ]
+
+
+# Active seat card region (larger than rank/suit, matches template size)
+_ACTIVE_CARD_SIZE = (30, 50)  # w, h - matches active_seat_*.png templates
+
+
+def is_seat_active(frame: np.ndarray, pos: tuple[int, int], threshold: float = 0.8) -> bool:
+    """
+    Check if a seat has an active player.
+
+    A seat is active if it shows either hero cards or the card back pattern.
+
+    Args:
+        frame: BGR game frame.
+        pos: (x, y) seat position coordinates.
+        threshold: Minimum match score for template matching.
+
+    Returns:
+        True if seat has an active player.
+    """
+    # First check for hero cards
+    cards = match_hero_cards(frame, pos)
+    if any(c is not None for c in cards):
+        return True
+
+    # Check for card back pattern
+    if _ACTIVE_SEAT_LEFT is None or _ACTIVE_SEAT_RIGHT is None:
+        return False
+
+    px, py = pos
+    left_region = (px + HERO_RANK_OFFSET[0], py + HERO_RANK_OFFSET[1], *_ACTIVE_CARD_SIZE)
+    right_region = _offset_region(left_region, HERO_CARD_SPACING)
+
+    left_img = _extract_region(frame, left_region)
+    right_img = _extract_region(frame, right_region)
+
+    # Match left template
+    if left_img.shape[:2] == _ACTIVE_SEAT_LEFT.shape[:2]:
+        result = cv2.matchTemplate(left_img, _ACTIVE_SEAT_LEFT, cv2.TM_CCOEFF_NORMED)
+        if result[0, 0] >= threshold:
+            return True
+
+    # Match right template
+    if right_img.shape[:2] == _ACTIVE_SEAT_RIGHT.shape[:2]:
+        result = cv2.matchTemplate(right_img, _ACTIVE_SEAT_RIGHT, cv2.TM_CCOEFF_NORMED)
+        if result[0, 0] >= threshold:
+            return True
+
+    return False
 
 
 def match_community_cards(frame: np.ndarray, num_cards: int = 5) -> list[Optional[str]]:
