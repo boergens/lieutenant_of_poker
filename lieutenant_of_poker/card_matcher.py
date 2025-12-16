@@ -115,7 +115,7 @@ def match_hero_cards(frame: np.ndarray, hero_position: tuple[int, int]) -> list[
 _ACTIVE_CARD_SIZE = (30, 50)  # w, h - matches active_seat_*.png templates
 
 
-def is_seat_active(frame: np.ndarray, pos: tuple[int, int], threshold: float = 0.8) -> bool:
+def is_seat_active(frame: np.ndarray, pos: tuple[int, int], threshold: float = 0.7) -> bool:
     """
     Check if a seat has an active player.
 

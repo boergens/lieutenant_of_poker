@@ -1,16 +1,16 @@
 GameStart
 PokerClient: ExportFormat
-Date: 15/12/2025
+Date: 16/12/2025
 TimeZone: GMT
-Time: 20:55:21
-GameId:63854154
+Time: 07:27:55
+GameId:31676047
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 2
 BigBlindStake: 5
 AnteStake: 0
 TableName: Governor of Poker
-Max number of players: 6
+Max number of players: 7
 MyPlayerName: kevinLAS
 DealerPosition: 2
 Seat 0 lurSuk 500
@@ -18,10 +18,12 @@ Seat 1 TheCricket_9 510
 Seat 2 Mgkr 647
 Seat 3 TincmeeO 2307
 Seat 4 TIGERIBZ_LJ 647
-Seat 5 kevinLAS 449
+Seat 5 WtzN8r_9 100
+Seat 6 kevinLAS 449
 SmallBlind: TincmeeO 2
 BigBlind: TIGERIBZ_LJ 5
 Dealt Cards: [9c2h]
+Move: WtzN8r_9 folds 0
 Move: kevinLAS folds 0
 Move: lurSuk folds 0
 Move: TheCricket_9 folds 0

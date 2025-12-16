@@ -1,30 +1,32 @@
 GameStart
 PokerClient: ExportFormat
-Date: 15/12/2025
+Date: 16/12/2025
 TimeZone: GMT
-Time: 20:55:57
-GameId:45929596
+Time: 07:29:24
+GameId:18140221
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 75
 BigBlindStake: 150
 AnteStake: 0
 TableName: Governor of Poker
-Max number of players: 6
+Max number of players: 7
 MyPlayerName: kevinLAS
-DealerPosition: 1
+DealerPosition: 2
 Seat 0 BAbhiiO 4981
-Seat 1 ali12721921 5270
-Seat 2 alucard94O 4729
-Seat 3 sadamzi2 10292
-Seat 4 RK44 5400
-Seat 5 kevinLAS 4966
+Seat 1 Saz90 4559
+Seat 2 ali12721921 5270
+Seat 3 alucard94O 4729
+Seat 4 sadamzi2 10292
+Seat 5 RK44 5400
+Seat 6 kevinLAS 4966
 SmallBlind: alucard94O 75
 BigBlind: sadamzi2 150
 Dealt Cards: [TsTc]
 Move: RK44 raise_bet 300
 Move: kevinLAS call_check 300
 Move: BAbhiiO folds 0
+Move: Saz90 folds 0
 Move: ali12721921 call_check 300
 Move: alucard94O folds 0
 Move: sadamzi2 folds 0

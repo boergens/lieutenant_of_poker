@@ -264,9 +264,65 @@ def diagnose(
                 money_step["success"] = False
             steps.append(money_step)
 
-        # --- Blind Detection (First Frame) ---
+        # --- Active Seat Detection (First Frame) ---
         # Only show when no specific timestamp was requested (analyzing frame 0)
         if frame_number is None and timestamp_s is None:
+            from .card_matcher import is_seat_active, match_hero_cards, _ACTIVE_SEAT_LEFT, _ACTIVE_SEAT_RIGHT
+            from ._positions import SEAT_POSITIONS
+
+            active_step = {
+                "name": "Active Seat Detection (First Frame)",
+                "description": "Detecting which seats have active players",
+                "substeps": [],
+                "success": True,
+            }
+
+            active_seats = []
+            for i, pos in enumerate(SEAT_POSITIONS):
+                is_active = is_seat_active(frame, pos)
+                hero_cards = match_hero_cards(frame, pos)
+                has_hero_cards = any(c is not None for c in hero_cards)
+
+                # Extract card regions for display
+                from .card_matcher import HERO_RANK_OFFSET, _ACTIVE_CARD_SIZE, HERO_CARD_SPACING
+                px, py = pos
+                left_x = px + HERO_RANK_OFFSET[0]
+                left_y = py + HERO_RANK_OFFSET[1]
+                w, h = _ACTIVE_CARD_SIZE
+                right_x = left_x + HERO_CARD_SPACING
+
+                left_region = frame[left_y:left_y+h, left_x:left_x+w]
+                right_region = frame[left_y:left_y+h, right_x:right_x+w]
+
+                # Calculate template scores
+                left_score = 0.0
+                right_score = 0.0
+                if _ACTIVE_SEAT_LEFT is not None and left_region.shape[:2] == _ACTIVE_SEAT_LEFT.shape[:2]:
+                    result = cv2.matchTemplate(left_region, _ACTIVE_SEAT_LEFT, cv2.TM_CCOEFF_NORMED)
+                    left_score = result[0, 0]
+                if _ACTIVE_SEAT_RIGHT is not None and right_region.shape[:2] == _ACTIVE_SEAT_RIGHT.shape[:2]:
+                    result = cv2.matchTemplate(right_region, _ACTIVE_SEAT_RIGHT, cv2.TM_CCOEFF_NORMED)
+                    right_score = result[0, 0]
+
+                substep = {
+                    "name": f"Seat {i}",
+                    "description": f"Position {pos}",
+                    "images": [
+                        ("Left Card Region", _image_to_base64(left_region)),
+                        ("Right Card Region", _image_to_base64(right_region)),
+                    ],
+                    "match_info": f"Hero cards: {hero_cards}, Left template: {left_score:.3f}, Right template: {right_score:.3f}",
+                    "parsed_result": "ACTIVE" if is_active else "inactive",
+                    "success": is_active,
+                }
+                active_step["substeps"].append(substep)
+                if is_active:
+                    active_seats.append(i)
+
+            active_step["parsed_result"] = f"Active seats: {active_seats}"
+            steps.append(active_step)
+
+            # --- Blind Detection (First Frame) ---
             from .first_frame import detect_blinds
 
             blind_step = {
