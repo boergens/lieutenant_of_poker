@@ -307,6 +307,35 @@ class TableInfo:
             positions.append(_SEAT_POSITIONS[i])
             seat_indices.append(i)
 
+        # Button: find closest seat (may be inactive), then adjust
+        button_player_idx = None
+        if button_votes and active_seats:
+            button_pos = Counter(button_votes).most_common(1)[0][0]
+            bx, by = button_pos
+
+            # Find closest seat (including inactive ones)
+            min_dist = float('inf')
+            closest_seat = 0
+            for seat_idx, (px, py) in enumerate(_SEAT_POSITIONS):
+                dist = (px - bx) ** 2 + (py - by) ** 2
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_seat = seat_idx
+
+            # If closest seat is inactive, move button to previous active seat
+            # (counter-clockwise = decreasing seat index)
+            # The button would have gone to this player if the inactive seat wasn't there
+            if closest_seat not in active_seats:
+                for offset in range(1, len(_SEAT_POSITIONS)):
+                    prev_seat = (closest_seat - offset) % len(_SEAT_POSITIONS)
+                    if prev_seat in active_seats:
+                        closest_seat = prev_seat
+                        break
+
+            # Convert seat index to player index (before rotation)
+            if closest_seat in seat_indices:
+                button_player_idx = seat_indices.index(closest_seat)
+
         # Detect blinds using first frame
         first_frame = frames[0]
         no_currency, blind_results = detect_blinds(first_frame, seat_indices)
@@ -321,6 +350,9 @@ class TableInfo:
             names = names[hero_idx + 1:] + names[:hero_idx + 1]
             positions = positions[hero_idx + 1:] + positions[:hero_idx + 1]
             blind_amounts_by_seat = blind_amounts_by_seat[hero_idx + 1:] + blind_amounts_by_seat[:hero_idx + 1]
+            # Rotate button index too
+            if button_player_idx is not None:
+                button_player_idx = (button_player_idx - hero_idx - 1) % len(names)
 
         # Now detect hero cards using hero's position
         hero_cards = ()
@@ -331,17 +363,7 @@ class TableInfo:
                 if hero_cards:
                     break
 
-        # Button: majority vote, then find closest player
-        button_index = None
-        if button_votes and positions:
-            button_pos = Counter(button_votes).most_common(1)[0][0]
-            min_dist = float('inf')
-            for idx, (px, py) in enumerate(positions):
-                bx, by = button_pos
-                dist = (px - bx) ** 2 + (py - by) ** 2
-                if dist < min_dist:
-                    min_dist = dist
-                    button_index = idx
+        button_index = button_player_idx
 
         return cls(
             names=tuple(names),
