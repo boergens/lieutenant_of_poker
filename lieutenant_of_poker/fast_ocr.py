@@ -195,8 +195,11 @@ def ocr_digits(image: np.ndarray, category: str = "other") -> str:
     return result
 
 
+_tess_name_api_word = None
+
+
 def _get_tess_name_api() -> tesserocr.PyTessBaseAPI:
-    """Get or create tesseract API for name OCR."""
+    """Get or create tesseract API for name OCR (SINGLE_LINE mode)."""
     global _tess_name_api
     if _tess_name_api is None:
         _tess_name_api = tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_LINE)
@@ -205,6 +208,18 @@ def _get_tess_name_api() -> tesserocr.PyTessBaseAPI:
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
         )
     return _tess_name_api
+
+
+def _get_tess_name_api_word() -> tesserocr.PyTessBaseAPI:
+    """Get or create tesseract API for name OCR (SINGLE_WORD fallback mode)."""
+    global _tess_name_api_word
+    if _tess_name_api_word is None:
+        _tess_name_api_word = tesserocr.PyTessBaseAPI(psm=tesserocr.PSM.SINGLE_WORD)
+        _tess_name_api_word.SetVariable(
+            "tessedit_char_whitelist",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+        )
+    return _tess_name_api_word
 
 
 def ocr_name(image: np.ndarray) -> str | None:
@@ -223,6 +238,12 @@ def ocr_name(image: np.ndarray) -> str | None:
         api = _get_tess_name_api()
         api.SetImage(Image.fromarray(processed))
         text = api.GetUTF8Text().strip()
+
+        # Fallback to SINGLE_WORD mode if SINGLE_LINE returns nothing
+        if not text:
+            api_word = _get_tess_name_api_word()
+            api_word.SetImage(Image.fromarray(processed))
+            text = api_word.GetUTF8Text().strip()
 
     # Sanitize: replace spaces with underscores, remove invalid chars
     text = text.replace(' ', '_')
