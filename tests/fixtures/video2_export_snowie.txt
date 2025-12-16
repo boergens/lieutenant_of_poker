@@ -2,8 +2,8 @@ GameStart
 PokerClient: ExportFormat
 Date: 15/12/2025
 TimeZone: GMT
-Time: 07:01:28
-GameId:56050913
+Time: 19:20:49
+GameId:95988082
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 2
@@ -16,9 +16,9 @@ DealerPosition: 2
 Seat 0 lurSuk 500
 Seat 1 TheCricket_9 510
 Seat 2 Mgkr 647
-Seat 3 TincmeeO 1181102
-Seat 4 TIGERIBZ_LJ 181105
-Seat 5 WtzN8r_9 441
+Seat 3 TincmeeO 2307
+Seat 4 TIGERIBZ_LJ 647
+Seat 5 WtzN8r_9 100
 Seat 6 kevinLAS 449
 SmallBlind: TincmeeO 2
 BigBlind: TIGERIBZ_LJ 5
@@ -31,4 +31,5 @@ Move: Mgkr folds 0
 Move: TincmeeO folds 0
 Winner: TIGERIBZ_LJ 7.00
 GameEnd
+
 

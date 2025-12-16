@@ -2,8 +2,8 @@ GameStart
 PokerClient: ExportFormat
 Date: 15/12/2025
 TimeZone: GMT
-Time: 07:01:32
-GameId:55665139
+Time: 19:21:06
+GameId:33445316
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 2
@@ -17,8 +17,8 @@ Seat 0 lurSuk 500
 Seat 1 TheCricket_9 617
 Seat 2 Mgkr 647
 Seat 3 Tincmee9 2305
-Seat 4 TIGERIBZ 1181102
-Seat 5 ShuriMuri 181105
+Seat 4 TIGERIBZ 642
+Seat 5 ShuriMuri 500
 Seat 6 kevinLAS 449
 SmallBlind: TIGERIBZ 2
 BigBlind: ShuriMuri 5
@@ -31,4 +31,5 @@ Move: Tincmee9 folds 0
 Move: TIGERIBZ folds 0
 Winner: ShuriMuri 7.00
 GameEnd
+
 
