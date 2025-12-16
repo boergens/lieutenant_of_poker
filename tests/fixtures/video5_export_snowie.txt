@@ -1,0 +1,28 @@
+GameStart
+PokerClient: ExportFormat
+Date: 16/12/2025
+TimeZone: GMT
+Time: 06:03:45
+GameId:46969565
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 75
+BigBlindStake: 150
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 4
+MyPlayerName: kevinLAS
+DealerPosition: 0
+Seat 0 January2273 5150
+Seat 1 rasetfsO 5246
+Seat 2 gypsykim 1173
+Seat 3 kevinLAS 4647
+SmallBlind: rasetfsO 75
+BigBlind: gypsykim 150
+Dealt Cards: [3dTc]
+Move: kevinLAS folds 0
+Move: January2273 folds 0
+Move: rasetfsO folds 0
+Winner: gypsykim 225.00
+GameEnd
+
