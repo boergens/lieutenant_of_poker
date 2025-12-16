@@ -209,9 +209,16 @@ def split_video_by_hero(
 
             progress.update(task, completed=total_frames)
 
+    def format_time(ms: float) -> str:
+        """Format milliseconds as m:ss."""
+        total_secs = int(ms / 1000)
+        mins = total_secs // 60
+        secs = total_secs % 60
+        return f"{mins}:{secs:02d}"
+
     print(f"\nDetected {len(segments)} segments:", file=sys.stderr)
     for i, seg in enumerate(segments):
-        print(f"  {i+1}. {seg.start_ms/1000:.2f}s - {seg.end_ms/1000:.2f}s ({seg.duration_s:.1f}s)", file=sys.stderr)
+        print(f"  {i+1}. {seg.start_ms/1000:.2f}s - {seg.end_ms/1000:.2f}s [{format_time(seg.start_ms)} - {format_time(seg.end_ms)}] ({seg.duration_s:.1f}s)", file=sys.stderr)
 
     if not segments:
         print("\nNo segments found.", file=sys.stderr)
