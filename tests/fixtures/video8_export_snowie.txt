@@ -1,0 +1,33 @@
+GameStart
+PokerClient: ExportFormat
+Date: 16/12/2025
+TimeZone: GMT
+Time: 11:32:27
+GameId:61677481
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 100
+BigBlindStake: 200
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 6
+MyPlayerName: kevinLAS9
+DealerPosition: 3
+Seat 0 January2273 3952
+Seat 1 jadongy 15694
+Seat 2 tsunami97 12277
+Seat 3 clif1278 4251
+Seat 4 gypsykim 2752
+Seat 5 kevinLAS9 4622
+SmallBlind: gypsykim 100
+BigBlind: kevinLAS9 200
+Dealt Cards: [4sAc]
+Move: January2273 folds 0
+Move: jadongy folds 0
+Move: tsunami97 folds 0
+Move: clif1278 folds 0
+Move: gypsykim folds 0
+Winner: kevinLAS9 300.00
+GameEnd
+
+
