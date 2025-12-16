@@ -147,6 +147,9 @@ def analyze_video(
 
     states = []
     pending_buffer = []  # Buffer for valid frames proposing a state change
+    # Accumulated state for filling in missing values (persists across rejected frames)
+    accumulated_pot = None
+    accumulated_chips = [None] * len(table.names)
 
     with VideoFrameExtractor(video_path) as video:
         total_frames = video.frame_count
@@ -169,23 +172,21 @@ def analyze_video(
                 chips = extract_player_money(frame, table, i)
                 player_chips.append(chips)
 
+            # Update accumulated values with any new readings
+            if pot is not None:
+                accumulated_pot = pot
+            for i, chips in enumerate(player_chips):
+                if chips is not None:
+                    accumulated_chips[i] = chips
+
             state = {
                 "frame_number": frame_info.frame_number,
                 "timestamp_ms": frame_info.timestamp_ms,
                 "community_cards": community,
-                "pot": pot,
-                "players": [{"name": name, "chips": chips}
-                           for name, chips in zip(table.names, player_chips)],
+                "pot": accumulated_pot,
+                "players": [{"name": name, "chips": accumulated_chips[i]}
+                           for i, name in enumerate(table.names)],
             }
-
-            # First state - just accept it
-            if not states:
-                if _is_complete(state):
-                    states.append(state)
-                elif include_rejected:
-                    state["rejected"] = True
-                    states.append(state)
-                continue
 
             # Get last accepted state
             current = None
@@ -194,16 +195,13 @@ def analyze_video(
                     current = s
                     break
 
+            # First accepted state - accept once accumulated state is complete
             if not current:
-                states.append(state)
-                continue
-
-            # Check completeness
-            if not _is_complete(state):
-                if include_rejected:
+                if _is_complete(state):
+                    states.append(state)
+                elif include_rejected:
                     state["rejected"] = True
                     states.append(state)
-                pending_buffer = []
                 continue
 
             # Validate transition

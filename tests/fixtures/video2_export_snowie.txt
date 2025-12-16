@@ -2,8 +2,8 @@ GameStart
 PokerClient: ExportFormat
 Date: 16/12/2025
 TimeZone: GMT
-Time: 07:27:55
-GameId:31676047
+Time: 08:53:28
+GameId:21554280
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 2
@@ -18,7 +18,7 @@ Seat 1 TheCricket_9 510
 Seat 2 Mgkr 647
 Seat 3 TincmeeO 2307
 Seat 4 TIGERIBZ_LJ 647
-Seat 5 WtzN8r_9 100
+Seat 5 WtzN8r_9 441
 Seat 6 kevinLAS 449
 SmallBlind: TincmeeO 2
 BigBlind: TIGERIBZ_LJ 5

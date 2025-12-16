@@ -1,0 +1,37 @@
+GameStart
+PokerClient: ExportFormat
+Date: 16/12/2025
+TimeZone: GMT
+Time: 09:13:12
+GameId:76971525
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 1
+BigBlindStake: 2
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 7
+MyPlayerName: kevinLAS
+DealerPosition: 2
+Seat 0 JK307 76
+Seat 1 Holy1 80
+Seat 2 GORILLAZ 200
+Seat 3 ironheartO 205
+Seat 4 Belgiandude_9 251
+Seat 5 Ubermensch98 274
+Seat 6 kevinLAS 210
+SmallBlind: ironheartO 1
+BigBlind: Belgiandude_9 2
+Dealt Cards: [KcQc]
+Move: Ubermensch98 folds 0
+Move: kevinLAS raise_bet 12
+Move: JK307 folds 0
+Move: Holy1 folds 0
+Move: GORILLAZ folds 0
+Move: ironheartO folds 0
+Move: Belgiandude_9 folds 0
+uncalled_bet: kevinLAS 10
+Winner: kevinLAS -5.00
+GameEnd
+
+
