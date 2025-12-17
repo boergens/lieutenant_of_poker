@@ -1,0 +1,40 @@
+GameStart
+PokerClient: ExportFormat
+Date: 16/12/2025
+TimeZone: GMT
+Time: 20:36:19
+GameId:64016017
+GameType:NoLimit
+GameCurrency: $
+SmallBlindStake: 400
+BigBlindStake: 800
+AnteStake: 0
+TableName: Governor of Poker
+Max number of players: 6
+MyPlayerName: kevinLASS
+DealerPosition: 4
+Seat 0 TheBlindi 36916
+Seat 1 nartykl 21594
+Seat 2 goki2000_9 40041
+Seat 3 Gabriel9607 45272
+Seat 4 wohverynice_o 33210
+Seat 5 kevinLASS 22184
+SmallBlind: kevinLASS 400
+BigBlind: TheBlindi 800
+Dealt Cards: [ThJc]
+Move: nartykl folds 0
+Move: goki2000_9 folds 0
+Move: Gabriel9607 call_check 800
+Move: wohverynice_o call_check 800
+Move: kevinLASS call_check 400
+Move: TheBlindi raise_bet 1600
+Move: Gabriel9607 call_check 800
+Move: wohverynice_o call_check 800
+Move: kevinLASS folds 0
+Showdown: kevinLASS [Th Jc]
+Showdown: TheBlindi [Ad 9s]
+Showdown: Gabriel9607 [2s 3d]
+Showdown: wohverynice_o [4d 8c]
+Winner: TheBlindi 5600.00
+GameEnd
+

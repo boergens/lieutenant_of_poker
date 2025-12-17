@@ -2,8 +2,8 @@ GameStart
 PokerClient: ExportFormat
 Date: 16/12/2025
 TimeZone: GMT
-Time: 11:32:27
-GameId:61677481
+Time: 20:33:12
+GameId:74616435
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 100
@@ -22,12 +22,16 @@ Seat 5 kevinLAS9 4622
 SmallBlind: gypsykim 100
 BigBlind: kevinLAS9 200
 Dealt Cards: [4sAc]
-Move: January2273 folds 0
-Move: jadongy folds 0
+Move: January2273 raise_bet 3952
+Move: jadongy raise_bet 15694
 Move: tsunami97 folds 0
 Move: clif1278 folds 0
 Move: gypsykim folds 0
-Winner: kevinLAS9 300.00
+Move: kevinLAS9 folds 0
+uncalled_bet: jadongy 11742
+Showdown: kevinLAS9 [4s Ac]
+Showdown: January2273 [Jh 3c]
+Showdown: jadongy [7c 5s]
+Winner: January2273 8204.00
 GameEnd
-
 

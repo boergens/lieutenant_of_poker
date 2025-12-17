@@ -5,12 +5,18 @@ Extracts chip counts, pot amounts, and bet values from game frames.
 """
 
 from collections import deque
-from typing import Optional, Tuple, Dict, TYPE_CHECKING
+from typing import Tuple, Dict, TYPE_CHECKING
 
 import cv2
 import numpy as np
 
-from .fast_ocr import ocr_digits, ocr_text
+from .fast_ocr import ocr_digits
+
+# Sentinel value indicating "Call" was detected instead of a chip amount
+CALL_DETECTED = "CALL"
+
+# Type for money values: either an int, CALL_DETECTED sentinel, or None
+MoneyValue = int | str | None
 
 
 def _image_fingerprint(image: np.ndarray) -> bytes:
@@ -26,9 +32,9 @@ class _Cache:
     """LRU cache for OCR results."""
 
     def __init__(self, max_size: int = 3):
-        self._cache: deque[Tuple[bytes, Optional[int]]] = deque(maxlen=max_size)
+        self._cache: deque[Tuple[bytes, MoneyValue]] = deque(maxlen=max_size)
 
-    def get(self, image: np.ndarray) -> Tuple[bool, Optional[int]]:
+    def get(self, image: np.ndarray) -> Tuple[bool, MoneyValue]:
         """Check cache for image. Returns (found, result)."""
         fp = _image_fingerprint(image)
         for cached_fp, result in self._cache:
@@ -36,16 +42,15 @@ class _Cache:
                 return True, result
         return False, None
 
-    def put(self, image: np.ndarray, result: Optional[int]) -> None:
+    def put(self, image: np.ndarray, result: MoneyValue) -> None:
         """Store result in cache."""
         fp = _image_fingerprint(image)
         self._cache.append((fp, result))
 
 
-# Module-level caches and stats
+# Module-level caches
 _pot_cache = _Cache()
 _player_caches: Dict[str, _Cache] = {}
-_ocr_calls = 0
 
 
 def _get_player_cache(position: int) -> _Cache:
@@ -56,85 +61,15 @@ def _get_player_cache(position: int) -> _Cache:
     return _player_caches[key]
 
 
-def get_ocr_calls() -> int:
-    """Get number of OCR calls (cache misses) since last clear."""
-    return _ocr_calls
-
-
 def clear_caches() -> None:
-    """Clear all OCR caches and reset stats."""
-    global _pot_cache, _player_caches, _ocr_calls
+    """Clear all OCR caches."""
+    global _pot_cache, _player_caches
     _pot_cache = _Cache()
     _player_caches = {}
-    _ocr_calls = 0
 
 
-def _parse_amount(text: str, no_currency: bool) -> Optional[int]:
-    """
-    Parse a numeric amount from OCR text.
-
-    Handles formats like "1,120", "2720", "1.5K", "2M", "0.12", "2.16".
-
-    Args:
-        text: OCR text to parse.
-        no_currency: If False, multiply by 100 to convert to cents.
-                     If True, return raw integer value.
-    """
-    if not text:
-        return None
-
-    text = text.strip().upper()
-
-    # OCR sometimes reads action text instead of chip amount
-    if any(word in text for word in ("BLIND", "OLD", "ANTE", "SMALL", "AISE", "ALL", "OUT")):
-        return None
-
-    # Common OCR mistakes
-    text = text.replace('O', '0').replace('I', '1').replace('L', '1')
-    text = text.replace('S', '5').replace('B', '8').replace('Z', '2')
-    text = text.replace('¢', '0').replace('C', '0')
-
-    # Handle K/M suffixes
-    multiplier = 1
-    if text.endswith('K'):
-        multiplier = 1000
-        text = text[:-1]
-    elif text.endswith('M'):
-        multiplier = 1000000
-        text = text[:-1]
-
-    # Remove commas and spaces
-    text = text.replace(',', '').replace(' ', '')
-
-    # Parse as float to handle decimals
-    # Keep only digits and decimal point
-    cleaned = ''.join(c for c in text if c.isdigit() or c == '.')
-
-    if cleaned:
-        try:
-            value = float(cleaned) * multiplier
-            if no_currency:
-                # No currency mode: return raw integer
-                return int(round(value))
-            else:
-                # Currency mode: convert to cents (multiply by 100)
-                return int(round(value * 100))
-        except ValueError:
-            pass
-
-    return None
-
-
-def _ocr_region(region: np.ndarray, category: str, no_currency: bool) -> Optional[int]:
-    """Extract amount from a region using matched filter OCR."""
-    global _ocr_calls
-
-    if region is None or region.size == 0:
-        return None
-
-    _ocr_calls += 1
-    text = ocr_digits(region, category=category)
-    return _parse_amount(text, no_currency)
+# Action words that indicate non-numeric content in money field
+_ACTION_WORDS = ("BLIND", "OLD", "ANTE", "SMALL", "OUT")
 
 
 # Money region parameters (relative to position)
@@ -150,7 +85,7 @@ _NO_CURRENCY_SHIFT = -15
 _POT_POS = (380, 97)
 
 
-def extract_pot(frame: np.ndarray, no_currency: bool) -> Optional[int]:
+def extract_pot(frame: np.ndarray, no_currency: bool) -> int | None:
     """
     Extract pot amount from a game frame.
 
@@ -167,7 +102,7 @@ def extract_pot(frame: np.ndarray, no_currency: bool) -> Optional[int]:
     if found:
         return cached
 
-    result = _ocr_region(pot_region, category="pot", no_currency=no_currency)
+    result = extract_money_at(frame, _POT_POS, no_currency)
     _pot_cache.put(pot_region, result)
     return result
 
@@ -208,7 +143,7 @@ def extract_money_at(
     frame: np.ndarray,
     pos: Tuple[int, int],
     no_currency: bool,
-) -> Optional[int]:
+) -> int | None:
     """
     Extract money amount from a game frame at the given position.
 
@@ -221,18 +156,32 @@ def extract_money_at(
         Money amount as integer, or None if not detected.
     """
     region = get_money_region(frame, pos, no_currency=no_currency)
-
     if region.size == 0:
         return None
 
-    return _ocr_region(region, category="money", no_currency=no_currency)
+    text = ocr_digits(region, category="money")
+    if not text:
+        return None
+
+    cleaned = ''.join(c for c in text if c.isdigit() or c == '.')
+    if not cleaned:
+        return None
+
+    try:
+        value = float(cleaned)
+        if no_currency:
+            return int(round(value))
+        else:
+            return int(round(value * 100))
+    except ValueError:
+        return None
 
 
 def extract_player_money(
     frame: np.ndarray,
     table: "TableInfo",
     player_index: int,
-) -> Optional[int]:
+) -> MoneyValue:
     """
     Extract a player's money from a game frame using OCR.
 
@@ -242,7 +191,7 @@ def extract_player_money(
         player_index: Player index (0 to len(table.positions)-1).
 
     Returns:
-        Money amount as integer, or None if not detected.
+        Money amount as integer, CALL_DETECTED if "Call" shown, or None.
     """
     pos = table.positions[player_index]
     money_region = get_money_region(frame, pos, no_currency=table.no_currency)
@@ -255,6 +204,30 @@ def extract_player_money(
     if found:
         return cached
 
-    result = _ocr_region(money_region, category="money", no_currency=table.no_currency)
+    text = ocr_digits(money_region, category="money")
+    if not text:
+        result = None
+    else:
+        text_upper = text.strip().upper()
+        # Detect CALL/RAISE actions (ALL matches CALL, AISE matches RAISE)
+        if "ALL" in text_upper or "AISE" in text_upper:
+            result = CALL_DETECTED
+        # Filter out other action words
+        elif any(word in text_upper for word in _ACTION_WORDS):
+            result = None
+        else:
+            cleaned = ''.join(c for c in text if c.isdigit() or c == '.')
+            if not cleaned:
+                result = None
+            else:
+                try:
+                    value = float(cleaned)
+                    if table.no_currency:
+                        result = int(round(value))
+                    else:
+                        result = int(round(value * 100))
+                except ValueError:
+                    result = None
+
     cache.put(money_region, result)
     return result

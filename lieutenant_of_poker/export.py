@@ -26,14 +26,40 @@ UNCALLED_BET = "uncalled_bet"
 
 def calculate_pot(hand: dict) -> int:
     """Calculate pot from actions (blinds + all bets/calls/raises minus uncalled)."""
+    # Get blind poster names
+    sb_name = hand["players"][hand["sb_seat"]]["name"]
+    bb_name = hand["players"][hand["bb_seat"]]["name"]
+
     total = hand["small_blind"] + hand["big_blind"]
     total += sum(db["amount"] for db in hand.get("dead_blinds", []))
-    for street_actions in hand["actions"].values():
+
+    for street, street_actions in hand["actions"].items():
+        # Track each player's contribution this street
+        # For RAISE/BET, amount is cumulative; for CALL, it's incremental
+        street_contributions: dict[str, int] = {}
+
         for action in street_actions:
-            if action["action"] in (BET, RAISE, CALL, ALL_IN):
-                total += action["amount"] or 0
+            player = action["player_name"]
+            amount = action["amount"] or 0
+
+            if action["action"] in (BET, RAISE):
+                # Cumulative - this is their total for the street
+                # On preflop, blind posters' cumulative includes their blind,
+                # which we already counted above, so subtract it
+                if street == PREFLOP:
+                    if player == sb_name:
+                        amount -= hand["small_blind"]
+                    elif player == bb_name:
+                        amount -= hand["big_blind"]
+                street_contributions[player] = amount
+            elif action["action"] in (CALL, ALL_IN):
+                # Incremental - add to their contribution
+                street_contributions[player] = street_contributions.get(player, 0) + amount
             elif action["action"] == UNCALLED_BET:
-                total -= action["amount"] or 0
+                total -= amount
+
+        total += sum(street_contributions.values())
+
     return total
 
 
@@ -279,10 +305,14 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
 
                     if new_total > current_bet:
                         action_type = BET if current_bet == 0 else RAISE
+                        # For raises/bets, amount is cumulative (total put in this street)
+                        action_amount = new_total
                     else:
                         action_type = CALL
+                        # For calls, amount is incremental (what they put in to call)
+                        action_amount = movement["amount"]
 
-                    action = {"player_name": name, "action": action_type, "amount": movement["amount"]}
+                    action = {"player_name": name, "action": action_type, "amount": action_amount}
                     actions_list.append(action)
 
                     contributions[name] = new_total
@@ -355,10 +385,12 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
         amount = a["amount"] or 0
 
         if a["action"] in (BET, RAISE):
-            contributions[player] = contributions.get(player, 0) + amount
+            # Amount is cumulative for raises/bets
+            contributions[player] = amount
             last_bettor = player
             last_bet_total = contributions[player]
         elif a["action"] == CALL:
+            # Amount is incremental for calls
             contributions[player] = contributions.get(player, 0) + amount
 
     # Find max contribution from players other than last_bettor

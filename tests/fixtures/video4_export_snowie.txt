@@ -2,8 +2,8 @@ GameStart
 PokerClient: ExportFormat
 Date: 16/12/2025
 TimeZone: GMT
-Time: 07:29:24
-GameId:18140221
+Time: 20:32:48
+GameId:43132369
 GameType:NoLimit
 GameCurrency: $
 SmallBlindStake: 75
@@ -34,8 +34,7 @@ FLOP Community Cards:[Js 3h Kd]
 Move: RK44 raise_bet 629
 Move: kevinLAS folds 0
 Move: ali12721921 folds 0
-uncalled_bet: RK44 629
-Winner: RK44 496.00
+uncalled_bet: RK44 329
+Winner: RK44 1096.00
 GameEnd
-
 

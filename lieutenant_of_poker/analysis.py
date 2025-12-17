@@ -11,7 +11,7 @@ from typing import Optional
 from .first_frame import TableInfo
 from .frame_extractor import VideoFrameExtractor
 from .card_matcher import match_community_cards
-from .chip_ocr import extract_pot, extract_player_money, clear_caches
+from .chip_ocr import extract_pot, extract_player_money, clear_caches, CALL_DETECTED
 
 # Number of consecutive matching frames needed to accept a state change
 CONSENSUS_FRAMES = 3
@@ -150,6 +150,8 @@ def analyze_video(
     # Accumulated state for filling in missing values (persists across rejected frames)
     accumulated_pot = None
     accumulated_chips = [None] * len(table.names)
+    # Track which players have been CALL-adjusted (reset when we get actual reading)
+    call_adjusted = [False] * len(table.names)
 
     with VideoFrameExtractor(video_path) as video:
         total_frames = video.frame_count
@@ -173,11 +175,22 @@ def analyze_video(
                 player_chips.append(chips)
 
             # Update accumulated values with any new readings
+            # First update pot, then handle CALL_DETECTED for players
+            prev_pot = accumulated_pot
             if pot is not None:
                 accumulated_pot = pot
+
             for i, chips in enumerate(player_chips):
-                if chips is not None:
+                if chips == CALL_DETECTED:
+                    # Deduce chips from pot increase (only once per CALL)
+                    if not call_adjusted[i]:
+                        if prev_pot is not None and pot is not None and accumulated_chips[i] is not None:
+                            call_amount = pot - prev_pot
+                            accumulated_chips[i] = accumulated_chips[i] - call_amount
+                            call_adjusted[i] = True
+                elif chips is not None:
                     accumulated_chips[i] = chips
+                    call_adjusted[i] = False  # Reset on actual reading
 
             state = {
                 "frame_number": frame_info.frame_number,
