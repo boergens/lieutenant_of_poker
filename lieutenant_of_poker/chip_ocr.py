@@ -210,7 +210,8 @@ def extract_player_money(
     else:
         text_upper = text.strip().upper()
         # Detect CALL/RAISE actions (ALL matches CALL, AISE matches RAISE)
-        if "ALL" in text_upper or "AISE" in text_upper:
+        # But exclude "SMALL BLIND" which contains "ALL"
+        if ("ALL" in text_upper and "BLIN" not in text_upper) or "AISE" in text_upper:
             result = CALL_DETECTED
         # Filter out other action words
         elif any(word in text_upper for word in _ACTION_WORDS):
