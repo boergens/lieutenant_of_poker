@@ -149,7 +149,8 @@ def analyze_video(
     pending_buffer = []  # Buffer for valid frames proposing a state change
     # Accumulated state for filling in missing values (persists across rejected frames)
     accumulated_pot = None
-    accumulated_chips = [None] * len(table.names)
+    # Initialize chips from TableInfo (already detected during first-frame analysis)
+    accumulated_chips = list(table.initial_chips)
     # Track which players have been CALL-adjusted (reset when we get actual reading)
     call_adjusted = [False] * len(table.names)
 
