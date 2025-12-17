@@ -30,11 +30,11 @@ Move: Saz90 folds 0
 Move: ali12721921 call_check 300
 Move: alucard94O folds 0
 Move: sadamzi2 folds 0
-FLOP Community Cards:[Js 3h Kd]
+FLOP Community Cards:[Jc 3h Kd]
 Move: RK44 raise_bet 629
 Move: kevinLAS folds 0
 Move: ali12721921 folds 0
 uncalled_bet: RK44 329
-Winner: RK44 1096.00
+Winner: RK44 1425.00
 GameEnd
 

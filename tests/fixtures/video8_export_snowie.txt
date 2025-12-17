@@ -29,9 +29,6 @@ Move: clif1278 folds 0
 Move: gypsykim folds 0
 Move: kevinLAS9 folds 0
 uncalled_bet: jadongy 11742
-Showdown: kevinLAS9 [4s Ac]
-Showdown: January2273 [Jh 3c]
-Showdown: jadongy [7c 5s]
+Move: jadongy folds 0
 Winner: January2273 8204.00
 GameEnd
-

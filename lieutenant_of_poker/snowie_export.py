@@ -96,11 +96,11 @@ def format_snowie(hand: dict, hand_id: str | None = None, showdown: ShowdownConf
     elif hand["opponents_folded"]:
         # All opponents folded, hero wins
         _write_fold_winner(f, hand)
-    elif hand["hero_folded"] and not hand["reached_showdown"]:
-        # Hero folded and only one opponent left - they win
-        _write_fold_winner(f, hand)
-    elif hand["reached_showdown"] or hand["hero_folded"]:
-        # Multiple players to showdown (hero may or may not be included)
+    elif hand["hero_folded"]:
+        # Hero folded - simulate that one opponent raised and everyone else folded
+        _write_simulated_fold_winner(f, hand, opponents)
+    elif hand["reached_showdown"]:
+        # Hero went to showdown with opponents
         _write_showdown(f, hand, hero_name, opponents, showdown)
 
     f.write("GameEnd\n\n")
@@ -129,6 +129,32 @@ def _write_hero_all_in(f, hand: dict, hero_name: str, opponents: list[dict]):
 def _write_fold_winner(f, hand: dict):
     """Someone folded - write winner (uncalled_bet already written in actions)."""
     f.write(f"Winner: {hand['winner']} {hand['payout']:.2f}\n")
+
+
+def _write_simulated_fold_winner(f, hand: dict, opponents: list[dict]):
+    """Hero folded, simulate that one opponent wins by others folding.
+
+    Pick the first non-folded opponent as winner, write folds for the rest.
+    """
+    # Find opponents who already folded
+    folded_players = set()
+    for street_actions in hand["actions"].values():
+        for a in street_actions:
+            if a["action"] == FOLD:
+                folded_players.add(a["player_name"])
+
+    # Active opponents (didn't fold)
+    active_opponents = [p for p in opponents if p["name"] not in folded_players]
+
+    if not active_opponents:
+        return
+
+    # First active opponent wins, others fold
+    winner = active_opponents[0]
+    for opponent in active_opponents[1:]:
+        f.write(f"Move: {opponent['name']} folds 0\n")
+
+    f.write(f"Winner: {winner['name']} {hand['pot']:.2f}\n")
 
 
 def _write_showdown(f, hand: dict, hero_name: str, opponents: list[dict], showdown: ShowdownConfig | None):

@@ -81,8 +81,8 @@ def _save_unmatched(image: np.ndarray, library_dir: Path) -> None:
 def match_image(
     image: np.ndarray,
     library_dir: Path,
-    threshold: float = 0.08,
-) -> Optional[str]:
+    threshold: float = 0.07,
+) -> tuple[Optional[str], float]:
     """
     Match an image against a library of references.
 
@@ -92,15 +92,16 @@ def match_image(
         threshold: Maximum mean absolute difference for a match
 
     Returns:
-        Matched value (filename prefix) or None
+        Tuple of (matched value or None, score). Score is mean absolute difference
+        (lower is better, threshold is 0.07).
     """
     if image is None or image.size == 0:
-        return None
+        return None, 1.0
 
     library = _load_library(library_dir)
     if not library:
         _save_unmatched(image, library_dir)
-        return None
+        return None, 1.0
 
     normalized = _normalize(image)
     best_match: Optional[str] = None
@@ -114,10 +115,10 @@ def match_image(
                 best_match = value
 
     if best_match is not None and best_score < threshold:
-        return best_match
+        return best_match, best_score
 
     _save_unmatched(image, library_dir)
-    return None
+    return None, best_score
 
 
 def clear_cache() -> None:

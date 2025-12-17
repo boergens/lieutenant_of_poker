@@ -31,10 +31,7 @@ Move: TheBlindi raise_bet 1600
 Move: Gabriel9607 call_check 800
 Move: wohverynice_o call_check 800
 Move: kevinLASS folds 0
-Showdown: kevinLASS [Th Jc]
-Showdown: TheBlindi [Ad 9s]
-Showdown: Gabriel9607 [2s 3d]
-Showdown: wohverynice_o [4d 8c]
+Move: Gabriel9607 folds 0
+Move: wohverynice_o folds 0
 Winner: TheBlindi 5600.00
 GameEnd
-

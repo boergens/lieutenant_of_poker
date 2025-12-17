@@ -55,25 +55,22 @@ def _offset_region(region: tuple[int, int, int, int], x_offset: int) -> tuple[in
     return (x + x_offset, y, w, h)
 
 
-def _match_rank(image: np.ndarray, library_name: str) -> Optional[str]:
-    """Match a rank image, handling 10->T conversion."""
+def _match_rank(image: np.ndarray, library_name: str) -> tuple[Optional[str], float]:
+    """Match a rank image. Returns (rank, score)."""
     rank_dir, _ = _get_library_dirs(library_name)
-    result = match_image(image, rank_dir)
-    if result == "10":
-        return "T"
-    return result
+    return match_image(image, rank_dir)
 
 
-def _match_suit(image: np.ndarray, library_name: str) -> Optional[str]:
-    """Match a suit image."""
+def _match_suit(image: np.ndarray, library_name: str) -> tuple[Optional[str], float]:
+    """Match a suit image. Returns (suit, score)."""
     _, suit_dir = _get_library_dirs(library_name)
     return match_image(image, suit_dir)
 
 
 def _match_card(rank_img: np.ndarray, suit_img: np.ndarray, library_name: str) -> Optional[str]:
     """Match a card from rank and suit images. Returns string like 'Ah' or None."""
-    rank = _match_rank(rank_img, library_name)
-    suit = _match_suit(suit_img, library_name)
+    rank, _ = _match_rank(rank_img, library_name)
+    suit, _ = _match_suit(suit_img, library_name)
     if rank and suit:
         return f"{rank}{suit}"
     return None

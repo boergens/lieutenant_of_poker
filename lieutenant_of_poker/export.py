@@ -433,6 +433,7 @@ def export_video(
     video_path: str,
     fmt: str,
     max_rake_pct: float = 0.10,
+    showdown: "ShowdownConfig | None" = None,
 ) -> str | None:
     """
     Analyze a video and export to the specified format.
@@ -441,6 +442,7 @@ def export_video(
         video_path: Path to the video file.
         fmt: Export format (pokerstars, snowie, human, actions).
         max_rake_pct: Maximum rake as percentage of pot (default 10%, 0 to disable).
+        showdown: Optional ShowdownConfig for deterministic opponent cards.
 
     Returns:
         Formatted output string, or None if no states found.
@@ -463,7 +465,7 @@ def export_video(
         return None
 
     if fmt == "snowie":
-        return format_snowie(hand)
+        return format_snowie(hand, showdown=showdown)
     elif fmt == "human":
         return format_human(hand)
     elif fmt == "actions":

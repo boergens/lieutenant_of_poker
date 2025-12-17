@@ -103,8 +103,8 @@ def diagnose(
 
             cards = []
             for i, (rank_img, suit_img) in enumerate(regions.cards):
-                rank = _match_rank(rank_img, COMMUNITY_LIBRARY)
-                suit = _match_suit(suit_img, COMMUNITY_LIBRARY)
+                rank, rank_score = _match_rank(rank_img, COMMUNITY_LIBRARY)
+                suit, suit_score = _match_suit(suit_img, COMMUNITY_LIBRARY)
                 card = matched_cards[i]
 
                 substep = {
@@ -114,7 +114,7 @@ def diagnose(
                         ("Rank Region", _image_to_base64(rank_img)),
                         ("Suit Region", _image_to_base64(suit_img)),
                     ],
-                    "match_info": f"Rank: {rank or 'not found'}, Suit: {suit or 'not found'}",
+                    "match_info": f"Rank: {rank or 'not found'} ({rank_score:.3f}), Suit: {suit or 'not found'} ({suit_score:.3f})",
                     "parsed_result": card if card else "(not detected)",
                     "success": True,
                 }
@@ -177,8 +177,8 @@ def diagnose(
                 cards = []
 
                 # Left card
-                left_rank = _match_rank(left_rank_img, HERO_LIBRARY)
-                left_suit = _match_suit(left_suit_img, HERO_LIBRARY)
+                left_rank, left_rank_score = _match_rank(left_rank_img, HERO_LIBRARY)
+                left_suit, left_suit_score = _match_suit(left_suit_img, HERO_LIBRARY)
                 left_card = matched_cards[0]
                 left_substep = {
                     "name": "Left Card",
@@ -187,7 +187,7 @@ def diagnose(
                         ("Rank Region", _image_to_base64(left_rank_img)),
                         ("Suit Region", _image_to_base64(left_suit_img)),
                     ],
-                    "match_info": f"Rank: {left_rank or 'not found'}, Suit: {left_suit or 'not found'}",
+                    "match_info": f"Rank: {left_rank or 'not found'} ({left_rank_score:.3f}), Suit: {left_suit or 'not found'} ({left_suit_score:.3f})",
                     "parsed_result": left_card if left_card else "(not detected)",
                     "success": left_card is not None,
                 }
@@ -196,8 +196,8 @@ def diagnose(
                 hero_step["substeps"].append(left_substep)
 
                 # Right card
-                right_rank = _match_rank(right_rank_img, HERO_LIBRARY)
-                right_suit = _match_suit(right_suit_img, HERO_LIBRARY)
+                right_rank, right_rank_score = _match_rank(right_rank_img, HERO_LIBRARY)
+                right_suit, right_suit_score = _match_suit(right_suit_img, HERO_LIBRARY)
                 right_card = matched_cards[1]
                 right_substep = {
                     "name": "Right Card",
@@ -206,7 +206,7 @@ def diagnose(
                         ("Rank Region", _image_to_base64(right_rank_img)),
                         ("Suit Region", _image_to_base64(right_suit_img)),
                     ],
-                    "match_info": f"Rank: {right_rank or 'not found'}, Suit: {right_suit or 'not found'}",
+                    "match_info": f"Rank: {right_rank or 'not found'} ({right_rank_score:.3f}), Suit: {right_suit or 'not found'} ({right_suit_score:.3f})",
                     "parsed_result": right_card if right_card else "(not detected)",
                     "success": right_card is not None,
                 }

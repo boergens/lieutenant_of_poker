@@ -376,6 +376,12 @@ class TableInfo:
                 if all_found:
                     break
 
+            # Players with a detected blind are active even if chips weren't detected
+            # (e.g., big blind who never shows their chip count during the hand)
+            for i, blind_amt in enumerate(blind_amounts_by_seat):
+                if blind_amt is not None and initial_chips[i] is None:
+                    initial_chips[i] = 12345  # Placeholder for unknown chip count
+
             # Filter out players without detected chips (they're inactive)
             active_indices = [i for i, chips in enumerate(initial_chips) if chips is not None]
 

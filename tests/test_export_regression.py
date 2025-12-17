@@ -5,13 +5,16 @@ Tests auto-discover fixtures in tests/fixtures/ directory.
 Each fixture consists of:
   - {n}.mp4 - video file
   - video{n}_export_snowie.txt - expected snowie output
+  - video{n}_config.json - optional config with showdown cards
 """
 
+import json
 from pathlib import Path
 
 import pytest
 
 from lieutenant_of_poker.export import export_video
+from lieutenant_of_poker.game_simulator import ShowdownConfig
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -46,14 +49,29 @@ def normalize_snowie_export(text: str) -> str:
 FIXTURE_NUMS = discover_fixtures()
 
 
+def load_showdown_config(num: int) -> ShowdownConfig | None:
+    """Load showdown config from JSON file if it exists."""
+    config_path = FIXTURES_DIR / f"video{num}_config.json"
+    if not config_path.exists():
+        return None
+    config = json.loads(config_path.read_text())
+    if "showdown" not in config:
+        return None
+    return ShowdownConfig(
+        opponent_cards=config["showdown"].get("opponent_cards", {}),
+        force_winner=config["showdown"].get("force_winner"),
+    )
+
+
 @pytest.mark.parametrize("num", FIXTURE_NUMS)
 def test_snowie_export(num):
     """Test snowie export matches saved fixture."""
     video_path = FIXTURES_DIR / f"{num}.mp4"
     fixture_path = FIXTURES_DIR / f"video{num}_export_snowie.txt"
+    showdown = load_showdown_config(num)
 
     # Generate export using high-level API
-    actual = export_video(str(video_path), "snowie")
+    actual = export_video(str(video_path), "snowie", showdown=showdown)
     assert actual is not None, f"export_video returned None for {video_path}"
 
     expected = fixture_path.read_text()
