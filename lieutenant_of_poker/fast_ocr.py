@@ -51,6 +51,12 @@ def _get_paddle_ocr():
     return _paddle_ocr
 
 
+def reset_paddle_ocr() -> None:
+    """Reset the PaddleOCR instance to free memory."""
+    global _paddle_ocr
+    _paddle_ocr = None
+
+
 def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     """Prepare image for OCR - just inversion."""
     # Invert - OCR works better with dark text on light background
@@ -117,6 +123,36 @@ def _get_numbers_paddle(image: np.ndarray) -> str:
         return ""
 
     # Extract text from result - new API returns list of dicts
+    texts = []
+    for item in result:
+        if isinstance(item, dict) and "rec_texts" in item:
+            texts.extend(item["rec_texts"])
+
+    return " ".join(texts)
+
+
+def ocr_text(image: np.ndarray) -> str:
+    """
+    General-purpose text OCR using PaddleOCR.
+
+    Args:
+        image: BGR or grayscale numpy array.
+
+    Returns:
+        Recognized text string.
+    """
+    if image is None or image.size == 0:
+        return ""
+
+    image = preprocess_for_ocr(image)
+
+    with _paddle_lock:
+        ocr = _get_paddle_ocr()
+        result = ocr.predict(image)
+
+    if not result:
+        return ""
+
     texts = []
     for item in result:
         if isinstance(item, dict) and "rec_texts" in item:
@@ -224,7 +260,7 @@ def _get_tess_name_api_word() -> tesserocr.PyTessBaseAPI:
 
 def ocr_name(image: np.ndarray) -> str | None:
     """
-    OCR for player names.
+    OCR for player names using Tesseract (better for restricted charset).
 
     Args:
         image: BGR or grayscale numpy array.

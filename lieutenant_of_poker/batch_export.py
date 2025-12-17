@@ -1,13 +1,17 @@
 """Batch export hand histories from a folder of videos."""
 
+import gc
 import sys
 from pathlib import Path
 from typing import Optional
 
 from .export import export_video
-
+from .fast_ocr import reset_paddle_ocr
 
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
+
+# Reset PaddleOCR every N videos to prevent memory buildup
+_PADDLE_RESET_INTERVAL = 10
 
 
 def batch_export(
@@ -68,5 +72,12 @@ def batch_export(
         except Exception as e:
             print(f"-> ERROR: {e}", file=sys.stderr)
             errors += 1
+
+        # Periodically reset PaddleOCR to free memory
+        if i % _PADDLE_RESET_INTERVAL == 0:
+            reset_paddle_ocr()
+
+        # Force garbage collection to prevent memory buildup
+        gc.collect()
 
     print(f"\nDone! {success} exported, {errors} errors", file=sys.stderr)

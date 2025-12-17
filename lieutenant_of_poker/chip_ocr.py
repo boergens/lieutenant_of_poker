@@ -10,7 +10,7 @@ from typing import Optional, Tuple, Dict, TYPE_CHECKING
 import cv2
 import numpy as np
 
-from .fast_ocr import ocr_digits
+from .fast_ocr import ocr_digits, ocr_text
 
 
 def _image_fingerprint(image: np.ndarray) -> bytes:
@@ -86,7 +86,7 @@ def _parse_amount(text: str, no_currency: bool) -> Optional[int]:
     text = text.strip().upper()
 
     # OCR sometimes reads action text instead of chip amount
-    if any(word in text for word in ("BLIND", "OLD", "ANTE", "SMALL", "AISE")):
+    if any(word in text for word in ("BLIND", "OLD", "ANTE", "SMALL", "AISE", "ALL", "OUT")):
         return None
 
     # Common OCR mistakes

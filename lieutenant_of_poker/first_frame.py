@@ -265,8 +265,22 @@ class TableInfo:
 
         # Detect active seats using card pattern matching
         from .card_matcher import is_seat_active
+        from .chip_ocr import get_money_region
+        from .fast_ocr import ocr_text
         first_frame = frames[0]
-        active_seats = [i for i, pos in enumerate(_SEAT_POSITIONS) if is_seat_active(first_frame, pos)]
+
+        def is_sitting_out(frame, pos):
+            """Check if seat shows 'SIT OUT' in money region."""
+            region = get_money_region(frame, pos, no_currency=True)
+            if region.size == 0:
+                return False
+            text = ocr_text(region).upper()
+            return "SIT" in text or "OUT" in text
+
+        active_seats = [
+            i for i, pos in enumerate(_SEAT_POSITIONS)
+            if is_seat_active(first_frame, pos) and not is_sitting_out(first_frame, pos)
+        ]
 
         # Collect name votes for active positions
         position_votes = {i: [] for i in active_seats}
