@@ -334,6 +334,12 @@ def reconstruct_hand(states: list[dict], table) -> dict | None:
                         actions_list.append({"player_name": name, "action": CHECK, "amount": 0})
                     current_pos = (pos + 1) % len(players)
 
+            # Stop processing movements if all but one player is all-in
+            # (UI shows win probabilities instead of chip amounts at this point)
+            active_players = [p for p in players_in_hand if p not in players_all_in]
+            if len(active_players) <= 1:
+                break
+
         # After all movements, close out remaining players
         # - Players who owe chips must fold
         # - Players who don't owe (and haven't acted) must check
